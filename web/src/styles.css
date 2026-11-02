@@ -907,3 +907,60 @@ h2 {
   height: 5px;
   width: auto;
 }
+
+.placements {
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.pl-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+
+.pl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+}
+
+.pl-name {
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-switch {
+  border: none;
+  background: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.pl-switch:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.pl-note {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.pl-more {
+  margin-top: 6px;
+}

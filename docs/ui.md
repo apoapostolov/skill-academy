@@ -289,6 +289,8 @@ Verdict first, findings second.
 - Policy footer: the threshold in force and the source it came from, with `Open policy`.
 - A blocked skill's header switch is disabled with the tooltip `Blocked by scan. Override to enable.`; the override sits behind the `⋯` menu and requires a reason.
 
+Under the badges, the **Agents** block answers "who can see this" without leaving the skill: `10 of 24` agents, one row per agent with a switch, and `lives here` for the root the package physically sits in. Agents that are off are folded behind `Show 14 available` so the block opens with what is true rather than every possibility. Flipping a switch writes immediately, names the mode in the tooltip (`junction`, `symlink`, `copy`), and a failed write says why — `occupied`, `not-ours`, `link-failed` — instead of silently reverting.
+
 ### Context menu
 
 Right-clicking a row opens the same menu anywhere on the row, and `Shift+F10` opens it for the keyboard. 8px radius, 26px rows, 6px vertical padding, one separator before the destructive group.

@@ -12,6 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "service": "node scripts/service.mjs",
     "stop": "node scripts/stop-dev.mjs",
+    "test:placements": "cd server && npx tsx ../scripts/test-placements.ts",
     "dev:server": "npm -w @skill-academy/server run dev",
     "dev:web": "npm -w @skill-academy/web run dev",
     "build": "npm -w @skill-academy/web run build",

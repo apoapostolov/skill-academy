@@ -86,6 +86,13 @@ function migrate(db: DatabaseSync): void {
       hidden     INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS journal (
+      id         INTEGER PRIMARY KEY,
+      at         TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      payload    TEXT NOT NULL,
+      undone_at  TEXT
+    );
   `)
 
   const stored = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
@@ -474,6 +481,25 @@ export function setAgentHidden(agent: string, hidden: boolean): void {
       ON CONFLICT(agent) DO UPDATE SET hidden = excluded.hidden, updated_at = excluded.updated_at
     `)
     .run(agent, hidden ? 1 : 0, new Date().toISOString())
+}
+
+export interface JournalRow {
+  id: number
+  at: string
+  action: string
+  payload: string
+  undone_at: string | null
+}
+
+export function addJournal(action: string, payload: unknown): number {
+  const result = getDb()
+    .prepare('INSERT INTO journal (at, action, payload) VALUES (?, ?, ?)')
+    .run(new Date().toISOString(), action, JSON.stringify(payload))
+  return Number(result.lastInsertRowid)
+}
+
+export function recentJournal(limit = 50): JournalRow[] {
+  return getDb().prepare('SELECT * FROM journal ORDER BY id DESC LIMIT ?').all(limit) as unknown as JournalRow[]
 }
 
 export type { RootScan }

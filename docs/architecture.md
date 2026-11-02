@@ -424,6 +424,27 @@ Archive is a location, not a convention. The service owns three rules.
 
 Restore reads `metadata.json` in the package directory, verifies the package hash, refuses on mismatch unless the user picks `restore as variant`, then recreates placements in their recorded modes. A location that moved on disk is re-pointed through Settings, and the index is rebuilt from the directories present.
 
+## Placement engine
+
+Making one agent see one package is a physical operation, so it is written to be reversible rather than clever.
+
+1. **Junction first.** `fs.symlinkSync(source, target, 'junction')` works on NTFS without elevation, resolves as a directory, and unlinks without touching the target.
+2. **Directory symlink second.** `type: 'dir'` when the filesystem or policy refuses a junction; it needs Developer Mode or elevation.
+3. **Tracked copy last.** `fs.cpSync` plus a `.skill-academy.json` manifest recording the source. The manifest is what makes it safe to remove later: a directory without one is never ours.
+4. **Never overwrite.** An existing target is reported as `occupied` and left untouched, whatever is in it.
+5. **Remove by kind.** A link is unlinked. A tracked copy is moved to `~/.skill-academy/trash/`, never deleted, so a mistaken uninstall stays recoverable.
+6. **Journaled.** Every place and unplace writes the skill path, agent, root, target and outcome to `journal`, which is the raw material for undo.
+
+Links are not indexed. A package inside a root whose directory is a link is a placement of a skill that lives elsewhere; indexing it would list one skill twice and double its token cost, so the walker skips it and the placement API answers the state question instead.
+
+```
+GET  /api/placements?skillId=6      every agent with native | on | off, the target path and the mode
+POST /api/placements                { skillId, agent, action: "on" | "off" }
+GET  /api/journal                   the last N placements with their payloads
+```
+
+`POST` refuses a native placement (the package already lives in that root) and answers `409` with the reason when the target is occupied. Tests live in `scripts/test-placements.ts` and run against a scratch directory: link creation, link removal, copy fallback, trash-on-unplace, occupied target, foreign directory. `npm run test:placements`.
+
 ## Trash and purge
 
 Delete is a move, never an unlink:

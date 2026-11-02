@@ -29,6 +29,14 @@ interface Skill {
   mtime: string
 }
 
+interface Placement {
+  agent: string
+  root: string
+  target: string
+  state: 'native' | 'on' | 'off'
+  mode: string | null
+}
+
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
   hidden: string[]
@@ -247,6 +255,9 @@ export default function App() {
   const [pending, setPending] = useState(0)
   const [editingAgents, setEditingAgents] = useState(false)
   const [hiddenAgents, setHiddenAgents] = useState<string[]>([])
+  const [placements, setPlacements] = useState<Placement[] | null>(null)
+  const [placementBusy, setPlacementBusy] = useState<string | null>(null)
+  const [showAllAgents, setShowAllAgents] = useState(false)
 
   const dragRef = useRef<{ kind: 'sidebar' | 'detail'; x: number; value: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -387,6 +398,7 @@ export default function App() {
   useEffect(() => {
     if (selected === null) {
       setDetail(null)
+      setPlacements(null)
       return
     }
     let alive = true
@@ -394,10 +406,39 @@ export default function App() {
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((payload) => alive && setDetail(payload))
       .catch(() => alive && setDetail(null))
+    fetch(`/api/placements?skillId=${selected}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
+      .then((payload) => alive && setPlacements(payload.placements))
+      .catch(() => alive && setPlacements(null))
     return () => {
       alive = false
     }
   }, [selected])
+
+  async function togglePlacement(placement: Placement) {
+    if (!detail || placement.state === 'native') return
+    const action = placement.state === 'on' ? 'off' : 'on'
+    setPlacementBusy(placement.agent)
+    try {
+      const response = await fetch('/api/placements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skillId: detail.id, agent: placement.agent, action })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `placement ${response.status}`)
+      setPlacements((current) =>
+        current
+          ? current.map((row) => (row.agent === placement.agent ? { ...row, state: payload.state, mode: payload.mode } : row))
+          : current
+      )
+      setError(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setPlacementBusy(null)
+    }
+  }
 
   async function scan() {
     setScanning(true)
@@ -627,6 +668,44 @@ export default function App() {
                 <span className="chip">{fmt.format(detail.tokens)} tokens</span>
                 <span className="chip">{fmt.format(detail.body_chars)} chars</span>
               </div>
+              {placements && (
+                <div className="placements">
+                  <div className="pl-head">
+                    <span>Agents</span>
+                    <span className="pl-count">
+                      {placements.filter((row) => row.state !== 'off').length} of {placements.length}
+                    </span>
+                  </div>
+                  {placements
+                    .filter((row) => showAllAgents || row.state !== 'off')
+                    .map((row) => (
+                      <div className="pl-row" key={`${row.agent}:${row.root}`}>
+                        <span className="pl-name">{row.agent}</span>
+                        {row.state === 'native' ? (
+                          <span className="pl-note">lives here</span>
+                        ) : (
+                          <button
+                            className="pl-switch"
+                            onClick={() => void togglePlacement(row)}
+                            disabled={placementBusy === row.agent}
+                            title={`${row.state === 'on' ? 'Disable' : 'Enable'} in ${row.agent}${row.mode ? ` (${row.mode})` : ''}`}
+                            aria-pressed={row.state === 'on'}
+                            aria-label={`${row.state === 'on' ? 'Disable' : 'Enable'} ${detail.name} in ${row.agent}`}
+                          >
+                            <Switch on={row.state === 'on'} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  {placements.some((row) => row.state === 'off') && (
+                    <button className="ghost tiny pl-more" onClick={() => setShowAllAgents((value) => !value)}>
+                      {showAllAgents
+                        ? 'Fewer agents'
+                        : `Show ${placements.filter((row) => row.state === 'off').length} available`}
+                    </button>
+                  )}
+                </div>
+              )}
               {detail.health.length > 0 && (
                 <div className="issues">
                   {detail.health.map((issue, index) => (

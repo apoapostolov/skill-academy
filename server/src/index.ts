@@ -4,11 +4,13 @@ import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
 import {
+  addJournal,
   getSkill,
   listHiddenAgents,
   querySkills,
   readRoots,
   rebuildIndex,
+  recentJournal,
   removeByPath,
   saveOne,
   saveRoot,
@@ -18,6 +20,7 @@ import {
   tokensByRoot,
   totals
 } from './db'
+import { describe as describePlacement, place, unplace } from './placement'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import { parseSkill, readSkillBody } from './skill'
@@ -96,6 +99,18 @@ function handleChange(change: Change): void {
 }
 
 const watcher = new RootWatcher(handleChange)
+
+const TRASH_DIR = path.join(DATA_DIR, 'trash')
+
+/** Re-read one root after a write of our own, and tell the client. */
+function rescanRoot(rootPath: string): void {
+  const root = loadRegistry().roots.find((entry) => entry.path === rootPath)
+  if (!root) return
+  saveRoot(scanOne(root))
+  rebuildIndex()
+  lastScanAt = new Date().toISOString()
+  broadcast({ type: 'library', root: rootPath, added: 0, changed: 0, removed: 0, at: lastScanAt })
+}
 
 function fullScan(): { added: number; changed: number; removed: number; ms: number; skills: number } {
   const registry = loadRegistry()
@@ -273,6 +288,81 @@ app.post('/api/agents/:agent/visibility', async (request, reply) => {
 })
 
 app.get('/api/dev/requests', async () => ({ requests }))
+
+app.get('/api/placements', async (request, reply) => {
+  const { skillId } = request.query as { skillId?: string }
+  const skill = skillId ? getSkill(Number(skillId)) : undefined
+  if (!skill) {
+    reply.code(400)
+    return { error: 'skillId is required' }
+  }
+
+  const registry = loadRegistry()
+  const source = path.resolve(skill.path).toLowerCase()
+  const rows = registry.roots
+    .filter((root) => root.exists)
+    .flatMap((root) =>
+      root.owners.map((agent) => {
+        const target = path.join(root.path, path.basename(skill.path))
+        const native = source.startsWith(`${path.resolve(root.path).toLowerCase()}${path.sep}`)
+        const info = describePlacement(target)
+        return {
+          agent,
+          root: root.path,
+          target,
+          state: native ? 'native' : info.exists ? 'on' : 'off',
+          mode: native ? 'native' : info.link ? 'link' : info.ours ? 'copy' : null
+        }
+      })
+    )
+
+  return { skill: { id: skill.id, name: skill.name, path: skill.path }, placements: rows }
+})
+
+app.post('/api/placements', async (request, reply) => {
+  const body = request.body as { skillId?: number; agent?: string; action?: 'on' | 'off' } | undefined
+  const skill = body?.skillId ? getSkill(body.skillId) : undefined
+  if (!skill || !body?.agent || (body.action !== 'on' && body.action !== 'off')) {
+    reply.code(400)
+    return { error: 'skillId, agent and action (on|off) are required' }
+  }
+
+  const registry = loadRegistry()
+  const root = registry.roots.find((entry) => entry.exists && entry.owners.includes(body.agent!))
+  if (!root) {
+    reply.code(404)
+    return { error: `no detected root for ${body.agent}` }
+  }
+
+  const target = path.join(root.path, path.basename(skill.path))
+  const native = path.resolve(skill.path).toLowerCase().startsWith(`${path.resolve(root.path).toLowerCase()}${path.sep}`)
+  if (native) return { state: 'native', mode: 'native', target }
+
+  if (body.action === 'on') {
+    const result = place(skill.path, root.path)
+    addJournal('place', { skill: skill.path, agent: body.agent, root: root.path, target, result })
+    if (!result.ok) {
+      reply.code(409)
+      return { error: result.reason, target: result.target }
+    }
+    rescanRoot(root.path)
+    return { state: 'on', mode: result.mode, target: result.target }
+  }
+
+  const result = unplace(target, TRASH_DIR)
+  addJournal('unplace', { skill: skill.path, agent: body.agent, root: root.path, target, result })
+  if (!result.ok) {
+    reply.code(409)
+    return { error: result.reason, target }
+  }
+  rescanRoot(root.path)
+  return { state: 'off', mode: result.mode, target, trashed: result.trashed }
+})
+
+app.get('/api/journal', async (request) => {
+  const { limit } = request.query as { limit?: string }
+  return { entries: recentJournal(limit ? Number(limit) : 50) }
+})
 
 function safeJson<T>(value: string, fallback: T): T {
   try {

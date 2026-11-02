@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentRoot } from './registry'
+import { isLinked } from './placement'
 import { parseSkill, type SkillRecord } from './skill'
 
 const SKIP = new Set(['node_modules', '.git', '.archive', '.cache'])
@@ -38,7 +39,9 @@ function findPackages(dir: string, depth: number, out: string[]): void {
     return
   }
   if (entries.some((entry) => entry.isFile() && entry.name === 'SKILL.md')) {
-    out.push(dir)
+    // A linked package is a placement of a skill that lives elsewhere: indexing it
+    // again would list one skill twice and double its token cost.
+    if (!isLinked(dir)) out.push(dir)
     return
   }
   if (depth >= MAX_DEPTH) return
