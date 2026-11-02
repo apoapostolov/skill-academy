@@ -27,6 +27,8 @@ interface Skill {
   tags: string[]
   health: Issue[]
   mtime: string
+  version?: string
+  repo?: string
 }
 
 interface Placement {
@@ -711,7 +713,11 @@ export default function App() {
             >
               <span className={`dot ${skill.health.length ? 'warn' : ''}`} />
               <span className="meta">
-                <span className="title">{skill.name}</span>
+                <span className="title">
+                  {skill.name}
+                  {skill.version ? <span className="ver">v{skill.version.replace(/^v/i, '')}</span> : null}
+                  {skill.repo ? <span className="repo">{skill.repo}</span> : null}
+                </span>
                 <span className="desc">{skill.description || 'No description'}</span>
               </span>
               <span className="tokens">{fmt.format(skill.tokens)}</span>

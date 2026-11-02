@@ -23,6 +23,7 @@ import {
 } from './db'
 import { place, unplace } from './placement'
 import { readPackage, readPackageFile } from './package'
+import { provenanceOf } from './provenance'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import { readSkillBody } from './skill'
@@ -207,7 +208,12 @@ app.get('/api/skills', async (request) => {
   })
   return {
     total: result.total,
-    rows: result.rows.map((row) => ({ ...row, tags: safeJson(row.tags, []), health: safeJson(row.health, []) }))
+    rows: result.rows.map((row) => ({
+      ...row,
+      tags: safeJson(row.tags, []),
+      health: safeJson(row.health, []),
+      ...provenanceOf(row.path, String(row.mtime))
+    }))
   }
 })
 
