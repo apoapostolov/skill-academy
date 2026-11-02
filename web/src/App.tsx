@@ -45,31 +45,151 @@ type Scope =
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
 
-function EyeGlyph({ hidden }: { hidden: boolean }) {
+function PencilGlyph() {
   return (
-    <svg
-      className="eye"
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z" />
-      <circle cx="8" cy="8" r="1.8" />
-      {hidden && <path d="M2.5 2.5 13.5 13.5" />}
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11.3 2.2a1.6 1.6 0 0 1 2.3 2.3L5.2 12.9 2 14l1.1-3.2 8.2-8.6Z" />
+      <path d="M10.2 3.4 12.6 5.8" />
     </svg>
   )
 }
 
-function compact(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${Math.round(value / 1_000)}k`
-  return String(value)
+function CheckGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 8.5 6 12l7.5-8" />
+    </svg>
+  )
+}
+
+/**
+ * Scroll container with a mobile-style thumb: it overlays the content instead of
+ * reserving a lane, fades in while scrolling and fades out shortly after the last
+ * scroll event. The native bar is hidden, so the content keeps its full width.
+ */
+function ScrollPane({
+  className = '',
+  axis = 'y',
+  bodyRef: externalRef,
+  onScroll,
+  children
+}: {
+  className?: string
+  axis?: 'y' | 'x' | 'both'
+  bodyRef?: React.RefObject<HTMLDivElement | null>
+  onScroll?: (element: HTMLDivElement) => void
+  children: React.ReactNode
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const timer = useRef<number | null>(null)
+  const [thumb, setThumb] = useState({
+    yTop: 0,
+    ySize: 0,
+    xLeft: 0,
+    xSize: 0,
+    visible: false
+  })
+
+  function update(show: boolean) {
+    const element = bodyRef.current
+    if (!element) return
+
+    const measure = (client: number, total: number, offset: number) => {
+      const ratio = client / total
+      if (ratio >= 0.999) return { offset: 0, size: 0 }
+      const size = Math.max(28, Math.round(client * ratio))
+      const travel = total - client
+      return { offset: Math.round((offset / Math.max(travel, 1)) * (client - size)), size }
+    }
+
+    const vertical = measure(element.clientHeight, element.scrollHeight, element.scrollTop)
+    const horizontal = measure(element.clientWidth, element.scrollWidth, element.scrollLeft)
+    const scrollable = vertical.size > 0 || horizontal.size > 0
+    if (!scrollable) {
+      setThumb((current) => (current.visible ? { ...current, visible: false } : current))
+      return
+    }
+
+    // Geometry updates on every render; only a real scroll makes the thumb appear,
+    // otherwise the hide timer would be undone by the next render. Returning the same
+    // object when nothing moved keeps React from re-rendering forever, which would also
+    // restart the opacity transition on every frame.
+    setThumb((current) => {
+      const unchanged =
+        current.yTop === vertical.offset &&
+        current.ySize === vertical.size &&
+        current.xLeft === horizontal.offset &&
+        current.xSize === horizontal.size &&
+        (show ? current.visible : true)
+      if (unchanged) return current
+      return {
+        yTop: vertical.offset,
+        ySize: vertical.size,
+        xLeft: horizontal.offset,
+        xSize: horizontal.size,
+        visible: show || current.visible
+      }
+    })
+    if (show) {
+      if (timer.current) window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => {
+        setThumb((current) => ({ ...current, visible: false }))
+      }, 650)
+    }
+  }
+
+  useEffect(() => {
+    update(false)
+  })
+
+  useEffect(() => {
+    const element = bodyRef.current
+    if (!element) return
+    const observer = new ResizeObserver(() => update(false))
+    observer.observe(element)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className={`scrollpane ${className}`}>
+      <div
+        className="scrollbody"
+        ref={(node) => {
+          bodyRef.current = node
+          if (externalRef) externalRef.current = node
+        }}
+        onScroll={(event) => {
+          update(true)
+          onScroll?.(event.currentTarget)
+        }}
+      >
+        {children}
+      </div>
+      {(axis === 'y' || axis === 'both') && thumb.ySize > 0 && (
+        <div
+          className={`scrollthumb ${thumb.visible ? 'on' : ''}`}
+          style={{ top: thumb.yTop, height: thumb.ySize }}
+          aria-hidden="true"
+        />
+      )}
+      {(axis === 'x' || axis === 'both') && thumb.xSize > 0 && (
+        <div
+          className={`scrollthumb horizontal ${thumb.visible ? 'on' : ''}`}
+          style={{ left: thumb.xLeft, width: thumb.xSize }}
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  )
+}
+
+function Switch({ on }: { on: boolean }) {
+  return (
+    <span className={`switch ${on ? 'on' : ''}`} aria-hidden="true">
+      <span className="knob" />
+    </span>
+  )
 }
 
 function ago(iso: string | null): string {
@@ -260,8 +380,7 @@ export default function App() {
     fetchPage(skills.length, false)
   }
 
-  function onListScroll(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget
+  function onListScroll(element: HTMLDivElement) {
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 600) loadMore()
   }
 
@@ -372,6 +491,7 @@ export default function App() {
 
       <div className="panes">
         <aside className="sidebar" style={{ width: widths.sidebar, flexBasis: widths.sidebar }}>
+          <ScrollPane className="sidebar-scroll">
           <button className={`nav ${scope.kind === 'all' ? 'active' : ''}`} onClick={() => setScope({ kind: 'all' })}>
             All skills <span>{state ? fmt.format(state.library.skills) : ''}</span>
           </button>
@@ -382,10 +502,16 @@ export default function App() {
             Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
           </button>
 
-          <div className="group row">
+          <div className="group head">
             <span>Agents</span>
-            <button className="ghost tiny" onClick={() => setEditingAgents((value) => !value)}>
-              {editingAgents ? 'Done' : 'Edit'}
+            <button
+              className="ghost iconbtn"
+              onClick={() => setEditingAgents((value) => !value)}
+              title={editingAgents ? 'Done editing' : 'Edit agent visibility'}
+              aria-label={editingAgents ? 'Done editing' : 'Edit agent visibility'}
+              aria-pressed={editingAgents}
+            >
+              <PencilGlyph />
             </button>
           </div>
           {facets?.agents
@@ -401,20 +527,12 @@ export default function App() {
                   onClick={() => (editingAgents ? void toggleAgent(agent.agent) : setScope({ kind: 'agent', agent: agent.agent, path: agent.path }))}
                   title={editingAgents ? `${agent.agent} — ${isHidden ? 'hidden' : 'shown'}` : agent.path}
                 >
-                  <span className="name">
-                    {editingAgents && <EyeGlyph hidden={isHidden} />}
-                    {agent.agent}
-                    {agent.origin === 'host' && <em className="badge">host</em>}
-                  </span>
-                  <span>
-                    {editingAgents ? (
-                      isHidden ? 'hidden' : 'shown'
-                    ) : (
-                      <>
-                        {fmt.format(agent.count)} · {compact(agent.tokens)}
-                      </>
-                    )}
-                  </span>
+                  <span className="name">{agent.agent}{agent.origin === 'host' && <em className="badge">host</em>}</span>
+                  {editingAgents ? (
+                    <Switch on={!isHidden} />
+                  ) : (
+                    <span>{fmt.format(agent.count)}</span>
+                  )}
                 </button>
               )
             })}
@@ -429,6 +547,7 @@ export default function App() {
               #{entry.tag} <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
+          </ScrollPane>
         </aside>
 
         <div
@@ -441,7 +560,8 @@ export default function App() {
           onPointerCancel={endDrag}
         />
 
-        <section className="list" ref={listRef} onScroll={onListScroll}>
+        <section className="list">
+          <ScrollPane className="list-scroll" bodyRef={listRef} onScroll={onListScroll}>
           <div className="listhead">
             <span className="scope">{scopeLabel}</span>
             <span className="count">
@@ -468,6 +588,7 @@ export default function App() {
           {skills.length === 0 && !loadingMore && (
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
+          </ScrollPane>
         </section>
 
         <div
@@ -516,8 +637,12 @@ export default function App() {
                   ))}
                 </div>
               )}
-              <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
             </div>
+          )}
+          {detail && (
+            <ScrollPane axis="both" className="detail-scroll">
+              <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
+            </ScrollPane>
           )}
         </aside>
       </div>
