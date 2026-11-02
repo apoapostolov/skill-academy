@@ -25,6 +25,10 @@ export interface SkillRecord {
   /** Indexed for search only; never stored in the skills table. */
   text: string
   health: SkillIssue[]
+  /** Relative paths inside this package; feeds the library-wide reference index. */
+  relativePaths?: string[]
+  /** Mentions that resolve neither here nor yet in the library index. */
+  missingRefs?: string[]
 }
 
 const MAX_PACKAGE_FILES = 400
@@ -130,6 +134,45 @@ function listPackageFiles(dir: string): { relative: string; size: number }[] {
   return out.sort((a, b) => a.relative.localeCompare(b.relative))
 }
 
+/**
+ * Every relative path in the library, keyed by both its full form and its last two
+ * segments. A mention of `scripts/ingest_music.py` that this package does not have is a
+ * sentence about the package that does, not a broken link.
+ */
+const libraryPaths = new Set<string>()
+
+export function resetLibraryPaths(): void {
+  libraryPaths.clear()
+}
+
+export function addLibraryPaths(relatives: string[]): void {
+  for (const relative of relatives) {
+    const normalised = relative.replace(/\\/g, '/').toLowerCase()
+    libraryPaths.add(normalised)
+    const segments = normalised.split('/')
+    if (segments.length > 1) libraryPaths.add(segments.slice(-2).join('/'))
+  }
+}
+
+function resolvesElsewhere(relative: string): boolean {
+    const normalised = relative.replace(/\\/g, '/').toLowerCase()
+  if (libraryPaths.has(normalised)) return true
+  const segments = normalised.split('/')
+  return segments.length > 1 && libraryPaths.has(segments.slice(-2).join('/'))
+}
+
+/** Turns unplaced mentions into dangling flags, once the whole library is known. */
+export function applyReferenceIndex(records: SkillRecord[]): void {
+  for (const record of records) {
+    for (const relative of record.missingRefs ?? []) {
+      if (resolvesElsewhere(relative)) continue
+      if (record.health.length > 12) break
+      record.health.push({ code: 'dangling-reference', detail: `Missing ${relative}` })
+    }
+    record.missingRefs = []
+  }
+}
+
 export function parseSkill(dir: string, rootPath: string, scope: string): SkillRecord | null {
   const file = path.join(dir, 'SKILL.md')
   let raw: string
@@ -181,11 +224,11 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     if (candidate.endsWith('/')) continue
     referenced.add(candidate)
   }
+  const missingRefs: string[] = []
   for (const relative of referenced) {
-    if (!fs.existsSync(path.join(dir, relative))) {
-      health.push({ code: 'dangling-reference', detail: `Missing ${relative}` })
-      if (health.length > 12) break
-    }
+    if (fs.existsSync(path.join(dir, relative))) continue
+    // A path qualified by another package's folder is about that package.
+    if (!resolvesElsewhere(relative)) missingRefs.push(relative)
   }
 
   let mtime = new Date().toISOString()
@@ -209,7 +252,9 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     files: files.length,
     bytes,
     text: body.slice(0, 20_000),
-    health
+    health,
+    relativePaths: files.map((file) => file.relative),
+    missingRefs
   }
 }
 

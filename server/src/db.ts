@@ -49,6 +49,9 @@ export interface SaveResult {
 
 const SCHEMA_VERSION = 11
 
+/** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
+const HEALTH_VERSION = 2
+
 let database: DatabaseSync | undefined
 
 function migrate(db: DatabaseSync): void {
@@ -212,7 +215,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     const real = skill.realPath ?? skill.path
     const row = existing.get(real) as { id: number; package_hash: string } | undefined
     if (!row) {
-      const inserted = insert.run(
+      insert.run(
         skill.path,
         real,
         skill.name,
@@ -229,7 +232,9 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         JSON.stringify(skill.health),
         at
       )
-      const createdId = Number(inserted.lastInsertRowid)
+      // An upsert does not report a usable insert id, so read it back.
+      const created = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(real) as { id: number } | undefined
+      const createdId = created ? Number(created.id) : 0
       if (createdId > 0) {
         idsByReal.set(real, createdId)
         upsertBody.run(createdId, skill.text)
@@ -262,17 +267,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     changedIds.push(row.id)
   }
 
-  if (changedIds.length > 0) {
-    // A savepoint nests inside the scan-level transaction that saveScan already opened.
-    db.exec('SAVEPOINT index_changes')
-    try {
-      for (const id of changedIds) indexSkill(id)
-      db.exec('RELEASE index_changes')
-    } catch (error) {
-      db.exec('ROLLBACK TO index_changes')
-      throw error
-    }
-  }
+  if (changedIds.length > 0) rebuildFts(db)
 
   // Placements are what the scan just observed for this root; replace them only when the
   // observed set differs, so a rescan of unchanged disk performs no writes at all.
@@ -507,12 +502,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
     result.changed = 1
   }
 
-  if (result.added + result.changed > 0) {
-    const id = (db.prepare('SELECT id FROM skills WHERE real_path = ?').get(skill.realPath ?? skill.path) as
-      | { id: number }
-      | undefined)?.id
-    if (id !== undefined) indexSkill(id)
-  }
+  if (result.added + result.changed > 0) rebuildFts(db)
   return result
 }
 
@@ -542,6 +532,14 @@ export function copiesOfName(name: string): { id: number; path: string; root_pat
   return getDb()
     .prepare('SELECT id, path, root_path, mtime FROM skills WHERE lower(name) = lower(?) ORDER BY id')
     .all(name) as { id: number; path: string; root_path: string; mtime: string }[]
+}
+
+/** Makes the next scan rewrite every row, which re-runs the health checker over each skill. */
+export function forceRecheck(): number {
+  const db = getDb()
+  const result = db.prepare("UPDATE skills SET package_hash = ''").run()
+  const changes = result.changes as unknown
+  return typeof changes === 'bigint' ? Number(changes) : Number(changes ?? 0)
 }
 
 export function readRoots(): RootRow[] {

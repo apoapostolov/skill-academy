@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentRoot } from './registry'
 import { MANIFEST, isLinked } from './placement'
-import { parseSkill, type SkillRecord } from './skill'
+import { addLibraryPaths, applyReferenceIndex, parseSkill, resetLibraryPaths, type SkillRecord } from './skill'
 
 const SKIP = new Set(['node_modules', '.git', '.archive', '.cache'])
 const MAX_DEPTH = 3

@@ -7,6 +7,7 @@ import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
 import {
   addJournal,
   copiesOfName,
+  forceRecheck,
   getSkill,
   listHiddenAgents,
   listPlacements,
@@ -159,7 +160,10 @@ app.get('/api/roots', async () => {
   }
 })
 
-app.post('/api/scan', async () => {
+app.post('/api/scan', async (request) => {
+  // force=1 re-runs the health checker over every row, which a checker change requires.
+  const force = (request.query as { force?: string } | undefined)?.force === '1'
+  if (force) forceRecheck()
   const result = fullScan()
   broadcast({ type: 'library', root: null, ...result, at: lastScanAt })
   return {
