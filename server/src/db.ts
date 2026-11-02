@@ -804,3 +804,46 @@ export function listPlacements(skillId: number): SkillPlacement[] {
 }
 
 export type { RootScan }
+
+export interface PresetRow {
+  id: number
+  name: string
+  agents: string[]
+  created_at: string
+}
+
+function ensurePresets(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS presets (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT NOT NULL UNIQUE,
+         agents TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`
+    )
+    .run()
+}
+
+export function listPresets(): PresetRow[] {
+  ensurePresets()
+  const rows = getDb().prepare('SELECT * FROM presets ORDER BY name').all() as unknown as PresetRow[]
+  return rows.map((row) => ({ ...row, agents: JSON.parse(row.agents as unknown as string) as string[] }))
+}
+
+export function savePreset(name: string, agents: string[]): PresetRow {
+  ensurePresets()
+  getDb()
+    .prepare(
+      `INSERT INTO presets (name, agents, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET agents = excluded.agents`
+    )
+    .run(name, JSON.stringify(agents), new Date().toISOString())
+  return listPresets().find((row) => row.name === name)!
+}
+
+export function deletePreset(id: number): boolean {
+  ensurePresets()
+  const info = getDb().prepare('DELETE FROM presets WHERE id = ?').run(id)
+  return Number(info.changes) > 0
+}

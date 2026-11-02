@@ -22,7 +22,10 @@ import {
   setAllAgentVisibility,
   tagFacets,
   tokensByRoot,
-  totals
+  totals,
+  savePreset,
+  deletePreset,
+  listPresets
 } from './db'
 import {
   archiveSkill,
@@ -402,6 +405,29 @@ app.get('/api/placements', async (request, reply) => {
     )
 
   return { skill: { id: skill.id, name: skill.name, path: skill.path }, placements: rows }
+})
+
+app.get('/api/presets', async () => ({ presets: listPresets() }))
+
+app.post('/api/presets', async (request, reply) => {
+  const body = request.body as { name?: string; agents?: string[] } | undefined
+  const name = (body?.name ?? '').trim()
+  const agents = (body?.agents ?? []).filter((agent) => typeof agent === 'string' && agent)
+  if (!name || !agents.length) {
+    reply.code(400)
+    return { error: 'name and at least one agent are required' }
+  }
+  return { preset: savePreset(name, agents) }
+})
+
+app.delete('/api/presets/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const removed = deletePreset(Number(id))
+  if (!removed) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  return { removed }
 })
 
 app.post('/api/skills/bulk', async (request, reply) => {
