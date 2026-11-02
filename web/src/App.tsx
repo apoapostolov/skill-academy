@@ -1454,7 +1454,9 @@ export default function App() {
                   ) : (
                     <span>
                       {fmt.format(agent.count)}
-                      <span className="archcount">/{fmt.format(agent.archived ?? 0)}</span>
+                      {(agent.archived ?? 0) > 0 ? (
+                        <span className="archcount">/{fmt.format(agent.archived ?? 0)}</span>
+                      ) : null}
                     </span>
                   )}
                 </button>
