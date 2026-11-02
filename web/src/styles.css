@@ -3342,6 +3342,11 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   color: #b58b62;
 }
 
+/* Style notes for new skills, quieter than a warn because they change no behaviour. */
+.reviewrow.info .reviewrule {
+  color: #6f737b;
+}
+
 .reviewrule {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;

@@ -104,7 +104,7 @@ interface OAuthRow {
 
 interface ImproveFinding {
   rule: string
-  severity: 'error' | 'warn'
+  severity: 'error' | 'warn' | 'info'
   skill: string
   path: string
   detail: string
@@ -712,6 +712,7 @@ export default function App() {
   const [foldApplied, setFoldApplied] = useState('')
   const [modelProvider, setModelProvider] = useState('')
   const [modelList, setModelList] = useState<string[]>([])
+  const [modelChoice, setModelChoice] = useState('')
   const [modelAt, setModelAt] = useState<string | null>(null)
   const [modelCached, setModelCached] = useState(false)
   const [githubToken, setGithubToken] = useState('')
@@ -897,11 +898,15 @@ export default function App() {
       setModelAt(null)
       return
     }
+    const remembered = window.localStorage.getItem(`skill-academy.model-choice.${id}`) ?? ''
     const response = await fetch(`/api/providers/${id}/models${refresh ? '?refresh=1' : ''}`)
     const payload = (await response.json()) as { models?: string[]; at?: string | null; cached?: boolean; error?: string }
-    setModelList(payload.models ?? [])
+    const models = payload.models ?? []
+    setModelList(models)
     setModelAt(payload.at ?? null)
     setModelCached(!!payload.cached)
+    // A refresh must not throw away the reader's pick: keep it while it still exists.
+    setModelChoice(models.includes(remembered) ? remembered : '')
   }
 
   async function openImprove() {
@@ -2188,19 +2193,28 @@ export default function App() {
                       .filter((row) => !oauthRows.some((oauth) => oauth.connected && oauth.id === row.id))
                       .map((row) => (
                         <option key={row.id} value={row.id}>
-                          {row.label} · key
+                          {row.label}
                         </option>
                       ))}
                     {oauthRows
                       .filter((row) => row.connected)
                       .map((row) => (
                         <option key={`oauth-${row.id}`} value={row.id}>
-                          {row.label} · signed in
+                          {row.label}
                         </option>
                       ))}
                   </select>
 
-                  <select className="modelsel" value="" onChange={() => undefined} disabled={!modelList.length}>
+                  <select
+                    className="modelsel"
+                    value={modelChoice}
+                    onChange={(event) => {
+                      const chosen = event.target.value
+                      setModelChoice(chosen)
+                      if (modelProvider) window.localStorage.setItem(`skill-academy.model-choice.${modelProvider}`, chosen)
+                    }}
+                    disabled={!modelList.length}
+                  >
                     <option value="">
                       {modelList.length ? `${modelList.length} models available` : 'No models yet'}
                     </option>

@@ -13,7 +13,7 @@ import { parseYaml } from './skill'
 
 export interface ImproveFinding {
   rule: RuleId
-  severity: 'error' | 'warn'
+  severity: 'error' | 'warn' | 'info'
   skill: string
   path: string
   /** The evidence a reader needs to agree or disagree, never a summary of it. */
@@ -35,15 +35,17 @@ export type RuleId =
   | 'shadow-category'
   | 'ambiguous-name'
 
-export const RULES: Array<{ id: RuleId; severity: 'error' | 'warn'; source: string; why: string }> = [
+export const RULES: Array<{ id: RuleId; severity: 'error' | 'warn' | 'info'; source: string; why: string }> = [
   { id: 'category-mismatch', severity: 'error', source: 'family-audit.py:1', why: 'category must equal the top-level folder; the field never follows a move on its own' },
   { id: 'unexpected-unfiled', severity: 'error', source: 'family-audit.py:2', why: 'a skill with no family: tag cannot be found by the family it belongs to' },
   { id: 'multi-family', severity: 'error', source: 'family-audit.py:2', why: 'one primary family per skill; a second one splits curation' },
   { id: 'undocumented-family', severity: 'error', source: 'family-audit.py:3', why: 'a family used on disk but absent from CATEGORIES.md has no owner' },
   { id: 'empty-family', severity: 'error', source: 'family-audit.py:4', why: 'a registry family with no member is a stale row' },
   { id: 'member-drift', severity: 'warn', source: 'family-audit.py:5', why: 'the registry count and the disk disagree, so one of them is out of date' },
-  { id: 'description-over-budget', severity: 'error', source: 'skill-curation: description budget', why: 'the index truncates at 57 characters and the routing signal is lost' },
-  { id: 'description-no-period', severity: 'warn', source: 'skill-curation: description budget', why: 'one sentence, trigger first, ending in a period' },
+  // The budget is written for new skills; a description that predates it is a style note, not a
+  // defect, so it cannot outrank a real structural finding in this report.
+  { id: 'description-over-budget', severity: 'info', source: 'skill-curation: new-skill description budget', why: 'the index truncates at 57 characters, so a new description must fit 60' },
+  { id: 'description-no-period', severity: 'info', source: 'skill-curation: new-skill description budget', why: 'one sentence, trigger first, ending in a period' },
   { id: 'stub-body', severity: 'error', source: 'skill-curation: ingest completion check', why: 'a stub routes fine and delivers nothing when loaded' },
   { id: 'name-drift', severity: 'error', source: 'skill-curation: taxonomy', why: 'name is the leaf directory name; a mismatch breaks lookup' },
   { id: 'dormant-tags', severity: 'warn', source: 'skill-curation: tags', why: 'tags live in metadata.hermes.tags; a top-level tags: key is a dormant fallback' },
