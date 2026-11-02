@@ -454,6 +454,12 @@ app.post('/api/skills/bulk', async (request, reply) => {
           continue
         }
         unplace(target, TRASH_DIR)
+        // unplace refuses what it did not create, and a directory someone else placed
+        // must never be reported as switched off. Check the filesystem, not the return.
+        if (existsSync(target)) {
+          results.push({ id, ok: false, error: 'not-ours' })
+          continue
+        }
         addJournal('unplace', { skillId: id, agent, target, bulk: true })
         results.push({ id, ok: true, mode: 'off' })
         continue
