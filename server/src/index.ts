@@ -404,6 +404,46 @@ app.get('/api/placements', async (request, reply) => {
   return { skill: { id: skill.id, name: skill.name, path: skill.path }, placements: rows }
 })
 
+app.post('/api/skills/bulk', async (request, reply) => {
+  // Bulk work is the same action repeated, not a new action. Every id goes through the
+  // single-row path so each one is journalled, and a failure on one never takes the rest down.
+  const body = request.body as { action?: string; ids?: number[]; reason?: string } | undefined
+  const ids = Array.isArray(body?.ids) ? body!.ids.filter((id) => Number.isFinite(id)) : []
+  if (!ids.length) {
+    reply.code(400)
+    return { error: 'ids is required' }
+  }
+  const action = body?.action ?? 'archive'
+
+  if (action !== 'archive') {
+    reply.code(400)
+    return { error: `unknown action: ${action}` }
+  }
+
+  const results: Array<{ id: number; ok: boolean; error?: string; trashId?: number }> = []
+  for (const id of ids) {
+    const skill = getSkill(id)
+    if (!skill) {
+      results.push({ id, ok: false, error: 'not-found' })
+      continue
+    }
+    try {
+      const result = archiveSkill(id, body?.reason ?? 'bulk')
+      results.push({ id, ok: true, trashId: result.trashId })
+    } catch (error) {
+      results.push({ id, ok: false, error: (error as Error).message })
+    }
+  }
+
+  return {
+    action,
+    total: ids.length,
+    archived: results.filter((row) => row.ok).length,
+    failed: results.filter((row) => !row.ok).length,
+    results
+  }
+})
+
 app.get('/api/skills/:id/compare', async (request, reply) => {
   // Compare with latest, without a model in the loop: what the two copies actually say.
   // The AI pass can summarise this later; the diff is the part that must never be guessed.
