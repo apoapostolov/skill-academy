@@ -48,6 +48,7 @@ import {
   writeSettings
 } from './lifecycle'
 import { consolidateDryRun } from './consolidate'
+import { applyConsolidation, undoConsolidation } from './consolidateApply'
 import { curateDryRun } from './curate'
 import { improveDryRun } from './improve'
 import { PROVIDERS, cachedModels, providerById, providerSummary, refreshModels, testProvider } from './providers'
@@ -532,6 +533,38 @@ app.get('/api/github/status', async () => {
     remaining: payload?.resources?.core?.remaining ?? null,
     limit: payload?.resources?.core?.limit ?? null
   }
+})
+
+app.post('/api/consolidate/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as { key?: string; read?: boolean; confirm?: boolean }
+  if (!body.key) {
+    reply.code(400)
+    return { error: 'key is required' }
+  }
+  // The skill's own gate: bodies are read end to end before anything is written.
+  if (!body.read) {
+    reply.code(428)
+    return { error: 'read-both-bodies', detail: 'confirm that both bodies were read before applying' }
+  }
+  if (!body.confirm) {
+    reply.code(428)
+    return { error: 'confirmation-required', detail: 'send confirm: true to write the merge' }
+  }
+  const result = applyConsolidation(body.key)
+  if ('error' in result) {
+    reply.code(result.error === 'group-not-found' ? 404 : 409)
+    return result
+  }
+  return result
+})
+
+app.post('/api/consolidate/undo', async (request, reply) => {
+  const body = (request.body ?? {}) as { archivePath?: string; originalPath?: string }
+  if (!body.archivePath || !body.originalPath) {
+    reply.code(400)
+    return { error: 'archivePath and originalPath are required' }
+  }
+  return undoConsolidation(body.archivePath, body.originalPath)
 })
 
 app.post('/api/consolidate/dry-run', async () => {

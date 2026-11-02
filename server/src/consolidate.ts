@@ -76,7 +76,7 @@ function frontmatter(file: string): { fm: Record<string, string>; body: string }
   return { fm, body: text.slice(match ? match[0].length : 0) }
 }
 
-function bodyOf(dir: string): Body | null {
+export function bodyOf(dir: string): Body | null {
   const file = path.join(dir, 'SKILL.md')
   if (!existsSync(file)) return null
   const { fm, body } = frontmatter(file)

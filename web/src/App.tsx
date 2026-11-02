@@ -845,13 +845,6 @@ export default function App() {
     await refreshProviders()
   }
 
-  async function findProviderModels(id: string) {
-    setProviderNotes((notes) => ({ ...notes, [id]: 'asking the server…' }))
-    const response = await fetch(`/api/providers/${id}/models`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-    const payload = (await response.json()) as { error?: string; models?: string[] }
-    setProviderNotes((notes) => ({ ...notes, [id]: payload.error ?? 'model list refreshed' }))
-    await refreshProviders()
-  }
 
   async function saveGithubToken() {
     const token = githubToken.trim()
@@ -1782,9 +1775,6 @@ export default function App() {
                         />
                         <button className="ghost small" onClick={() => void saveProviderBase(row.id)}>
                           Save URL
-                        </button>
-                        <button className="ghost small" onClick={() => void findProviderModels(row.id)} title="Ask the server what it serves">
-                          Models
                         </button>
                       </>
                     )}
