@@ -64,6 +64,51 @@ type Scope =
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
 
+function ChevronGlyph({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`chevron ${open ? 'open' : ''}`}
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3.5 10.5 8 6 12.5" />
+    </svg>
+  )
+}
+
+/** A block header that collapses its body to this single line. State persists per block. */
+function BlockHead({
+  label,
+  meta,
+  open,
+  onToggle
+}: {
+  label: string
+  meta?: React.ReactNode
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      className={`block-head ${open ? 'open' : 'closed'}`}
+      onClick={onToggle}
+      aria-expanded={open}
+      title={open ? `Collapse ${label}` : `Expand ${label}`}
+    >
+      <ChevronGlyph open={open} />
+      <span className="bh-label">{label}</span>
+      <span className="bh-meta">{meta}</span>
+    </button>
+  )
+}
+
 function SelectAllGlyph({ checked }: { checked: boolean }) {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
@@ -277,6 +322,26 @@ export default function App() {
   const [selected, setSelected] = useState<number | null>(null)
   const [detail, setDetail] = useState<(Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> } }) | null>(null)
   const [openRef, setOpenRef] = useState<{ name: string; text: string } | null>(null)
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = window.localStorage.getItem('skill-academy.collapsed-blocks')
+      return stored ? (JSON.parse(stored) as Record<string, boolean>) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  function toggleBlock(key: string) {
+    setCollapsedBlocks((current) => {
+      const next = { ...current, [key]: !current[key] }
+      try {
+        window.localStorage.setItem('skill-academy.collapsed-blocks', JSON.stringify(next))
+      } catch {
+        /* a private window is not a reason to lose the toggle */
+      }
+      return next
+    })
+  }
   const [wrap, setWrap] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -770,12 +835,14 @@ export default function App() {
               </div>
               {placements && (
                 <div className="placements">
-                  <div className="pl-head">
-                    <span>Agents</span>
-                    <span className="pl-count">
-                      {placements.filter((row) => row.state !== 'off').length} of {placements.length}
-                    </span>
-                  </div>
+                  <BlockHead
+                    label="Agents"
+                    meta={`${placements.filter((row) => row.state !== 'off').length} of ${placements.length}`}
+                    open={!collapsedBlocks.agents}
+                    onToggle={() => toggleBlock('agents')}
+                  />
+                  {!collapsedBlocks.agents && (
+                    <>
                   {placements
                     .filter((row) => showAllAgents || row.state !== 'off')
                     .map((row) => (
@@ -812,6 +879,8 @@ export default function App() {
                         : `Show ${placements.filter((row) => row.state === 'off').length} available`}
                     </button>
                   )}
+                    </>
+                  )}
                 </div>
               )}
               {detail.package && detail.package.entries.length > 0 && (
@@ -827,11 +896,14 @@ export default function App() {
                     if (rows.length === 0) return null
                     return (
                       <div className="pkg-group" key={kind}>
-                        <div className="pkg-head">
-                          <span>{label}</span>
-                          <span>{rows.length}</span>
-                        </div>
-                        {rows.slice(0, 12).map((entry) => (
+                        <BlockHead
+                          label={label}
+                          meta={rows.length}
+                          open={!collapsedBlocks[`pkg:${kind}`]}
+                          onToggle={() => toggleBlock(`pkg:${kind}`)}
+                        />
+                        {!collapsedBlocks[`pkg:${kind}`] &&
+                          rows.slice(0, 12).map((entry) => (
                           <button
                             className="pkg-row"
                             key={entry.relPath}
