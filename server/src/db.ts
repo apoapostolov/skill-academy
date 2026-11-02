@@ -1007,3 +1007,26 @@ export function lockRows(): LockRow[] {
     )
     .all() as unknown as LockRow[]
 }
+
+export function setSourceSkills(id: number, skills: string[]): boolean {
+  ensureSources()
+  const columns = getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'skills')) {
+    getDb().prepare('ALTER TABLE sources ADD COLUMN skills TEXT').run()
+  }
+  const info = getDb().prepare('UPDATE sources SET skills = ? WHERE id = ?').run(JSON.stringify(skills), id)
+  return Number(info.changes) > 0
+}
+
+export function sourceSkills(id: number): string[] {
+  ensureSources()
+  const columns = getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'skills')) return []
+  const row = getDb().prepare('SELECT skills FROM sources WHERE id = ?').get(id) as { skills?: string | null } | undefined
+  if (!row?.skills) return []
+  try {
+    return JSON.parse(row.skills) as string[]
+  } catch {
+    return []
+  }
+}

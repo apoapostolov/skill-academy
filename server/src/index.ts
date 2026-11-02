@@ -34,7 +34,8 @@ import {
   recordSourceCheck,
   deleteSource,  recordSourceEvent,
   listSourceEvents,
-  acknowledgeSourceEvent,  lockRows,
+  acknowledgeSourceEvent,  lockRows,  setSourceSkills,
+  sourceSkills,
 } from './db'
 import {
   archiveSkill,
@@ -569,6 +570,26 @@ app.get('/api/sources/status', async () => ({
 
 app.post('/api/sources/poll', async () => pollSources())
 
+async function fetchRaw(repo: string, ref: string, filePath: string): Promise<{ ok: boolean; text: string; status: number }> {
+  const url = `https://raw.githubusercontent.com/${repo}/${ref}/${filePath.replace(/^\/+/, '')}`
+  const response = await fetch(url, { headers: { 'user-agent': 'skill-academy' } })
+  if (!response.ok) return { ok: false, text: '', status: response.status }
+  return { ok: true, text: await response.text(), status: 200 }
+}
+
+app.post('/api/sources/:id/skills', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const source = listSources().find((row) => row.id === Number(id))
+  if (!source) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const body = (request.body ?? {}) as { skills?: string[] }
+  const skills = (body.skills ?? []).map((entry) => String(entry).trim()).filter(Boolean)
+  setSourceSkills(source.id, skills)
+  return { repo: source.repo, skills }
+})
+
 const updatePlans = new Map<string, { sourceId: number; commit: string | null; release: string | null; at: string }>()
 
 app.post('/api/sources/:id/plan-update', async (request, reply) => {
@@ -586,6 +607,21 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
     return fresh
   }
 
+  const mapped = sourceSkills(source.id)
+  const files: Array<{ path: string; status: number; hash: string | null; bytes: number }> = []
+  if (mapped.length) {
+    const ref = fresh.commit ?? fresh.release ?? 'HEAD'
+    for (const filePath of mapped) {
+      const raw = await fetchRaw(source.repo, ref, filePath)
+      files.push({
+        path: filePath,
+        status: raw.status,
+        hash: raw.ok ? createHash('sha256').update(raw.text).digest('hex').slice(0, 16) : null,
+        bytes: raw.ok ? Buffer.byteLength(raw.text, 'utf8') : 0
+      })
+    }
+  }
+
   const commitChanged = fresh.commit !== fresh.previous.commit
   const releaseChanged = fresh.release !== fresh.previous.release
   const planId = `${source.id}-${Date.now().toString(36)}`
@@ -601,6 +637,7 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
       ...(commitChanged ? [{ kind: 'commit', from: fresh.previous.commit, to: fresh.commit }] : []),
       ...(releaseChanged ? [{ kind: 'release', from: fresh.previous.release, to: fresh.release }] : [])
     ],
+    files,
     affects: [],
     note:
       'Confirming records the decision and journals it. Pulling new skill files needs a repository to library mapping, which is the next step of this phase.'
@@ -621,11 +658,38 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
   }
   updatePlans.delete(body.planId!)
 
+  const source = listSources().find((row) => row.id === Number(id))
+  const mapped = source ? sourceSkills(source.id) : []
+  const staged: string[] = []
+  if (source && mapped.length) {
+    const ref = plan.commit ?? plan.release ?? 'HEAD'
+    const root = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'staging', `${source.id}-${ref.slice(0, 12)}`)
+    for (const filePath of mapped) {
+      const raw = await fetchRaw(source.repo, ref, filePath)
+      if (!raw.ok) continue
+      const target = path.join(root, filePath.replace(/^\/+/, ''))
+      mkdirSync(path.dirname(target), { recursive: true })
+      writeFileSync(target, raw.text)
+      staged.push(target)
+    }
+    addJournal('source-fetch', { repo: source.repo, ref, staged })
+  }
+
   const acknowledged = listSourceEvents().filter((event) => event.repo === listSources().find((row) => row.id === Number(id))?.repo)
   for (const event of acknowledged) acknowledgeSourceEvent(event.id)
   addJournal('source-update', { repo: acknowledged[0]?.repo ?? '', commit: plan.commit, release: plan.release, events: acknowledged.length })
 
-  return { applied: true, from: plan.at, commit: plan.commit, release: plan.release, acknowledged: acknowledged.length }
+  return {
+    applied: true,
+    from: plan.at,
+    commit: plan.commit,
+    release: plan.release,
+    acknowledged: acknowledged.length,
+    staged,
+    note: staged.length
+      ? 'Files are staged. Installing them into the library is a separate, reversible step.'
+      : 'No mapped files to fetch.'
+  }
 })
 
 app.post('/api/sources/check-all', async () => {
