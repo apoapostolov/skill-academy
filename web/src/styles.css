@@ -1293,3 +1293,69 @@ h2 {
 .block-head .chevron.open {
   transform: rotate(90deg);
 }
+
+/* Header: search centred, actions right, a single primary action left. */
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr minmax(220px, 420px) 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar .searchwrap {
+  justify-self: center;
+  width: 100%;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+  position: relative;
+}
+
+.settings-pop {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 30;
+  width: 330px;
+  padding: 10px 12px 8px;
+  background: var(--surface);
+  border: 1px solid var(--sep);
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.settings-pop .sp-head {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--sep);
+  margin-bottom: 6px;
+}
+
+.settings-pop .sp-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.settings-pop .sp-row code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-3);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: right;
+}

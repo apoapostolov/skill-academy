@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 interface State {
   version: string
+  dataDir: string
+  dbPath: string
   uptimeMs: number
   registry: { roots: number; detected: number; codes: number }
   library: { skills: number; tokens: number; issues: number; roots: number }
@@ -63,6 +65,15 @@ type Scope =
 
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
+
+function GearGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 function ChevronGlyph({ open }: { open: boolean }) {
   return (
@@ -322,6 +333,7 @@ export default function App() {
   const [selected, setSelected] = useState<number | null>(null)
   const [detail, setDetail] = useState<(Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> } }) | null>(null)
   const [openRef, setOpenRef] = useState<{ name: string; text: string } | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>(() => {
     try {
       const stored = window.localStorage.getItem('skill-academy.collapsed-blocks')
@@ -640,20 +652,61 @@ export default function App() {
       </div>
 
       <div className="toolbar">
-        <input
-          className="search"
-          placeholder="Filter by name, description or tag"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          spellCheck={false}
-        />
-        <div className="spacer" />
-        <a className="ghost btn-quiet" href="/dev">
-          Dev panel
-        </a>
         <button className="btn primary" onClick={scan} disabled={scanning}>
           {scanning ? 'Scanning…' : 'Scan'}
         </button>
+        <div className="searchwrap">
+          <input
+            className="search"
+            placeholder="Filter by name, description or tag"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            spellCheck={false}
+          />
+        </div>
+        <div className="toolbar-right">
+          <a className="ghost btn-quiet" href="/dev">
+            Dev panel
+          </a>
+          <button
+            className="ghost iconbtn"
+            onClick={() => setSettingsOpen((value) => !value)}
+            title="Settings"
+            aria-label="Settings"
+            aria-expanded={settingsOpen}
+          >
+            <GearGlyph />
+          </button>
+          {settingsOpen && state && (
+            <div className="settings-pop" role="dialog" aria-label="Settings">
+              <div className="sp-head">Settings</div>
+              <div className="sp-row">
+                <span>Data folder</span>
+                <code>{state.dataDir}</code>
+              </div>
+              <div className="sp-row">
+                <span>Index</span>
+                <code>{state.dbPath}</code>
+              </div>
+              <div className="sp-row">
+                <span>Roots detected</span>
+                <span>
+                  {state.registry.detected} of {state.registry.roots}
+                </span>
+              </div>
+              <div className="sp-row">
+                <span>Skills indexed</span>
+                <span>
+                  {fmt.format(state.library.skills)} · {fmt.format(state.library.tokens)} tokens
+                </span>
+              </div>
+              <div className="sp-row">
+                <span>Version</span>
+                <span>{state.version}</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {error && <div className="banner error">API error: {error}</div>}
