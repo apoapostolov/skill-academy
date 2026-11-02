@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { getDb } from './db'
+import { insideProtected } from './safety'
 
 /**
  * Consolidate, built to `skill-consolidation`'s rules rather than to a similarity score.
@@ -53,6 +54,8 @@ export interface ConsolidateMember {
 
 export interface ConsolidateGroup {
   key: string
+  /** True when a member lives in the live agent library, which a write is not allowed to touch. */
+  liveRoot?: boolean
   mergeType: MergeType
   evidence: string
   survivor: string | null
@@ -438,6 +441,11 @@ export function consolidateDryRun(): {
       'shape-only': 0
   }
   for (const group of groups) summary[group.mergeType] += 1
+
+  // Mark live-library groups so the panel can say a write is blocked before anyone clicks Apply.
+  for (const group of groups) {
+    group.liveRoot = !!insideProtected(group.members.map((member) => member.path))
+  }
 
   return { groups, summary, scanned: bodies.length, roots, ms: Date.now() - started }
 }

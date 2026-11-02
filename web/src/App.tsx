@@ -135,6 +135,7 @@ interface FoldView {
 
 interface ConsolidateGroupView {
   key: string
+  liveRoot?: boolean
   mergeType: string
   evidence: string
   survivor: string | null
@@ -966,12 +967,20 @@ export default function App() {
         dryRun: false
       })
     })
-    const payload = (await response.json()) as { applied?: boolean; archive?: string; error?: string; detail?: unknown }
+    const payload = (await response.json()) as {
+    applied?: boolean
+    archive?: string
+    error?: string
+    detail?: { path?: string; hint?: string } | unknown
+  }
     setFoldBusy('')
+    const detail = payload.detail as { path?: string; hint?: string } | undefined
     setFoldApplied(
-      payload.error
-        ? `${payload.error}: ${JSON.stringify(payload.detail)}`
-        : `written · archived at ${payload.archive ?? 'unknown'}`
+      payload.error === 'protected-root'
+        ? `Nothing was written. ${detail?.path ?? 'This skill'} is in the live library. ${detail?.hint ?? ''}`
+        : payload.error
+          ? `${payload.error}: ${JSON.stringify(payload.detail)}`
+          : `written · archived at ${payload.archive ?? 'unknown'}`
     )
     if (payload.applied) await openConsolidate()
   }
@@ -1906,6 +1915,11 @@ export default function App() {
                       <span className="cgname">{group.plan?.survivor ?? group.key}</span>
                       <span className="cgev">{group.evidence}</span>
                       <span className="cgcount">{group.members.length} copies</span>
+                      {group.liveRoot && (
+                        <span className="cglock" title="This group lives in the live agent library, so a write is refused.">
+                          live library · write blocked
+                        </span>
+                      )}
                     </button>
                     {reviewOpenKey === group.key && (
                       <div className="cgbody">

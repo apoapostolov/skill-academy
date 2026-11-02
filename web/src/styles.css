@@ -3547,3 +3547,15 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   font-size: 10.5px;
   color: #8d9199;
 }
+
+/* A group in the live library says so before anyone reaches for Apply. */
+.cglock {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(184, 92, 87, 0.35);
+  color: #b8666a;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
