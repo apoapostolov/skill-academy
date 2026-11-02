@@ -1915,3 +1915,17 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .nav.trash-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .nav.trash-row .iconbtn { opacity: 0.55; }
 .nav.trash-row:hover .iconbtn { opacity: 1; }
+
+/* Category chip reads as a grouping label, not a tag. */
+.chip.category {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  letter-spacing: 0.01em;
+}
+
+.chip.version {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}

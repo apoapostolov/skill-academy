@@ -26,6 +26,8 @@ export interface SkillRecord {
   bodyChars: number
   tokens: number
   tags: string[]
+  /** Declared `category:` in frontmatter, empty when absent. */
+  category: string
   packageHash: string
   mtime: string
   files: number
@@ -219,6 +221,11 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
   const folderTag = relative.length > 1 ? relative[0] : ''
   const tags = Array.from(new Set(folderTag ? [...declared, folderTag] : declared)).slice(0, 24)
 
+  // `category` is the author's own grouping, separate from tags: it is not merged into
+  // them, so a skill can be `writing` by category and still carry its own tag set.
+  const declaredCategory = typeof data.category === 'string' ? data.category.trim() : ''
+  const category = declaredCategory || (folderTag && data.category === undefined ? '' : '')
+
   const files = listPackageFiles(dir)
   const bytes = files.reduce((sum, entry) => sum + entry.size, 0)
   const hash = crypto.createHash('sha256').update(raw)
@@ -275,6 +282,7 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     // A real BPE count, not a character guess: context cost is a number people act on.
     tokens: tokenCount(raw),
     tags,
+    category,
     packageHash,
     mtime,
     files: files.length,

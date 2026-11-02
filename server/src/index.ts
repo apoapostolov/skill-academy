@@ -6,6 +6,7 @@ import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, REPO_ROOT } from './config'
 import {
   addJournal,
+  categoryFacets,
   copiesOfName,
   forceRecheck,
   getSkill,
@@ -215,6 +216,7 @@ app.get('/api/skills', async (request) => {
     q: params.q?.trim() || undefined,
     root: params.root || undefined,
     tag: params.tag || undefined,
+    category: params.category || undefined,
     health: params.health === '1',
     limit: params.limit ? Number(params.limit) : undefined,
     offset: params.offset ? Number(params.offset) : undefined
@@ -248,6 +250,8 @@ app.get('/api/skills/:id', async (request, reply) => {
       : null
   return {
     ...row,
+    version: self.version,
+    repo: self.repo,
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
     body: readSkillBody(row.path),
@@ -323,6 +327,7 @@ app.get('/api/facets', async () => {
     agents: uniqueAgents,
     hidden: listHiddenAgents(),
     tags: tagFacets(),
+    categories: categoryFacets(),
     issues: totals().issues
   }
 })

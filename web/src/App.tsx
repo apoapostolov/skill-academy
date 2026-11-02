@@ -29,6 +29,7 @@ interface Skill {
   tokens: number
   body_chars: number
   tags: string[]
+  category: string
   health: Issue[]
   mtime: string
   version?: string
@@ -63,6 +64,7 @@ interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
   hidden: string[]
   tags: { tag: string; count: number }[]
+  categories: { category: string; count: number }[]
   issues: number
 }
 
@@ -71,6 +73,7 @@ type Scope =
   | { kind: 'health' }
   | { kind: 'agent'; agent: string; path: string }
   | { kind: 'tag'; tag: string }
+  | { kind: 'category'; category: string }
 
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
@@ -620,6 +623,7 @@ export default function App() {
     if (debounced) params.set('q', debounced)
     if (scope.kind === 'agent') params.set('root', scope.path)
     if (scope.kind === 'tag') params.set('tag', scope.tag)
+    if (scope.kind === 'category') params.set('category', scope.category)
     if (scope.kind === 'health') params.set('health', '1')
     params.set('limit', String(PAGE))
     params.set('offset', String(offset))
@@ -836,6 +840,7 @@ export default function App() {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
     if (scope.kind === 'tag') return `#${scope.tag}`
+    if (scope.kind === 'category') return scope.category
     if (scope.kind === 'agent') return scope.agent
     return 'All skills'
   }, [scope, facets])
@@ -1070,6 +1075,17 @@ export default function App() {
               )
             })}
 
+          {facets && facets.categories.length > 0 && <div className="group">Categories</div>}
+          {facets?.categories.slice(0, 10).map((entry) => (
+            <button
+              key={entry.category}
+              className={`nav root ${scope.kind === 'category' && scope.category === entry.category ? 'active' : ''}`}
+              onClick={() => setScope({ kind: 'category', category: entry.category })}
+              title="Category declared in frontmatter"
+            >
+              {entry.category} <span>{fmt.format(entry.count)}</span>
+            </button>
+          ))}
           {facets && facets.tags.length > 0 && <div className="group">Tags</div>}
           {facets?.tags.slice(0, 10).map((entry) => (
             <button
@@ -1179,6 +1195,8 @@ export default function App() {
               </div>
               <div className="path">{detail.path}</div>
               <div className="chips">
+                {detail.version ? <span className="chip version">v{detail.version.replace(/^v/i, '')}</span> : null}
+                {detail.category ? <span className="chip category">{detail.category}</span> : null}
                 {detail.tags.map((tag) => (
                   <span className="chip" key={tag}>
                     #{tag}

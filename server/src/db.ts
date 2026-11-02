@@ -25,6 +25,7 @@ export interface SkillRow {
   body_chars: number
   tokens: number
   tags: string
+  category: string
   package_hash: string
   mtime: string
   files: number
@@ -36,6 +37,7 @@ export interface SkillQuery {
   q?: string
   root?: string
   tag?: string
+  category?: string
   health?: boolean
   limit?: number
   offset?: number
@@ -47,7 +49,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 13
+const SCHEMA_VERSION = 14
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
 const HEALTH_VERSION = 2
@@ -88,6 +90,7 @@ function migrate(db: DatabaseSync): void {
       body_chars INTEGER NOT NULL DEFAULT 0,
       tokens INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL DEFAULT '[]',
+      category TEXT NOT NULL DEFAULT '',
       package_hash TEXT NOT NULL DEFAULT '',
       mtime TEXT NOT NULL DEFAULT '',
       files INTEGER NOT NULL DEFAULT 0,
@@ -234,12 +237,12 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   const existing = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ?')
   const insert = db.prepare(`
     INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
-                        package_hash, mtime, files, bytes, health, seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        category, package_hash, mtime, files, bytes, health, seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const update = db.prepare(`
     UPDATE skills SET path = ?, name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
-      tags = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+      tags = ?, category = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
     WHERE id = ?
   `)
   const upsertBody = db.prepare(
@@ -262,6 +265,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         skill.bodyChars,
         skill.tokens,
         JSON.stringify(skill.tags),
+        skill.category,
         skill.packageHash,
         skill.mtime,
         skill.files,
@@ -295,6 +299,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       skill.bodyChars,
       skill.tokens,
       JSON.stringify(skill.tags),
+      skill.category,
       skill.packageHash,
       skill.mtime,
       skill.files,
@@ -479,6 +484,10 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     filters.push('s.tags LIKE ?')
     params.push(`%"${query.tag}"%`)
   }
+  if (query.category) {
+    filters.push('s.category = ?')
+    params.push(query.category)
+  }
   if (query.health) filters.push("s.health <> '[]'")
 
   if (match) {
@@ -517,8 +526,8 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   if (!row) {
     db.prepare(`
       INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
-                          package_hash, mtime, files, bytes, health, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          category, package_hash, mtime, files, bytes, health, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       skill.path,
       real,
@@ -529,6 +538,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
       skill.bodyChars,
       skill.tokens,
       JSON.stringify(skill.tags),
+      skill.category,
       skill.packageHash,
       skill.mtime,
       skill.files,
@@ -546,7 +556,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   } else if (row.package_hash !== skill.packageHash) {
     db.prepare(`
       UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
-        tags = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+        tags = ?, category = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
       WHERE path = ?
     `).run(
       skill.name,
@@ -556,6 +566,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
       skill.bodyChars,
       skill.tokens,
       JSON.stringify(skill.tags),
+      skill.category,
       skill.packageHash,
       skill.mtime,
       skill.files,
@@ -660,6 +671,13 @@ export function tagFacets(): { tag: string; count: number }[] {
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
     .slice(0, 24)
+}
+
+/** Categories are the authors' own grouping, counted separately from tags. */
+export function categoryFacets(): { category: string; count: number }[] {
+  return getDb()
+    .prepare("SELECT category, COUNT(*) AS count FROM skills WHERE category <> '' GROUP BY category ORDER BY count DESC, category")
+    .all() as unknown as { category: string; count: number }[]
 }
 
 export function countsByRoot(): Record<string, number> {
