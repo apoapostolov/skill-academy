@@ -2116,6 +2116,8 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 /* Prefixed tags: the name carries the meaning, the pill carries the axis. */
 .tag-name {
   letter-spacing: 0;
+  color: inherit;
+  font: inherit;
 }
 
 .tag-prefix {

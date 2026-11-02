@@ -109,67 +109,53 @@ function flowList(text: string): string[] {
 }
 
 /**
- * Reads frontmatter for both conventions in the same pass. Claude Code skills keep `tags`,
- * `category` and `version` at the top level; Hermes nests them under `metadata.hermes`. The
- * block is parsed by indentation, so either shape resolves, and a file carrying both is
- * readable rather than half-ignored.
+ * Reads frontmatter for both conventions into flat dotted keys. Claude Code skills keep
+ * `tags`, `category` and `version` at the top level; Hermes nests them under
+ * `metadata.hermes`. Indentation decides the prefix, so either shape resolves, and a file
+ * carrying both is readable rather than half-ignored.
  */
-function parseYaml(block: string): Record<string, FrontmatterValue> {
-  const root: Record<string, FrontmatterValue> = {}
-  const stack: Array<{ indent: number; node: Record<string, FrontmatterValue> }> = [{ indent: -1, node: root }]
-  let pending: { node: Record<string, FrontmatterValue>; key: string; indent: number } | null = null
+export function parseYaml(block: string): Record<string, FrontmatterValue> {
+  const flat: Record<string, FrontmatterValue> = {}
+  const stack: Array<{ indent: number; prefix: string }> = [{ indent: -1, prefix: '' }]
+  let listPath: string | null = null
+  let listIndent = -1
 
   for (const rawLine of block.split(/\r?\n/)) {
     if (!rawLine.trim() || rawLine.trimStart().startsWith('#')) continue
     const indent = rawLine.length - rawLine.trimStart().length
     const line = rawLine.trimStart()
 
-    if (pending) {
-      if (indent > pending.indent) {
-        const item = line.match(/^-\s*(.*)$/)
-        if (item) {
-          const list = Array.isArray(pending.node[pending.key]) ? (pending.node[pending.key] as string[]) : []
-          list.push(scalar(item[1]))
-          pending.node[pending.key] = list.filter(Boolean)
-          continue
-        }
-        const existing = pending.node[pending.key]
-        if (Array.isArray(existing) && existing.length === 0) {
-          const child: Record<string, FrontmatterValue> = {}
-          pending.node[pending.key] = child
-          stack.push({ indent: pending.indent, node: child })
-        }
-      }
-      pending = null
+    if (listPath && indent > listIndent && line.startsWith('-')) {
+      const entries = flat[listPath]
+      if (Array.isArray(entries)) entries.push(scalar(line.replace(/^-\s*/, '')))
+      continue
     }
+    listPath = null
 
     const pair = line.match(/^([A-Za-z0-9_.-]+):\s*(.*)$/)
     if (!pair) continue
-    const [, key, rawValue] = pair
     while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop()
-    const node = stack[stack.length - 1].node
-    const value = rawValue.trim()
+    const parent = stack[stack.length - 1].prefix
+    const key = parent ? `${parent}.${pair[1]}` : pair[1]
+    const value = pair[2].trim()
 
     if (!value) {
-      node[key] = []
-      pending = { node, key, indent }
+      flat[key] = []
+      stack.push({ indent, prefix: key })
+      listPath = key
+      listIndent = indent
     } else if (value.startsWith('[') && value.endsWith(']')) {
-      node[key] = flowList(value)
+      flat[key] = flowList(value)
     } else {
-      node[key] = scalar(value)
+      flat[key] = scalar(value)
     }
   }
 
-  return root
+  return flat
 }
 
 function readPath(data: Record<string, FrontmatterValue>, path: string): FrontmatterValue | undefined {
-  let node: FrontmatterValue | undefined = data
-  for (const key of path.split('.')) {
-    if (!node || typeof node !== 'object' || Array.isArray(node)) return undefined
-    node = (node as Record<string, FrontmatterValue>)[key]
-  }
-  return node
+  return data[path]
 }
 
 function asText(value: FrontmatterValue | undefined): string {
@@ -185,6 +171,39 @@ function asList(value: FrontmatterValue | undefined): string[] {
       .filter(Boolean)
   }
   return []
+}
+
+/**
+ * A last, shape-independent sweep over the frontmatter text for tags: whatever nesting or
+ * quoting a file uses, a `tags:`/`keywords:` value and its list items are tags.
+ */
+function rawTags(block: string): string[] {
+  const collected: string[] = []
+  let capturing = false
+  const clean = (value: string) => value.trim().replace(/^["']|["']$/g, '').trim()
+
+  for (const line of block.split(/\r?\n/)) {
+    const head = line.match(/^\s*-?\s*(?:tags|keywords)\s*:\s*(.*)$/)
+    if (head) {
+      const value = head[1].trim()
+      capturing = !value
+      if (value) {
+        const inner = value.startsWith('[') ? value.replace(/^\[|\]$/g, '') : value
+        for (const piece of inner.split(',')) {
+          const tag = clean(piece)
+          if (tag) collected.push(tag)
+        }
+      }
+      continue
+    }
+    if (capturing) {
+      const item = line.match(/^\s*-\s*(.+)$/)
+      if (item) collected.push(clean(item[1]))
+      else if (line.trim()) capturing = false
+    }
+  }
+
+  return collected
 }
 
 /** The first path that yields text: the documented key wins, the nested one follows. */
@@ -309,13 +328,16 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
   }
 
   const { data, body, present } = splitFrontmatter(raw)
+  const block = raw.slice(3, raw.indexOf('\n---', 3))
   const folder = path.basename(dir)
   const declaredName = pickText(data, ['name'])
   const name = declaredName || folder
   const declaredDescription = pickText(data, ['description'])
   const description = declaredDescription || firstParagraph(body)
 
-  const declared = pickTags(data)
+  // Structured read first, then a shape-independent sweep: a file that nests its tags in
+  // some other way still contributes them rather than losing them silently.
+  const declared = Array.from(new Set([...pickTags(data), ...rawTags(block)]))
 
   // A skill kept in a subfolder of an agent's skills root is tagged by that folder:
   // `~/.hermes/skills/creative/anatomy` carries `creative`. A skill sitting directly
