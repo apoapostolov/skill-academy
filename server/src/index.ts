@@ -34,7 +34,7 @@ import {
   recordSourceCheck,
   deleteSource,  recordSourceEvent,
   listSourceEvents,
-  acknowledgeSourceEvent,
+  acknowledgeSourceEvent,  lockRows,
 } from './db'
 import {
   archiveSkill,
@@ -432,6 +432,61 @@ app.get('/api/placements', async (request, reply) => {
 })
 
 app.get('/api/presets', async () => ({ presets: listPresets() }))
+
+function lockDocument() {
+  const rows = lockRows().map((row) => ({
+    name: row.name,
+    version: row.version ?? null,
+    root: row.root_path,
+    hash: row.package_hash ?? null,
+    category: row.category ?? null,
+    tags: row.tags ? (JSON.parse(row.tags) as string[]) : []
+  }))
+  return { lockVersion: 1, skills: rows }
+}
+
+function lockPath(body?: { path?: string }): string {
+  return body?.path ?? process.env.SKILL_ACADEMY_LOCK ?? path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'skill-academy.lock.json')
+}
+
+app.get('/api/lock', async () => lockDocument())
+
+app.post('/api/lock/write', async (request) => {
+  const body = (request.body ?? {}) as { path?: string }
+  const target = lockPath(body)
+  const document = lockDocument()
+  mkdirSync(path.dirname(target), { recursive: true })
+  writeFileSync(target, JSON.stringify(document, null, 2) + '\n')
+  return { written: target, skills: document.skills.length }
+})
+
+app.post('/api/lock/check', async (request, reply) => {
+  // Check compares content, never the timestamp: a lock written a month ago is still correct
+  // if nothing changed, and CI must be able to tell those apart.
+  const body = (request.body ?? {}) as { path?: string }
+  const target = lockPath(body)
+  if (!existsSync(target)) {
+    reply.code(404)
+    return { error: 'no-lockfile', path: target }
+  }
+  const expected = JSON.parse(readFileSync(target, 'utf8')) as { skills?: Array<Record<string, unknown>> }
+  const actual = lockDocument()
+  const key = (row: { name: string; root: string }) => `${row.name}@${row.root}`
+  const expectedMap = new Map((expected.skills ?? []).map((row) => [key(row as { name: string; root: string }), row]))
+  const actualMap = new Map(actual.skills.map((row) => [key(row), row]))
+
+  const added = [...actualMap.keys()].filter((k) => !expectedMap.has(k))
+  const removed = [...expectedMap.keys()].filter((k) => !actualMap.has(k))
+  const changed = [...actualMap.keys()].filter((k) => {
+    const before = expectedMap.get(k)
+    const now = actualMap.get(k)
+    return before && now && before.hash !== now.hash
+  })
+
+  const drifted = added.length + removed.length + changed.length
+  if (drifted) reply.code(409)
+  return { ok: drifted === 0, path: target, added, removed, changed }
+})
 
 app.get('/api/sources', async () => ({ sources: listSources() }))
 

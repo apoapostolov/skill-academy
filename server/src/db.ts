@@ -988,3 +988,22 @@ export function acknowledgeSourceEvent(id: number): boolean {
   const info = getDb().prepare('UPDATE source_events SET acknowledged = 1 WHERE id = ?').run(id)
   return Number(info.changes) > 0
 }
+
+export interface LockRow {
+  name: string
+  version: string | null
+  path: string
+  root_path: string
+  package_hash: string | null
+  category: string | null
+  tags: string | null
+}
+
+export function lockRows(): LockRow[] {
+  return getDb()
+    .prepare(
+      `SELECT name, path, root_path, package_hash, category, tags
+       FROM skills ORDER BY name, path`
+    )
+    .all() as unknown as LockRow[]
+}
