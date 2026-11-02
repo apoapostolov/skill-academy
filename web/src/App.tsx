@@ -62,6 +62,24 @@ type Scope =
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
 
+function SelectAllGlyph({ checked }: { checked: boolean }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2.2" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      {checked && (
+        <path
+          d="M5.2 8.2l2 2 3.6-3.9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
+  )
+}
+
 function PencilGlyph() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -478,6 +496,26 @@ export default function App() {
     }
   }
 
+  async function toggleAllAgents(hidden: boolean) {
+    const previous = hiddenAgents
+    const agents = (facets?.agents ?? []).map((entry) => entry.agent)
+    setHiddenAgents(hidden ? [...new Set([...hiddenAgents, ...agents])] : [])
+    if (hidden) setScope({ kind: 'all' })
+    try {
+      const response = await fetch('/api/agents/visibility-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hidden })
+      })
+      if (!response.ok) throw new Error(`visibility ${response.status}`)
+      const payload = await response.json()
+      setHiddenAgents(payload.hiddenAgents)
+    } catch (cause) {
+      setHiddenAgents(previous)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   async function scan() {
     setScanning(true)
     try {
@@ -583,15 +621,32 @@ export default function App() {
 
           <div className="group head">
             <span>Agents</span>
-            <button
-              className="ghost iconbtn"
-              onClick={() => setEditingAgents((value) => !value)}
-              title={editingAgents ? 'Done editing' : 'Edit agent visibility'}
-              aria-label={editingAgents ? 'Done editing' : 'Edit agent visibility'}
-              aria-pressed={editingAgents}
-            >
-              <PencilGlyph />
-            </button>
+            <div className="head-actions">
+              {editingAgents && (() => {
+                const all = (facets?.agents ?? []).map((entry) => entry.agent)
+                const everyHidden = all.length > 0 && all.every((agent) => hiddenAgents.includes(agent))
+                return (
+                  <button
+                    className="ghost iconbtn"
+                    onClick={() => void toggleAllAgents(!everyHidden)}
+                    title={everyHidden ? 'Select all agents' : 'Deselect all agents'}
+                    aria-label={everyHidden ? 'Select all agents' : 'Deselect all agents'}
+                    aria-pressed={!everyHidden}
+                  >
+                    <SelectAllGlyph checked={!everyHidden} />
+                  </button>
+                )
+              })()}
+              <button
+                className="ghost iconbtn"
+                onClick={() => setEditingAgents((value) => !value)}
+                title={editingAgents ? 'Done editing' : 'Edit agent visibility'}
+                aria-label={editingAgents ? 'Done editing' : 'Edit agent visibility'}
+                aria-pressed={editingAgents}
+              >
+                <PencilGlyph />
+              </button>
+            </div>
           </div>
           {facets?.agents
             .filter((agent) => editingAgents || !hiddenAgents.includes(agent.agent))

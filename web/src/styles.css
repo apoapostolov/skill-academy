@@ -1216,3 +1216,9 @@ h2 {
   position: static;
   max-height: none;
 }
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}

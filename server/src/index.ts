@@ -16,6 +16,7 @@ import {
   saveRoot,
   saveScan,
   setAgentHidden,
+  setAllAgentVisibility,
   tagFacets,
   tokensByRoot,
   totals
@@ -292,6 +293,17 @@ app.get('/api/facets', async () => {
     tags: tagFacets(),
     issues: totals().issues
   }
+})
+
+app.post('/api/agents/visibility-all', async (request, reply) => {
+  const body = request.body as { hidden?: boolean } | undefined
+  if (typeof body?.hidden !== 'boolean') {
+    reply.code(400)
+    return { error: 'hidden must be a boolean' }
+  }
+  const agents = loadRegistry().roots.filter((root) => root.exists).flatMap((root) => root.owners)
+  setAllAgentVisibility([...new Set(agents)], body.hidden)
+  return { hiddenAgents: listHiddenAgents() }
 })
 
 app.post('/api/agents/:agent/visibility', async (request, reply) => {

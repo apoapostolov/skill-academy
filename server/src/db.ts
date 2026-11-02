@@ -536,6 +536,23 @@ export function addJournal(action: string, payload: unknown): number {
   return Number(result.lastInsertRowid)
 }
 
+export function setAllAgentVisibility(agents: string[], hidden: boolean): void {
+  const db = getDb()
+  const at = new Date().toISOString()
+  const statement = db.prepare(`
+    INSERT INTO agent_prefs (agent, hidden, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(agent) DO UPDATE SET hidden = excluded.hidden, updated_at = excluded.updated_at
+  `)
+  db.exec('BEGIN')
+  try {
+    for (const agent of agents) statement.run(agent, hidden ? 1 : 0, at)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 export function recentJournal(limit = 50): JournalRow[] {
   return getDb().prepare('SELECT * FROM journal ORDER BY id DESC LIMIT ?').all(limit) as unknown as JournalRow[]
 }
