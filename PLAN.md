@@ -36,7 +36,7 @@ browser  ──HTTP/SSE──  Fastify service  ──  SQLite (index + journal)
                             └── LLM layer (11 providers, ported)
 ```
 
-Per-feature inclusion decisions and milestone cuts are in [docs/triage.md](docs/triage.md).
+Per-feature inclusion decisions and milestone cuts are in [docs/triage.md](docs/triage.md). The development loop — one command, hot reload, a panel you can watch — is in [docs/dev-workflow.md](docs/dev-workflow.md).
 
 Detail in [architecture.md](docs/architecture.md). Provider port in [providers.md](docs/providers.md). Curator port in [curation.md](docs/curation.md).
 

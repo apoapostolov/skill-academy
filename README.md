@@ -23,6 +23,7 @@ Skill Academy scans those directories, treats duplicates as one skill with many 
 | [docs/competitive-gaps.md](docs/competitive-gaps.md) | Audit of 15 peers, capability matrix, gap triage |
 | [docs/triage.md](docs/triage.md) | Every feature classified: v1, backlog with triggers, rejected |
 | [docs/positioning.md](docs/positioning.md) | The >1k-star population, weighted scorecard, the claim we can defend |
+| [docs/dev-workflow.md](docs/dev-workflow.md) | How we work: one command, hot reload, the panel you watch |
 | [registry/agents.json](registry/agents.json) | The 67-row agent registry parsed from skills.sh |
 | [design/README.md](design/README.md) | Ten screen mockups: library, linked sources, updates, curation, authoring, compose, sync, themes, onboarding, settings |
 

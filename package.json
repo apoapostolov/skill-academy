@@ -1,0 +1,24 @@
+{
+  "name": "skill-academy",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Local control plane for AI agent skills",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "service": "node scripts/service.mjs",
+    "stop": "node scripts/stop-dev.mjs",
+    "dev:server": "npm -w @skill-academy/server run dev",
+    "dev:web": "npm -w @skill-academy/web run dev",
+    "build": "npm -w @skill-academy/web run build",
+    "typecheck": "npm -w @skill-academy/server run typecheck",
+    "seed": "node scripts/seed.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

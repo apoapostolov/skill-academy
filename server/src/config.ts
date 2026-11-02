@@ -1,0 +1,17 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+export const APP_VERSION = '0.0.1-p0'
+export const HOST = '127.0.0.1'
+export const API_PORT = Number(process.env.SKILL_ACADEMY_API_PORT ?? 4320)
+
+/** Repository root: server/src -> server -> repo */
+export const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
+
+export const DATA_DIR = process.env.SKILL_ACADEMY_DATA ?? path.join(os.homedir(), '.skill-academy')
+export const DB_PATH = path.join(DATA_DIR, 'index.db')
+export const LOG_DIR = path.join(DATA_DIR, 'logs')
+
+fs.mkdirSync(DATA_DIR, { recursive: true })
+fs.mkdirSync(LOG_DIR, { recursive: true })
