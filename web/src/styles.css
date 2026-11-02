@@ -2448,3 +2448,25 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   top: 30px;
   z-index: 2;
 }
+
+/* The header box sits in the same column as the row boxes below it. */
+.listhead .pick.all {
+  flex: 0 0 auto;
+  margin: 0 6px 0 0;
+}
+
+.listhead .scope {
+  margin-right: 0;
+}
+
+/* A little air between the selection count and the actions. */
+.headactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+}
+
+.headactions + .count {
+  margin-left: 0;
+}

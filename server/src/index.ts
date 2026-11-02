@@ -475,6 +475,45 @@ async function checkSource(source: { id: number; repo: string; last_commit: stri
   }
 }
 
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let lastPollAt: string | null = null
+
+function pollMinutes(): number {
+  const raw = Number(process.env.SKILL_ACADEMY_POLL_MINUTES ?? 30)
+  return Number.isFinite(raw) && raw > 0 ? raw : 30
+}
+
+async function pollSources(): Promise<{ checked: number; events: number }> {
+  let checked = 0
+  for (const source of listSources()) {
+    try {
+      await checkSource(source)
+      checked += 1
+    } catch {
+      /* one repo failing must not stop the sweep */
+    }
+  }
+  lastPollAt = new Date().toISOString()
+  return { checked, events: listSourceEvents().length }
+}
+
+function startPoller(): void {
+  if (process.env.SKILL_ACADEMY_POLL !== '1' || pollTimer) return
+  pollTimer = setInterval(() => {
+    void pollSources()
+  }, pollMinutes() * 60 * 1000)
+  pollTimer.unref?.()
+}
+
+app.get('/api/sources/status', async () => ({
+  enabled: process.env.SKILL_ACADEMY_POLL === '1',
+  minutes: pollMinutes(),
+  lastPollAt,
+  unacknowledged: listSourceEvents().length
+}))
+
+app.post('/api/sources/poll', async () => pollSources())
+
 app.post('/api/sources/check-all', async () => {
   const sources = listSources()
   const results = []
@@ -1056,6 +1095,8 @@ app.setNotFoundHandler((request, reply) => {
   reply.type(MIME[path.extname(chosen)] ?? 'application/octet-stream')
   return fs.readFileSync(chosen)
 })
+
+startPoller()
 
 app
   .listen({ port: API_PORT, host: HOST })

@@ -1529,7 +1529,6 @@ export default function App() {
         <section className="list">
           <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
           <div className="listhead">
-            <span className="scope">{scopeLabel}</span>
             {selectMode && (
               <span
                 className={`pick all ${checked.size > 0 && checked.size === skills.length ? 'on' : ''}`}
@@ -1551,13 +1550,17 @@ export default function App() {
                 }}
               />
             )}
+            <span className="scope">{scopeLabel}</span>
             <span className="count">
               {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
-              {skills.length < total ? ` · ${fmt.format(skills.length)} loaded` : ''}
+              {checked.size > 0
+                ? ` · ${checked.size}/${fmt.format(skills.length)} selected`
+                : skills.length < total
+                  ? ` · ${fmt.format(skills.length)} loaded`
+                  : ''}
             </span>
             {checked.size > 0 && (
               <div className="headactions">
-                <span className="bulkcount">{checked.size} selected</span>
                 <button className="bulkbtn" onClick={() => setChecked(new Set())}>
                   Clear
                 </button>
