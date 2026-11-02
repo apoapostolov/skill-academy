@@ -354,7 +354,25 @@ export default function App() {
       return next
     })
   }
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('skill-academy.wrap') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  function toggleWrap() {
+    setWrap((value) => {
+      const next = !value
+      try {
+        window.localStorage.setItem('skill-academy.wrap', next ? '1' : '0')
+      } catch {
+        /* private window */
+      }
+      return next
+    })
+  }
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [widths, setWidths] = useState<{ sidebar: number; detail: number | null }>({ sidebar: 236, detail: null })
@@ -642,19 +660,15 @@ export default function App() {
   return (
     <div className="app">
       <div className="menubar">
-        <b>Skill Academy</b>
-        <span>File</span>
-        <span>Edit</span>
-        <span>View</span>
-        <span>Skills</span>
-        <span>Sources</span>
-        <span>Help</span>
-      </div>
-
-      <div className="toolbar">
-        <button className="btn primary" onClick={scan} disabled={scanning}>
-          {scanning ? 'Scanning…' : 'Scan'}
-        </button>
+        <div className="mb-left">
+          <b>Skill Academy</b>
+          <span>File</span>
+          <span>Edit</span>
+          <span>View</span>
+          <span>Skills</span>
+          <span>Sources</span>
+          <span>Help</span>
+        </div>
         <div className="searchwrap">
           <input
             className="search"
@@ -668,6 +682,9 @@ export default function App() {
           <a className="ghost btn-quiet" href="/dev">
             Dev panel
           </a>
+          <button className="btn primary" onClick={scan} disabled={scanning}>
+            {scanning ? 'Scanning…' : 'Scan'}
+          </button>
           <button
             className="ghost iconbtn"
             onClick={() => setSettingsOpen((value) => !value)}
@@ -868,7 +885,7 @@ export default function App() {
                 <h1>{detail.name}</h1>
                 <button
                   className="ghost wrapbtn"
-                  onClick={() => setWrap((value) => !value)}
+                  onClick={toggleWrap}
                   title={wrap ? 'Unwrap lines' : 'Wrap lines'}
                   aria-label={wrap ? 'Unwrap lines' : 'Wrap lines'}
                   aria-pressed={wrap}
