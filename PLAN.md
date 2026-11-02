@@ -62,6 +62,8 @@ Link farm with the Windows symlink → junction → tracked-copy chain, native r
 
 Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; an archive to a second drive restores after `index.db` is deleted; an offline archive location refuses instead of falling back; a skill containing a shell exfiltration line is flagged and blocked from enable with the file and line; killing the app mid-write leaves a recoverable state.
 
+**Deferred out of P2:** the compare panel. The diff engine is live — `GET /api/skills/:id/compare` returns the changed region of both copies with line numbers, and refuses with 409 when nothing is newer — but its presentation belongs with the provider layer, where a side-by-side visual diff and the AI fold-and-replace can be built and judged together. P2 ships the engine, not the panel.
+
 ### P3 — Sources and updates (11 days)
 
 Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
@@ -71,6 +73,8 @@ Exit: a real repo (`mattpocock/skills`) reports a new release and a changed skil
 ### P4 — Providers and curation (7 days)
 
 Port the provider layer, settings UI with key and OAuth sign-in, model catalogue fetch, cost display. Then the deterministic curation pass, then the LLM consolidation pass with dry-run reports and approval.
+
+Then the compare panel, which waits for this phase: a side-by-side visual diff of the two copies over the already-live `/api/skills/:id/compare`, additions and removals marked per line, followed by the AI fold-and-replace pass — read both copies, report what only the older one knows, fold that into the newer text, replace the stale copy behind a dry-run gate with the old bytes archived.
 
 Exit: every one of the 11 providers answers a test call with a real key or a real sign-in; a dry-run curation on this library produces a report with merges that survive reading; an applied merge restores exactly from archive.
 
