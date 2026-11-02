@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-export const APP_VERSION = '0.0.1-p0'
+export const APP_VERSION = '0.1.0-p1'
 export const HOST = '127.0.0.1'
 export const API_PORT = Number(process.env.SKILL_ACADEMY_API_PORT ?? 4320)
 

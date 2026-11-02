@@ -153,6 +153,18 @@ CREATE TABLE project_skills (
   PRIMARY KEY (project_id, path)
 );
 
+CREATE TABLE trash (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  original_path TEXT NOT NULL,
+  trash_path    TEXT NOT NULL,
+  package_hash  TEXT NOT NULL,
+  placements    TEXT NOT NULL,          -- JSON: agent roots where it was enabled
+  deleted_at    TEXT NOT NULL,
+  purge_after   TEXT NOT NULL,          -- deleted_at + 30 days
+  restored_at   TEXT
+);
+
 CREATE TABLE archives (          -- named archive destinations, not subfolders
   id          INTEGER PRIMARY KEY,
   label       TEXT NOT NULL,
@@ -395,6 +407,17 @@ Archive is a location, not a convention. The service owns three rules.
 
 Restore reads `metadata.json` in the package directory, verifies the package hash, refuses on mismatch unless the user picks `restore as variant`, then recreates placements in their recorded modes. A location that moved on disk is re-pointed through Settings, and the index is rebuilt from the directories present.
 
+## Trash and purge
+
+Delete is a move, never an unlink:
+
+1. The package directory moves to `~/.skill-academy/trash/<id>-<slug>/`.
+2. A `trash` row records the original path, the agent roots where it was enabled, the package hash, and the deletion time; `purge_after` is 30 days later.
+3. The `skills` row is deleted and every placement is removed through the normal placement engine, so the journal already has the inverse of each step.
+4. Restore moves the directory back, re-creates the recorded placements, and drops the trash row. A path occupied by something else refuses with a diff rather than overwriting.
+
+Purging runs on start and after each scan. An expired entry is handed to the OS Recycle Bin through a single `SHFileOperation` call from the bundled helper; if that call fails the entry stays in the app trash with the error shown, because a failed purge must never become a silent delete. The trash directory is excluded from scanning, search, duplicate detection and token totals.
+
 ## Ingest engine
 
 Linked sources are a second write path into a local skill, and the only one that writes prose the user did not type. It is designed like the curator: read, propose, apply, snapshot.
@@ -565,6 +588,10 @@ GET    /api/context                  per-agent token estimates and top contribut
 GET    /api/health                   structural findings
 POST   /api/skills/:id/scan          force rescan of one package
 GET    /api/skills/:id/scan          findings, capabilities, verdict, upstream verdict
+POST   /api/skills/:id/trash         move to trash, record placements
+GET    /api/trash                    entries with days remaining
+POST   /api/trash/:id/restore        restore path and placements
+DELETE /api/trash/:id                purge now (moves to the OS Recycle Bin)
 GET    /api/ingest/runs
 POST   /api/ingest/runs/:id/apply
 

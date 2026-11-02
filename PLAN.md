@@ -56,9 +56,9 @@ Full walker, frontmatter parser, file hashing, duplicate folding, drift-free res
 
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
-### P2 — Switches and archives (14 days)
+### P2 — Switches and archives (17 days)
 
-Link farm with the Windows symlink → junction → tracked-copy chain, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions, presets applied to one agent scope or all, and project workspaces: register a repository, compare its project skills with the library by hash, promote or apply with a diff. Content scanning with a risk badge and a gate on enable: a skill that fails the policy cannot be turned on without an explicit override.
+Link farm with the Windows symlink → junction → tracked-copy chain, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions, presets applied to one agent scope or all, and project workspaces: register a repository, compare its project skills with the library by hash, promote or apply with a diff. Right-click on any row for archive with its switch, delete, reveal and copy path. Delete moves the package to a 30-day trash that restores the path and the placements, and purges to the OS Recycle Bin rather than unlinking. Content scanning with a risk badge and a gate on enable: a skill that fails the policy cannot be turned on without an explicit override.
 
 Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; an archive to a second drive restores after `index.db` is deleted; an offline archive location refuses instead of falling back; a skill containing a shell exfiltration line is flagged and blocked from enable with the file and line; killing the app mid-write leaves a recoverable state.
 
@@ -104,7 +104,7 @@ An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` fir
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
-Total: about 68 working days for v1. With the parity pass, 74. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
+Total: about 71 working days for v1. With the parity pass, 77. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 
 ## Risks
 

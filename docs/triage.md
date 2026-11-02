@@ -49,6 +49,8 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 | Project workspaces: compare and sync project-local skills with the library | **v1** | P2 | 3 | Project skills are the ones that drift, and the strongest desktop peer ships the whole flow |
 | URL and zip sources | **v1** | P3 | 1 | Half the ecosystem distributes a package as an archive; importing one is a day |
 | Upstream audit verdict shown beside ours | **v1** | P3 | 1 | A second opinion with a source and a date, never merged into our severity |
+| Context menu on rows: archive switch, delete, reveal, copy path | **v1** | P2 | 1 | It is how a desktop list is used; the `⋯` menu alone makes every action a trip to the detail pane |
+| Trash with 30-day recovery, purge to the OS Recycle Bin | **v1** | P2 | 2 | Delete without recovery is the one action nobody forgives; the archive is a different intent |
 
 ### Backlog, with a trigger
 
@@ -82,16 +84,16 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 
 ## The v1 line
 
-68 working days, cut into four milestones so value lands early.
+71 working days, cut into four milestones so value lands early.
 
 | Milestone | Phases | Days | What exists after it |
 |---|---|---|---|
-| M1 — Inventory and control | P0, P1, P2 | 24 | Every skill and project skill found, listed, filtered, switched per agent, grouped into presets, scanned, costed, archived to any drive, every action reversible |
+| M1 — Inventory and control | P0, P1, P2 | 27 | Every skill and project skill found, listed, filtered, switched per agent, grouped into presets, scanned, costed, archived to any drive, deleted into a 30-day trash, every action reversible |
 | M2 — Sources | P3 | 11 | Repos, skills.sh and archives watched, changes notified, updates applied with a guard, a lockfile that reproduces the library |
 | M3 — Intelligence | P4, P5, P6 | 22 | Curation, composite linking and ingest, authoring |
 | M4 — Continuity | P7, P8 | 11 | Git sync between machines, themes, onboarding, accessibility, copy |
 
-M1 is the point where the app replaces "walking 66 directories". That is 24 days, not 68, and it is worth shipping before the rest exists.
+M1 is the point where the app replaces "walking 66 directories". That is 27 days, not 71, and it is worth shipping before the rest exists.
 
 ## What this deliberately does not do
 

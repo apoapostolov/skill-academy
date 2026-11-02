@@ -1,34 +1,41 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 interface State {
   version: string
-  startedAt: string
   uptimeMs: number
-  dataDir: string
-  registry: { rows: number; codes: number; roots: number; detected: number }
-  scan: { lastScanAt: string | null; rootsScanned: number; skills: number }
-}
-
-interface Root {
-  path: string
-  scope: string
-  owners: string[]
-  origin: 'registry' | 'host'
-  exists: boolean
-  error: string | null
-  skillCount: number | null
+  registry: { roots: number; detected: number; codes: number }
+  library: { skills: number; tokens: number; issues: number; roots: number }
   lastScanAt: string | null
 }
 
-interface ScanSummary {
-  ms: number
-  rootsScanned: number
-  skills: number
-  empty: string[]
-  slowest: { path: string; ms: number }[]
+interface Issue {
+  code: string
+  detail: string
 }
 
+interface Skill {
+  id: number
+  name: string
+  description: string
+  path: string
+  root_path: string
+  tokens: number
+  body_chars: number
+  tags: string[]
+  health: Issue[]
+  mtime: string
+}
+
+interface Facets {
+  agents: { path: string; owners: string[]; origin: string; count: number }[]
+  tags: { tag: string; count: number }[]
+  issues: number
+}
+
+type Scope = { kind: 'all' } | { kind: 'health' } | { kind: 'root'; path: string } | { kind: 'tag'; tag: string }
+
 const fmt = new Intl.NumberFormat()
+const PAGE = 120
 
 function ago(iso: string | null): string {
   if (!iso) return 'never'
@@ -38,21 +45,91 @@ function ago(iso: string | null): string {
   return `${Math.round(seconds / 3600)}h ago`
 }
 
+function WrapGlyph({ wrapped }: { wrapped: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 4h12M2 8h12" />
+      {wrapped ? (
+        <>
+          <path d="M2 12h7" />
+          <path d="M11 10.5a2.5 2.5 0 0 1 2.5 2.5v1.2" />
+          <path d="M12 13l1.5 1.5L15 13" />
+        </>
+      ) : (
+        <path d="M2 12h12" />
+      )}
+    </svg>
+  )
+}
+
 export default function App() {
   const [state, setState] = useState<State | null>(null)
-  const [roots, setRoots] = useState<Root[]>([])
-  const [summary, setSummary] = useState<ScanSummary | null>(null)
+  const [facets, setFacets] = useState<Facets | null>(null)
+  const [skills, setSkills] = useState<Skill[]>([])
+  const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [scope, setScope] = useState<Scope>({ kind: 'all' })
+  const [query, setQuery] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [selected, setSelected] = useState<number | null>(null)
+  const [detail, setDetail] = useState<(Skill & { body: string }) | null>(null)
+  const [wrap, setWrap] = useState(false)
   const [scanning, setScanning] = useState(false)
-  const [showMissing, setShowMissing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [widths, setWidths] = useState<{ sidebar: number; detail: number | null }>({ sidebar: 236, detail: null })
 
-  async function load() {
+  const dragRef = useRef<{ kind: 'sidebar' | 'detail'; x: number; value: number } | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const requestRef = useRef(0)
+  const loadingRef = useRef(false)
+
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+  function startDrag(kind: 'sidebar' | 'detail') {
+    return (event: React.PointerEvent<HTMLDivElement>) => {
+      const current = kind === 'detail' ? (widths.detail ?? event.currentTarget.previousElementSibling?.clientWidth ?? 568) : widths.sidebar
+      dragRef.current = { kind, x: event.clientX, value: current }
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+  }
+
+  function moveDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    if (!drag) return
+    const delta = event.clientX - drag.x
+    if (drag.kind === 'sidebar') {
+      setWidths((current) => ({ ...current, sidebar: clamp(drag.value + delta, 180, 380) }))
+    } else {
+      setWidths((current) => ({ ...current, detail: clamp(drag.value - delta, 420, 1100) }))
+    }
+  }
+
+  function endDrag() {
+    dragRef.current = null
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 120)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  async function loadState() {
     try {
-      const [stateRes, rootsRes] = await Promise.all([fetch('/api/state'), fetch('/api/roots')])
-      if (!stateRes.ok || !rootsRes.ok) throw new Error(`API ${stateRes.status}/${rootsRes.status}`)
+      const [stateRes, facetsRes] = await Promise.all([fetch('/api/state'), fetch('/api/facets')])
+      if (!stateRes.ok || !facetsRes.ok) throw new Error(`API ${stateRes.status}/${facetsRes.status}`)
       setState(await stateRes.json())
-      const payload = await rootsRes.json()
-      setRoots(payload.roots)
+      setFacets(await facetsRes.json())
       setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -60,18 +137,89 @@ export default function App() {
   }
 
   useEffect(() => {
-    load()
-    const timer = setInterval(load, 5000)
-    return () => clearInterval(timer)
+    loadState()
   }, [])
+
+  function paramsFor(offset: number): string {
+    const params = new URLSearchParams()
+    if (debounced) params.set('q', debounced)
+    if (scope.kind === 'root') params.set('root', scope.path)
+    if (scope.kind === 'tag') params.set('tag', scope.tag)
+    if (scope.kind === 'health') params.set('health', '1')
+    params.set('limit', String(PAGE))
+    params.set('offset', String(offset))
+    return params.toString()
+  }
+
+  async function fetchPage(offset: number, replace: boolean) {
+    const requestId = ++requestRef.current
+    loadingRef.current = true
+    setLoadingMore(true)
+    try {
+      const response = await fetch(`/api/skills?${paramsFor(offset)}`)
+      if (!response.ok) throw new Error(`skills ${response.status}`)
+      const payload = await response.json()
+      if (requestId !== requestRef.current) return
+      setSkills((previous) => {
+        if (replace) return payload.rows
+        const seen = new Set(previous.map((skill) => skill.id))
+        return [...previous, ...payload.rows.filter((skill: Skill) => !seen.has(skill.id))]
+      })
+      setTotal(payload.total)
+      setHasMore(offset + payload.rows.length < payload.total)
+      setError(null)
+    } catch (cause) {
+      if (requestId === requestRef.current) setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (requestId === requestRef.current) {
+        loadingRef.current = false
+        setLoadingMore(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    setSelected(null)
+    setDetail(null)
+    if (listRef.current) listRef.current.scrollTop = 0
+    fetchPage(0, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced, scope])
+
+  function loadMore() {
+    if (!hasMore || loadingRef.current) return
+    fetchPage(skills.length, false)
+  }
+
+  function onListScroll(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 600) loadMore()
+  }
+
+  useEffect(() => {
+    if (selected === null) {
+      setDetail(null)
+      return
+    }
+    let alive = true
+    fetch(`/api/skills/${selected}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
+      .then((payload) => alive && setDetail(payload))
+      .catch(() => alive && setDetail(null))
+    return () => {
+      alive = false
+    }
+  }, [selected])
 
   async function scan() {
     setScanning(true)
     try {
       const response = await fetch('/api/scan', { method: 'POST' })
-      if (!response.ok) throw new Error(`scan failed: ${response.status}`)
-      setSummary(await response.json())
-      await load()
+      if (!response.ok) throw new Error(`scan ${response.status}`)
+      await loadState()
+      setScope({ kind: 'all' })
+      setQuery('')
+      await fetchPage(0, true)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -79,9 +227,13 @@ export default function App() {
     }
   }
 
-  const detected = roots.filter((root) => root.exists)
-  const missing = roots.filter((root) => !root.exists)
-  const totalSkills = roots.reduce((sum, root) => sum + (root.skillCount ?? 0), 0)
+  const scopeLabel = useMemo(() => {
+    if (scope.kind === 'all') return 'All skills'
+    if (scope.kind === 'health') return 'Needs attention'
+    if (scope.kind === 'tag') return `#${scope.tag}`
+    const agent = facets?.agents.find((entry) => entry.path === scope.path)
+    return agent ? agent.owners.join(', ') : scope.path
+  }, [scope, facets])
 
   return (
     <div className="app">
@@ -96,11 +248,15 @@ export default function App() {
       </div>
 
       <div className="toolbar">
-        <div className="mark">
-          Roots<span>{state ? `${state.registry.detected} of ${state.registry.roots}` : 'loading'}</span>
-        </div>
+        <input
+          className="search"
+          placeholder="Filter by name, description or tag"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          spellCheck={false}
+        />
         <div className="spacer" />
-        <a className="ghost" href="/dev">
+        <a className="ghost btn-quiet" href="/dev">
           Dev panel
         </a>
         <button className="btn primary" onClick={scan} disabled={scanning}>
@@ -108,84 +264,145 @@ export default function App() {
         </button>
       </div>
 
-      <div className="content">
-        {error && <div className="banner error">API error: {error}. Is the service running on 4320?</div>}
-        {summary && (
-          <div className="banner">
-            Scanned {summary.rootsScanned} roots in {summary.ms} ms · {fmt.format(summary.skills)} skills ·{' '}
-            {summary.empty.length} empty
-          </div>
-        )}
+      {error && <div className="banner error">API error: {error}</div>}
 
-        <table>
-          <thead>
-            <tr>
-              <th>Root</th>
-              <th className="agents">Agents</th>
-              <th className="num">Skills</th>
-              <th className="when">Last scan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detected.map((root) => (
-              <tr key={root.path}>
-                <td>
-                  <div className="path">
-                    {root.path}
-                    {root.origin === 'host' && <span className="chip host">host</span>}
-                  </div>
-                </td>
-                <td className="agents">
-                  <div className="chips">
-                    {root.owners.slice(0, 4).map((owner) => (
-                      <span className="chip" key={owner}>
-                        {owner}
-                      </span>
-                    ))}
-                    {root.owners.length > 4 && <span className="chip more">+{root.owners.length - 4}</span>}
-                  </div>
-                </td>
-                <td className="num">{root.skillCount === null ? '—' : fmt.format(root.skillCount)}</td>
-                <td className="when">{ago(root.lastScanAt)}</td>
-              </tr>
-            ))}
-            {detected.length === 0 && (
-              <tr>
-                <td colSpan={4} className="empty">
-                  No agent roots detected yet. Press Scan.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="panes">
+        <aside className="sidebar" style={{ width: widths.sidebar, flexBasis: widths.sidebar }}>
+          <button className={`nav ${scope.kind === 'all' ? 'active' : ''}`} onClick={() => setScope({ kind: 'all' })}>
+            All skills <span>{state ? fmt.format(state.library.skills) : ''}</span>
+          </button>
+          <button
+            className={`nav ${scope.kind === 'health' ? 'active' : ''}`}
+            onClick={() => setScope({ kind: 'health' })}
+          >
+            Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
+          </button>
 
-        {missing.length > 0 && (
-          <div className="missing">
-            <button className="ghost" onClick={() => setShowMissing((value) => !value)}>
-              {showMissing ? 'Hide' : 'Show'} {missing.length} agent roots not installed
+          <div className="group">Agents</div>
+          {facets?.agents.map((agent) => (
+            <button
+              key={agent.path}
+              className={`nav root ${scope.kind === 'root' && scope.path === agent.path ? 'active' : ''}`}
+              onClick={() => setScope({ kind: 'root', path: agent.path })}
+              title={agent.path}
+            >
+              <span className="name">
+                {agent.owners.join(', ')}
+                {agent.origin === 'host' && <em className="badge">host</em>}
+              </span>
+              <span>{fmt.format(agent.count)}</span>
             </button>
-            {showMissing && (
-              <ul>
-                {missing.map((root) => (
-                  <li key={root.path}>
-                    <span className="path">{root.path}</span>
-                    <span className="why">{root.error ?? 'missing'}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          ))}
+
+          {facets && facets.tags.length > 0 && <div className="group">Tags</div>}
+          {facets?.tags.slice(0, 10).map((entry) => (
+            <button
+              key={entry.tag}
+              className={`nav ${scope.kind === 'tag' && scope.tag === entry.tag ? 'active' : ''}`}
+              onClick={() => setScope({ kind: 'tag', tag: entry.tag })}
+            >
+              #{entry.tag} <span>{fmt.format(entry.count)}</span>
+            </button>
+          ))}
+        </aside>
+
+        <div
+          className="splitter"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startDrag('sidebar')}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        />
+
+        <section className="list" ref={listRef} onScroll={onListScroll}>
+          <div className="listhead">
+            <span className="scope">{scopeLabel}</span>
+            <span className="count">
+              {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
+              {skills.length < total ? ` · ${fmt.format(skills.length)} loaded` : ''}
+            </span>
           </div>
-        )}
+          {skills.map((skill) => (
+            <button
+              key={skill.id}
+              className={`row ${selected === skill.id ? 'selected' : ''}`}
+              onClick={() => setSelected(skill.id)}
+            >
+              <span className={`dot ${skill.health.length ? 'warn' : ''}`} />
+              <span className="meta">
+                <span className="title">{skill.name}</span>
+                <span className="desc">{skill.description || 'No description'}</span>
+              </span>
+              <span className="tokens">{fmt.format(skill.tokens)}</span>
+            </button>
+          ))}
+          {loadingMore && <div className="listfoot">Loading…</div>}
+          {!hasMore && skills.length > 0 && <div className="listfoot">{fmt.format(total)} total</div>}
+          {skills.length === 0 && !loadingMore && (
+            <div className="empty">Nothing matches. Clear the filter or scan.</div>
+          )}
+        </section>
+
+        <div
+          className="splitter"
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={startDrag('detail')}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        />
+
+        <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
+          {!detail && <div className="empty">Select a skill to read it.</div>}
+          {detail && (
+            <div className="detail-inner">
+              <div className="detailhead">
+                <h1>{detail.name}</h1>
+                <button
+                  className="ghost wrapbtn"
+                  onClick={() => setWrap((value) => !value)}
+                  title={wrap ? 'Unwrap lines (80 columns)' : 'Wrap lines'}
+                  aria-label={wrap ? 'Unwrap lines' : 'Wrap lines'}
+                  aria-pressed={wrap}
+                >
+                  <WrapGlyph wrapped={wrap} />
+                </button>
+              </div>
+              <div className="path">{detail.path}</div>
+              <div className="chips">
+                {detail.tags.map((tag) => (
+                  <span className="chip" key={tag}>
+                    #{tag}
+                  </span>
+                ))}
+                <span className="chip">{fmt.format(detail.tokens)} tokens</span>
+                <span className="chip">{fmt.format(detail.body_chars)} chars</span>
+              </div>
+              {detail.health.length > 0 && (
+                <div className="issues">
+                  {detail.health.map((issue, index) => (
+                    <div className="issue" key={`${issue.code}-${index}`}>
+                      <b>{issue.code}</b>
+                      <span>{issue.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
+            </div>
+          )}
+        </aside>
       </div>
 
       <div className="statusbar">
-        <span>
-          {state ? `${fmt.format(state.registry.roots)} roots · ${fmt.format(state.registry.codes)} agent codes` : '…'}
+        <span>{state ? `${fmt.format(state.registry.detected)} roots · ${fmt.format(state.registry.roots)} known` : '…'}</span>
+        <span className="mid">
+          {state ? `${fmt.format(state.library.tokens)} tokens across ${fmt.format(state.library.skills)} skills` : ''}
         </span>
-        <span className="mid">{fmt.format(totalSkills)} skills indexed</span>
-        <span className="right">
-          {state ? `v${state.version} · up ${Math.round(state.uptimeMs / 1000)}s` : ''}
-        </span>
+        <span className="right">{state ? `v${state.version} · scan ${ago(state.lastScanAt)}` : ''}</span>
       </div>
     </div>
   )

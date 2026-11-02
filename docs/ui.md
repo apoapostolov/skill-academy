@@ -167,7 +167,7 @@ Tracking: `-0.01em` on 15px and above, `0` below. Never below 11px except the mi
 
 Grouped lists with 26px rows, 8px group gaps, micro uppercase headers.
 
-1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Idle (count), Drafts (count), Archive.
+1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Idle (count), Drafts (count), Archive, Trash (count).
 2. **Agents** — one row per detected agent with its count of placed skills and its token cost in tertiary, right-aligned: `612 · 48k`. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph.
 3. **Presets** — one row per preset with its skill count and a play glyph on hover that applies it to the current agent scope; then "New preset…".
 4. **Projects** — one row per registered project with the number of skills it holds and a diverged count when non-zero; then "Add project…".
@@ -235,7 +235,7 @@ The switch is the product. Its three states must be readable without colour.
 
 ## Detail
 
-Header (sticky, 116px): glyph, name 22/600, source line with a link, version pill, and the primary control — `On in 3 of 5 agents` with the switch at the right. `⋯` holds Rename, Pin, Reveal in file manager, Copy path, Archive.
+Header (sticky, 116px): glyph, name 22/600, source line with a link, version pill, and the primary control — `On in 3 of 5 agents` with the switch at the right. `⋯` holds Rename, Pin, Reveal in file manager, Copy path, Archive. At the header's top right, against the name, sits the `Wrap` / `Unwrap` toggle: `Wrap` re-flows the body at the pane width, `Unwrap` shows the source at 80 columns with a horizontal scrollbar. Unwrapped is the default, because a `SKILL.md` is a document with an 80-column convention and re-flowing it hides its structure.
 
 Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Linked`, `Scan`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation. The `Scan` tab carries a dot when the verdict is `warn` or `block`.
 
@@ -287,6 +287,21 @@ Verdict first, findings second.
 - Upstream verdict, when the registry publishes one: a separate row with its source and date, never merged into our severity.
 - Policy footer: the threshold in force and the source it came from, with `Open policy`.
 - A blocked skill's header switch is disabled with the tooltip `Blocked by scan. Override to enable.`; the override sits behind the `⋯` menu and requires a reason.
+
+### Context menu
+
+Right-clicking a row opens the same menu anywhere on the row, and `Shift+F10` opens it for the keyboard. 8px radius, 26px rows, 6px vertical padding, one separator before the destructive group.
+
+| Item | Behaviour |
+|---|---|
+| Open | Selects the row and focuses the detail pane |
+| Enable in Claude Code / Disable in Claude Code | Named for the agent whose scope is active; disabled when the scope is not an agent |
+| Archive / Unarchive | Shows a switch reflecting the current state; archives to the configured destination |
+| Reveal in file manager | Opens the containing folder, selected |
+| Copy path | Absolute path to the clipboard |
+| Delete | Moves to Trash; the menu closes and the row leaves the list in place |
+
+Delete is rosewood and last. It does not ask — the Trash is the undo, and the row's own toast says `Moved to Trash · Undo`. Trash itself asks twice before emptying.
 
 ### Files
 
@@ -367,6 +382,12 @@ The Sources tab is the same link list as the detail pane, scoped to this draft.
 ### Edit an existing skill
 
 Opening `Instructions` and pressing `Edit`, or the row menu's `Edit`, opens the same surface with the package loaded and `Editing` in the header. `Rewrite for clarity` and `Extract rules from notes` sit in the header menu and open a diff sheet: the current body on the left, the proposal on the right, per-hunk accept. Applying writes through the save path.
+
+## Trash
+
+A plain list of deleted packages: name, original path in mono, `29 days left` in tertiary, and two actions — `Restore` and `Delete now`. The footer reads `3 items · 41 MB · oldest empties in 12 days`. Restore puts the package back where it was and re-enables the placements it had; if the path is now occupied the row refuses with a diff instead of overwriting.
+
+Emptying asks twice. The second dialog names the count and the size, and says where the files go: the OS Recycle Bin, not nothing.
 
 ## Sheets
 

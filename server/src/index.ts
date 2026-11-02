@@ -1,8 +1,9 @@
 import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
-import { readMeta, readRoots, saveScan } from './db'
+import { getSkill, querySkills, readMeta, readRoots, saveScan, tagFacets, totals } from './db'
 import { loadRegistry } from './registry'
-import { scanRoot, scanRoots } from './scan'
+import { scanAll } from './scan'
+import { readSkillBody } from './skill'
 
 const startedAt = new Date()
 
@@ -16,7 +17,7 @@ interface RequestLine {
 
 const requests: RequestLine[] = []
 
-const app = Fastify({ logger: false, disableRequestLogging: true })
+const app = Fastify({ logger: false })
 
 app.addHook('onResponse', async (request, reply) => {
   requests.unshift({
@@ -33,10 +34,7 @@ app.get('/api/health', async () => ({ ok: true, version: APP_VERSION }))
 
 app.get('/api/state', async () => {
   const registry = loadRegistry()
-  const detected = registry.roots.filter((r) => r.exists)
-  const stored = readRoots()
-  const storedTotal = stored.reduce((sum, row) => sum + row.skill_count, 0)
-
+  const detected = registry.roots.filter((root) => root.exists)
   return {
     version: APP_VERSION,
     startedAt: startedAt.toISOString(),
@@ -49,23 +47,15 @@ app.get('/api/state', async () => {
       roots: registry.roots.length,
       detected: detected.length
     },
-    scan: {
-      lastScanAt: readMeta('last_scan_at'),
-      rootsScanned: stored.length,
-      skills: storedTotal
-    },
+    library: totals(),
+    lastScanAt: readMeta('last_scan_at'),
     requests: requests.length
   }
 })
 
-/**
- * Detection only: a stat per root. Counts come from the last scan, so this stays fast
- * enough to poll while the UI is open.
- */
 app.get('/api/roots', async () => {
   const registry = loadRegistry()
   const stored = new Map(readRoots().map((row) => [row.path.toLowerCase(), row]))
-
   return {
     roots: registry.roots.map((root) => {
       const row = stored.get(root.path.toLowerCase())
@@ -77,40 +67,95 @@ app.get('/api/roots', async () => {
         exists: root.exists,
         error: root.error ?? null,
         skillCount: row?.skill_count ?? null,
-        truncated: row ? Boolean(row.truncated) : false,
         lastScanAt: row?.last_scan_at ?? null
       }
     })
   }
 })
 
-/** The one write path in P0, and it writes to the index database only. */
 app.post('/api/scan', async () => {
-  const started = Date.now()
   const registry = loadRegistry()
-  const results = scanRoots(registry.roots)
-  const finishedAt = saveScan(results)
-
+  const outcome = scanAll(registry.roots)
+  const finishedAt = saveScan(outcome.roots, outcome.skills)
+  const issues = outcome.skills.filter((skill) => skill.health.length > 0).length
   return {
     finishedAt,
-    ms: Date.now() - started,
-    rootsScanned: results.length,
-    rootsDetected: registry.roots.filter((r) => r.exists).length,
-    skills: results.reduce((sum, row) => sum + row.count, 0),
-    empty: results.filter((row) => row.count === 0).map((row) => row.path),
-    slowest: [...results].sort((a, b) => b.ms - a.ms).slice(0, 5).map((row) => ({ path: row.path, ms: row.ms }))
+    ms: outcome.ms,
+    rootsScanned: outcome.roots.length,
+    rootsDetected: registry.roots.filter((root) => root.exists).length,
+    skills: outcome.skills.length,
+    tokens: outcome.skills.reduce((sum, skill) => sum + skill.tokens, 0),
+    issues,
+    slowest: [...outcome.roots]
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 5)
+      .map((root) => ({ path: root.path, ms: root.ms }))
   }
 })
 
-app.get('/api/roots/:path/scan', async (request) => {
-  const { path } = request.params as { path: string }
+app.get('/api/skills', async (request) => {
+  const params = request.query as Record<string, string | undefined>
+  const result = querySkills({
+    q: params.q?.trim() || undefined,
+    root: params.root || undefined,
+    tag: params.tag || undefined,
+    health: params.health === '1',
+    limit: params.limit ? Number(params.limit) : undefined,
+    offset: params.offset ? Number(params.offset) : undefined
+  })
+  return {
+    total: result.total,
+    rows: result.rows.map((row) => ({
+      ...row,
+      tags: safeJson(row.tags, []),
+      health: safeJson(row.health, [])
+    }))
+  }
+})
+
+app.get('/api/skills/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const row = getSkill(Number(id))
+  if (!row) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  return {
+    ...row,
+    tags: safeJson(row.tags, []),
+    health: safeJson(row.health, []),
+    body: readSkillBody(row.path)
+  }
+})
+
+app.get('/api/facets', async () => {
+  const roots = readRoots()
+  const stored = new Map(roots.map((row) => [row.path, row]))
   const registry = loadRegistry()
-  const root = registry.roots.find((r) => r.path === path)
-  if (!root) return { error: 'unknown root', path }
-  return scanRoot(root)
+
+  return {
+    agents: registry.roots
+      .filter((root) => root.exists)
+      .map((root) => ({
+        path: root.path,
+        owners: root.owners,
+        origin: root.origin,
+        count: stored.get(root.path)?.skill_count ?? 0
+      })),
+    tags: tagFacets(),
+    issues: totals().issues
+  }
 })
 
 app.get('/api/dev/requests', async () => ({ requests }))
+
+function safeJson<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
 
 app
   .listen({ port: API_PORT, host: HOST })

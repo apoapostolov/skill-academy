@@ -189,6 +189,18 @@ Skills living inside a repository are invisible to a global manager and are exac
 
 **Acceptance.** Registering a repository with three project skills finds all three, flags the one whose hash differs from the library, and promotes it into the library with the project entry re-linked to the new package. No file moves without confirmation.
 
+### 14. Row actions, trash and recovery
+
+Every row answers a right-click with the same actions the `⋯` menu offers, so nothing needs a trip to the detail pane.
+
+- **Menu.** Open, Enable or disable in this agent, Archive or Unarchive (with the current state shown on a switch), Delete, Reveal in file manager, Copy path. Destructive items sit last, in rosewood, below a separator.
+- **Delete is not unlink.** The package moves to the app's trash with a manifest: original path, agent placements that were enabled, package hash, and the time. The row leaves the library immediately.
+- **Trash lives in the app.** A sidebar entry with a count, a per-item 30-day countdown, `Restore`, and `Delete now`. Restore returns the package to its original path and re-creates the placements that were on.
+- **Purge never unlinks.** When the countdown reaches zero the entry goes to the OS Recycle Bin, not to nothing. Emptying the trash early asks twice and is journaled.
+- **Excluded everywhere.** Trashed packages take no part in scan, search, context cost or duplicate detection, and their roots are not scanned until restored.
+
+**Acceptance.** Deleting a skill removes it from every list within one refresh, appears in Trash with a countdown, and restores to the same path with the same placements enabled. A trashed skill does not appear in search or in any agent's token total.
+
 ## Out of scope for v1
 
 Skill execution, team permissions, a hosted registry, Windows service installation, mobile, and authoring anything other than a `SKILL.md` package.

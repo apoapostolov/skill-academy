@@ -1,13 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentRoot } from './registry'
+import { parseSkill, type SkillRecord } from './skill'
 
 const SKIP = new Set(['node_modules', '.git', '.archive', '.cache'])
-
-export interface FoundSkill {
-  name: string
-  path: string
-}
+const MAX_DEPTH = 3
+const MAX_SKILLS_PER_ROOT = 5000
 
 export interface RootScan {
   path: string
@@ -15,66 +13,65 @@ export interface RootScan {
   owners: string[]
   exists: boolean
   count: number
-  skills: FoundSkill[]
   truncated: boolean
   ms: number
   error?: string
 }
 
-const MAX_DEPTH = 3
-const MAX_SKILLS = 5000
+export interface ScanOutcome {
+  roots: RootScan[]
+  skills: SkillRecord[]
+  ms: number
+}
 
-function walk(dir: string, depth: number, out: FoundSkill[]): void {
-  if (out.length >= MAX_SKILLS) return
+function findPackages(dir: string, depth: number, out: string[]): void {
+  if (out.length >= MAX_SKILLS_PER_ROOT) return
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
   } catch {
     return
   }
-
-  if (entries.some((e) => e.isFile() && e.name === 'SKILL.md')) {
-    out.push({ name: path.basename(dir), path: dir })
+  if (entries.some((entry) => entry.isFile() && entry.name === 'SKILL.md')) {
+    out.push(dir)
     return
   }
   if (depth >= MAX_DEPTH) return
-
   for (const entry of entries) {
     if (!entry.isDirectory() || SKIP.has(entry.name)) continue
-    walk(path.join(dir, entry.name), depth + 1, out)
+    findPackages(path.join(dir, entry.name), depth + 1, out)
   }
 }
 
-export function scanRoot(root: AgentRoot): RootScan {
+export function scanAll(roots: AgentRoot[]): ScanOutcome {
   const started = Date.now()
-  if (!root.exists) {
-    return {
+  const results: RootScan[] = []
+  const skills: SkillRecord[] = []
+
+  for (const root of roots) {
+    if (!root.exists) continue
+    const rootStarted = Date.now()
+    const packages: string[] = []
+    findPackages(root.path, 0, packages)
+
+    let parsed = 0
+    for (const dir of packages) {
+      const record = parseSkill(dir, root.path, root.scope)
+      if (!record) continue
+      skills.push(record)
+      parsed += 1
+    }
+
+    results.push({
       path: root.path,
       scope: root.scope,
       owners: root.owners,
-      exists: false,
-      count: 0,
-      skills: [],
-      truncated: false,
-      ms: Date.now() - started,
-      error: root.error ?? 'MISSING'
-    }
+      exists: true,
+      count: parsed,
+      truncated: packages.length >= MAX_SKILLS_PER_ROOT,
+      ms: Date.now() - rootStarted
+    })
   }
 
-  const skills: FoundSkill[] = []
-  walk(root.path, 0, skills)
-  return {
-    path: root.path,
-    scope: root.scope,
-    owners: root.owners,
-    exists: true,
-    count: skills.length,
-    skills: skills.slice(0, 50),
-    truncated: skills.length >= MAX_SKILLS,
-    ms: Date.now() - started
-  }
-}
-
-export function scanRoots(roots: AgentRoot[]): RootScan[] {
-  return roots.filter((r) => r.exists).map(scanRoot)
+  return { roots: results, skills, ms: Date.now() - started }
 }
