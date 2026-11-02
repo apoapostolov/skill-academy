@@ -939,3 +939,52 @@ export function deleteSource(id: number): boolean {
   const info = getDb().prepare('DELETE FROM sources WHERE id = ?').run(id)
   return Number(info.changes) > 0
 }
+
+export interface SourceEvent {
+  id: number
+  repo: string
+  kind: 'commit' | 'release'
+  value: string
+  seen_at: string
+  acknowledged: number
+}
+
+function ensureSourceEvents(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS source_events (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         repo TEXT NOT NULL,
+         kind TEXT NOT NULL,
+         value TEXT NOT NULL,
+         seen_at TEXT NOT NULL,
+         acknowledged INTEGER NOT NULL DEFAULT 0
+       )`
+    )
+    .run()
+}
+
+export function recordSourceEvent(repo: string, kind: 'commit' | 'release', value: string): void {
+  ensureSourceEvents()
+  const existing = getDb()
+    .prepare('SELECT id FROM source_events WHERE repo = ? AND kind = ? AND value = ?')
+    .get(repo, kind, value) as { id?: number } | undefined
+  if (existing?.id) return
+  getDb()
+    .prepare('INSERT INTO source_events (repo, kind, value, seen_at) VALUES (?, ?, ?, ?)')
+    .run(repo, kind, value, new Date().toISOString())
+}
+
+export function listSourceEvents(includeAcknowledged = false): SourceEvent[] {
+  ensureSourceEvents()
+  const sql = includeAcknowledged
+    ? 'SELECT * FROM source_events ORDER BY seen_at DESC LIMIT 200'
+    : 'SELECT * FROM source_events WHERE acknowledged = 0 ORDER BY seen_at DESC LIMIT 200'
+  return getDb().prepare(sql).all() as unknown as SourceEvent[]
+}
+
+export function acknowledgeSourceEvent(id: number): boolean {
+  ensureSourceEvents()
+  const info = getDb().prepare('UPDATE source_events SET acknowledged = 1 WHERE id = ?').run(id)
+  return Number(info.changes) > 0
+}

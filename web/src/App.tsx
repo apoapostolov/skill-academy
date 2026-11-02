@@ -1527,67 +1527,9 @@ export default function App() {
         />
 
         <section className="list">
-          {checked.size > 0 && (
-            <div className="bulkbar">
-              <span className="bulkcount">{checked.size} selected</span>
-              <button className="bulkbtn" onClick={() => setChecked(new Set())}>
-                Clear
-              </button>
-              <button className="bulkbtn planned" disabled title="Consolidate a set of skills into one, planned">
-                Consolidate
-              </button>
-              <button className="bulkbtn planned" disabled title="Improve a skill against its sources, planned">
-                Improve
-              </button>
-              {presets.length > 0 && (
-                <>
-                  <select
-                    className="bulkselect"
-                    value={presetId}
-                    onChange={(event) => setPresetId(event.target.value ? Number(event.target.value) : '')}
-                  >
-                    <option value="">Preset…</option>
-                    {presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button className="bulkbtn" disabled={presetId === ''} onClick={() => void applyPreset()}>
-                    Apply
-                  </button>
-                </>
-              )}
-              {scope.kind === 'agent' && (
-                <>
-                  <button className="bulkbtn" onClick={() => void bulkAgents('enable')}>
-                    On
-                  </button>
-                  <button className="bulkbtn" onClick={() => void bulkAgents('disable')}>
-                    Off
-                  </button>
-                  <button className="bulkbtn" onClick={() => void savePresetFromScope()} title="Save this agent as a preset">
-                    Save preset
-                  </button>
-                </>
-              )}
-              <button
-                className={`bulkbtn danger ${bulkConfirm ? 'confirming' : ''}`}
-                onClick={() => {
-                  if (!bulkConfirm) {
-                    setBulkConfirm(true)
-                    return
-                  }
-                  setBulkConfirm(false)
-                  void archiveChecked()
-                }}
-              >
-                {bulkConfirm ? `Confirm archive ${checked.size}` : 'Archive'}
-              </button>
-            </div>
-          )}
           <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
           <div className="listhead">
+            <span className="scope">{scopeLabel}</span>
             {selectMode && (
               <span
                 className={`pick all ${checked.size > 0 && checked.size === skills.length ? 'on' : ''}`}
@@ -1609,11 +1551,69 @@ export default function App() {
                 }}
               />
             )}
-            <span className="scope">{scopeLabel}</span>
             <span className="count">
               {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
               {skills.length < total ? ` · ${fmt.format(skills.length)} loaded` : ''}
             </span>
+            {checked.size > 0 && (
+              <div className="headactions">
+                <span className="bulkcount">{checked.size} selected</span>
+                <button className="bulkbtn" onClick={() => setChecked(new Set())}>
+                  Clear
+                </button>
+                <button className="bulkbtn planned" disabled title="Consolidate a set of skills into one, planned">
+                  Consolidate
+                </button>
+                <button className="bulkbtn planned" disabled title="Improve a skill against its sources, planned">
+                  Improve
+                </button>
+                {presets.length > 0 && (
+                  <>
+                    <select
+                      className="bulkselect"
+                      value={presetId}
+                      onChange={(event) => setPresetId(event.target.value ? Number(event.target.value) : '')}
+                    >
+                      <option value="">Preset…</option>
+                      {presets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="bulkbtn" disabled={presetId === ''} onClick={() => void applyPreset()}>
+                      Apply
+                    </button>
+                  </>
+                )}
+                {scope.kind === 'agent' && (
+                  <>
+                    <button className="bulkbtn" onClick={() => void bulkAgents('enable')}>
+                      On
+                    </button>
+                    <button className="bulkbtn" onClick={() => void bulkAgents('disable')}>
+                      Off
+                    </button>
+                    <button className="bulkbtn" onClick={() => void savePresetFromScope()} title="Save this agent as a preset">
+                      Save preset
+                    </button>
+                  </>
+                )}
+                <button
+                  className={`bulkbtn danger ${bulkConfirm ? 'confirming' : ''}`}
+                  onClick={() => {
+                    if (!bulkConfirm) {
+                      setBulkConfirm(true)
+                      return
+                    }
+                    setBulkConfirm(false)
+                    void archiveChecked()
+                  }}
+                >
+                  {bulkConfirm ? `Confirm archive ${checked.size}` : 'Archive'}
+                </button>
+              </div>
+            )}
             <button
               className={`listedit ${selectMode ? 'on' : ''}`}
               title={selectMode ? 'Done selecting' : 'Select skills'}

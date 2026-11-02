@@ -32,7 +32,9 @@ import {
   deleteWorkspace,  listSources,
   saveSource,
   recordSourceCheck,
-  deleteSource,
+  deleteSource,  recordSourceEvent,
+  listSourceEvents,
+  acknowledgeSourceEvent,
 } from './db'
 import {
   archiveSkill,
@@ -443,6 +445,65 @@ app.post('/api/sources', async (request, reply) => {
   return { source: saveSource(repo) }
 })
 
+async function checkSource(source: { id: number; repo: string; last_commit: string | null; last_release: string | null; checked_at: string | null }) {
+  const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (token) headers.authorization = `Bearer ${token}`
+
+  const commitResponse = await fetch(`https://api.github.com/repos/${source.repo}/commits?per_page=1`, { headers })
+  if (!commitResponse.ok) return { repo: source.repo, error: `github ${commitResponse.status}` }
+  const commits = (await commitResponse.json()) as Array<{ sha?: string }>
+  const commit = commits[0]?.sha?.slice(0, 12) ?? null
+
+  let release: string | null = null
+  const releaseResponse = await fetch(`https://api.github.com/repos/${source.repo}/releases/latest`, { headers })
+  if (releaseResponse.ok) {
+    const payload = (await releaseResponse.json()) as { tag_name?: string }
+    release = payload.tag_name ?? null
+  }
+
+  const seenBefore = source.checked_at !== null
+  if (seenBefore && commit && commit !== source.last_commit) recordSourceEvent(source.repo, 'commit', commit)
+  if (seenBefore && release && release !== source.last_release) recordSourceEvent(source.repo, 'release', release)
+  recordSourceCheck(source.repo, commit, release)
+  return {
+    repo: source.repo,
+    commit,
+    release,
+    changed: seenBefore && (commit !== source.last_commit || release !== source.last_release),
+    previous: { commit: source.last_commit, release: source.last_release }
+  }
+}
+
+app.post('/api/sources/check-all', async () => {
+  const sources = listSources()
+  const results = []
+  for (const source of sources) {
+    try {
+      results.push(await checkSource(source))
+    } catch (error) {
+      results.push({ repo: source.repo, error: (error as Error).message })
+    }
+  }
+  return { checked: results.length, changed: results.filter((row) => 'changed' in row && row.changed).length, results }
+})
+
+app.get('/api/sources/events', async (request) => {
+  const query = request.query as { all?: string } | undefined
+  const events = listSourceEvents(query?.all === '1')
+  return { events, unacknowledged: events.filter((row) => !row.acknowledged).length }
+})
+
+app.post('/api/sources/events/:id/ack', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const acknowledged = acknowledgeSourceEvent(Number(id))
+  if (!acknowledged) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  return { acknowledged }
+})
+
 app.delete('/api/sources/:id', async (request, reply) => {
   const { id } = request.params as { id: string }
   const removed = deleteSource(Number(id))
@@ -462,30 +523,8 @@ app.post('/api/sources/:id/check', async (request, reply) => {
     reply.code(404)
     return { error: 'not found' }
   }
-  const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
-  if (token) headers.authorization = `Bearer ${token}`
-
   try {
-    const commitResponse = await fetch(`https://api.github.com/repos/${source.repo}/commits?per_page=1`, { headers })
-    if (!commitResponse.ok) {
-      reply.code(502)
-      return { error: `github ${commitResponse.status}`, repo: source.repo }
-    }
-    const commits = (await commitResponse.json()) as Array<{ sha?: string }>
-    const commit = commits[0]?.sha?.slice(0, 12) ?? null
-
-    let release: string | null = null
-    const releaseResponse = await fetch(`https://api.github.com/repos/${source.repo}/releases/latest`, { headers })
-    if (releaseResponse.ok) {
-      const payload = (await releaseResponse.json()) as { tag_name?: string }
-      release = payload.tag_name ?? null
-    }
-
-    const seenBefore = source.checked_at !== null
-    const changed = seenBefore && (source.last_commit !== commit || source.last_release !== release)
-    recordSourceCheck(source.repo, commit, release)
-    return { repo: source.repo, commit, release, changed, previous: { commit: source.last_commit, release: source.last_release } }
+    return await checkSource(source)
   } catch (error) {
     reply.code(502)
     return { error: (error as Error).message, repo: source.repo }
