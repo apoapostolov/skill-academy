@@ -1,8 +1,10 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './config'
+import { getDb } from './db'
 import type { Body, ConsolidateGroup } from './consolidate'
 import { bodyOf, consolidateDryRun } from './consolidate'
+import { sweepReferences } from './sweep'
 
 /**
  * Applying a consolidation. The gate is the point: a group is only written when the caller says
@@ -21,6 +23,7 @@ export interface ApplyResult {
   pointerized: string[]
   routerized: string[]
   archived: string[]
+  rewire: { files: number; occurrences: number; dangling: number }
 }
 
 function log(entry: Record<string, unknown>): void {
@@ -170,8 +173,34 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
     log({ key, action: 'routerize', path: file, survivor: survivor.name, kept: router.kept, dropped: router.dropped })
   }
 
-  log({ key, action: 'apply', mergeType: group.mergeType, pointerized, routerized, archived })
-  return { key, mergeType: group.mergeType, survivor: survivor.name, pointerized, routerized, archived }
+  // The merge is not finished at the write: every live reference to the old name moves to the
+  // winner, and the close-out check reports what is still stale or missing.
+  const roots = (getDb()
+    .prepare('SELECT DISTINCT root_path FROM skills')
+    .all() as Array<{ root_path: string }>).map((row) => row.root_path)
+  const losers = [...pointerized, ...routerized]
+  const skipDirs = [survivor.dir, ...losers.map((name) => bodies.get(name)?.dir ?? '').filter(Boolean)]
+  const sweep = losers.length ? sweepReferences(roots, losers, survivor.name, skipDirs) : { rewired: [], untouched: [], dangling: [] }
+
+  log({
+    key,
+    action: 'apply',
+    mergeType: group.mergeType,
+    pointerized,
+    routerized,
+    archived,
+    rewired: sweep.rewired.length,
+    dangling: sweep.dangling.length
+  })
+  return {
+    key,
+    mergeType: group.mergeType,
+    survivor: survivor.name,
+    pointerized,
+    routerized,
+    archived,
+    rewire: { files: sweep.rewired.length, occurrences: sweep.rewired.reduce((sum, hit) => sum + hit.occurrences, 0), dangling: sweep.dangling.length }
+  }
 }
 
 /** Restoring is the same move backwards: the archived SKILL.md wins. */
