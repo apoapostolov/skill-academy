@@ -889,3 +889,53 @@ export function deleteWorkspace(id: number): boolean {
   const info = getDb().prepare('DELETE FROM workspaces WHERE id = ?').run(id)
   return Number(info.changes) > 0
 }
+
+export interface SourceRow {
+  id: number
+  repo: string
+  added_at: string
+  last_commit: string | null
+  last_release: string | null
+  checked_at: string | null
+}
+
+function ensureSources(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS sources (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         repo TEXT NOT NULL UNIQUE,
+         added_at TEXT NOT NULL,
+         last_commit TEXT,
+         last_release TEXT,
+         checked_at TEXT
+       )`
+    )
+    .run()
+}
+
+export function listSources(): SourceRow[] {
+  ensureSources()
+  return getDb().prepare('SELECT * FROM sources ORDER BY repo').all() as unknown as SourceRow[]
+}
+
+export function saveSource(repo: string): SourceRow {
+  ensureSources()
+  getDb()
+    .prepare('INSERT INTO sources (repo, added_at) VALUES (?, ?) ON CONFLICT(repo) DO NOTHING')
+    .run(repo, new Date().toISOString())
+  return listSources().find((row) => row.repo === repo)!
+}
+
+export function recordSourceCheck(repo: string, commit: string | null, release: string | null): void {
+  ensureSources()
+  getDb()
+    .prepare('UPDATE sources SET last_commit = ?, last_release = ?, checked_at = ? WHERE repo = ?')
+    .run(commit, release, new Date().toISOString(), repo)
+}
+
+export function deleteSource(id: number): boolean {
+  ensureSources()
+  const info = getDb().prepare('DELETE FROM sources WHERE id = ?').run(id)
+  return Number(info.changes) > 0
+}

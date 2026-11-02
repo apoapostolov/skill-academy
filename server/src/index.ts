@@ -29,7 +29,10 @@ import {
   listPresets,
   listWorkspaces,
   saveWorkspace,
-  deleteWorkspace,
+  deleteWorkspace,  listSources,
+  saveSource,
+  recordSourceCheck,
+  deleteSource,
 } from './db'
 import {
   archiveSkill,
@@ -427,6 +430,67 @@ app.get('/api/placements', async (request, reply) => {
 })
 
 app.get('/api/presets', async () => ({ presets: listPresets() }))
+
+app.get('/api/sources', async () => ({ sources: listSources() }))
+
+app.post('/api/sources', async (request, reply) => {
+  const body = request.body as { repo?: string } | undefined
+  const repo = (body?.repo ?? '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '')
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    reply.code(400)
+    return { error: 'repo must look like owner/name' }
+  }
+  return { source: saveSource(repo) }
+})
+
+app.delete('/api/sources/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const removed = deleteSource(Number(id))
+  if (!removed) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  return { removed }
+})
+
+app.post('/api/sources/:id/check', async (request, reply) => {
+  // Check reads the public API and records what it saw. It never writes to the library:
+  // noticing a new commit and pulling it are separate decisions.
+  const { id } = request.params as { id: string }
+  const source = listSources().find((row) => row.id === Number(id))
+  if (!source) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (token) headers.authorization = `Bearer ${token}`
+
+  try {
+    const commitResponse = await fetch(`https://api.github.com/repos/${source.repo}/commits?per_page=1`, { headers })
+    if (!commitResponse.ok) {
+      reply.code(502)
+      return { error: `github ${commitResponse.status}`, repo: source.repo }
+    }
+    const commits = (await commitResponse.json()) as Array<{ sha?: string }>
+    const commit = commits[0]?.sha?.slice(0, 12) ?? null
+
+    let release: string | null = null
+    const releaseResponse = await fetch(`https://api.github.com/repos/${source.repo}/releases/latest`, { headers })
+    if (releaseResponse.ok) {
+      const payload = (await releaseResponse.json()) as { tag_name?: string }
+      release = payload.tag_name ?? null
+    }
+
+    const seenBefore = source.checked_at !== null
+    const changed = seenBefore && (source.last_commit !== commit || source.last_release !== release)
+    recordSourceCheck(source.repo, commit, release)
+    return { repo: source.repo, commit, release, changed, previous: { commit: source.last_commit, release: source.last_release } }
+  } catch (error) {
+    reply.code(502)
+    return { error: (error as Error).message, repo: source.repo }
+  }
+})
 
 app.get('/api/workspaces', async () => ({ workspaces: listWorkspaces() }))
 
