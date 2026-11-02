@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
-import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, REPO_ROOT } from './config'
+import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, REPO_ROOT, WATCH_ENABLED } from './config'
 import {
   addJournal,
   categoryFacets,
@@ -106,7 +106,7 @@ function rescanRoot(rootPath: string): void {
 
 function fullScan(): { added: number; changed: number; removed: number; ms: number; skills: number } {
   const registry = loadRegistry()
-  watcher.sync(registry.roots)
+  if (WATCH_ENABLED) watcher.sync(registry.roots)
   const outcome = scanAll(registry.roots)
   const result = saveScan(outcome)
   lastScanAt = new Date().toISOString()
@@ -252,6 +252,7 @@ app.get('/api/skills/:id', async (request, reply) => {
     ...row,
     version: self.version,
     repo: self.repo,
+    findings: safeJson(row.findings, []),
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
     body: readSkillBody(row.path),
@@ -386,7 +387,9 @@ app.get('/api/placements', async (request, reply) => {
 })
 
 app.post('/api/placements', async (request, reply) => {
-  const body = request.body as { skillId?: number; agent?: string; action?: 'on' | 'off' } | undefined
+  const body = request.body as
+    | { skillId?: number; agent?: string; action?: 'on' | 'off'; override?: boolean; reason?: string }
+    | undefined
   const skill = body?.skillId ? getSkill(body.skillId) : undefined
   if (!skill || !body?.agent || (body.action !== 'on' && body.action !== 'off')) {
     reply.code(400)
@@ -405,6 +408,23 @@ app.post('/api/placements', async (request, reply) => {
   if (native) return { state: 'native', mode: 'native', target }
 
   if (body.action === 'on') {
+    // A package that failed the content scan cannot be switched on silently: the person
+    // sees the file and line, and the override is written to the journal if they insist.
+    const findings = safeJson(skill.findings, [] as { file: string; line: number; code: string; severity: string; excerpt: string }[])
+    if (skill.risk === 'high' && !body.override) {
+      reply.code(409)
+      return { error: 'blocked-by-scan', risk: skill.risk, findings }
+    }
+    if (body.override) {
+      addJournal('override', {
+        skill: skill.path,
+        agent: body.agent,
+        root: root.path,
+        risk: skill.risk,
+        findings,
+        reason: body.reason ?? ''
+      })
+    }
     const result = place(skill.path, root.path)
     addJournal('place', { skill: skill.path, agent: body.agent, root: root.path, target, result })
     if (!result.ok) {
@@ -531,7 +551,10 @@ app
   .then(() => {
     console.log(`api listening on http://${HOST}:${API_PORT}`)
     const result = fullScan()
-    console.log(`initial scan ${result.ms}ms, ${result.skills} skills, watching ${watcher.size} roots`)
+    console.log(
+      `initial scan ${result.ms}ms, ${result.skills} skills, ` +
+        (WATCH_ENABLED ? `watching ${watcher.size} roots` : 'watcher off (SKILL_ACADEMY_WATCH=1 to enable)')
+    )
     setInterval(() => {
       const sweep = fullScan()
       if (sweep.added + sweep.changed + sweep.removed > 0) {

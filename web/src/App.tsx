@@ -30,10 +30,20 @@ interface Skill {
   body_chars: number
   tags: string[]
   category: string
+  risk: 'clean' | 'low' | 'medium' | 'high'
+  findings: Finding[]
   health: Issue[]
   mtime: string
   version?: string
   repo?: string
+}
+
+interface Finding {
+  file: string
+  line: number
+  code: string
+  severity: 'high' | 'medium' | 'low'
+  excerpt: string
 }
 
 interface Drift {
@@ -734,6 +744,31 @@ export default function App() {
         body: JSON.stringify({ skillId: detail.id, agent: placement.agent, action })
       })
       const payload = await response.json()
+      if (!response.ok && payload.error === 'blocked-by-scan') {
+        const lines = (payload.findings as Finding[])
+          .map((finding) => `${finding.file}:${finding.line}  ${finding.code}`)
+          .join('\n')
+        const go = window.confirm(
+          `This skill failed the content scan.\n\n${lines}\n\nEnable it anyway? The override is recorded.`
+        )
+        if (go) {
+          const retry = await fetch('/api/placements', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skillId: detail.id, agent: placement.agent, action, override: true, reason: 'confirmed in app' })
+          })
+          const retried = await retry.json()
+          if (!retry.ok) throw new Error(retried.error ?? `placement ${retry.status}`)
+          setPlacements((current) =>
+            current
+              ? current.map((row) => (row.agent === placement.agent ? { ...row, state: retried.state, mode: retried.mode } : row))
+              : current
+          )
+          setError(null)
+          return
+        }
+        throw new Error('blocked by content scan')
+      }
       if (!response.ok) throw new Error(payload.error ?? `placement ${response.status}`)
       setPlacements((current) =>
         current
@@ -1142,7 +1177,10 @@ export default function App() {
               className={`row ${selected === skill.id ? 'selected' : ''}`}
               onClick={() => setSelected(skill.id)}
             >
-              <span className={`dot ${skill.health.length ? 'warn' : ''}`} />
+              <span
+                className={`dot ${skill.health.length ? 'warn' : ''} ${skill.risk === 'high' ? 'risk' : ''}`}
+                title={skill.risk === 'high' ? 'Content scan: high risk' : undefined}
+              />
               <span className="meta">
                 <span className="title">
                   {skill.name}
@@ -1205,6 +1243,33 @@ export default function App() {
                 <span className="chip">{fmt.format(detail.tokens)} tokens</span>
                 <span className="chip">{fmt.format(detail.body_chars)} chars</span>
               </div>
+              {detail.risk === 'high' && detail.findings.length > 0 && (
+                <div className="scanblock" role="note">
+                  <div className="scanhead">
+                    Content scan
+                    <span className="riskpill">high</span>
+                  </div>
+                  <ul className="scanlist">
+                    {detail.findings.slice(0, 6).map((finding) => (
+                      <li key={`${finding.file}:${finding.line}`}>
+                        <button
+                          className="scanwhere"
+                          onClick={() =>
+                            void openReference({
+                              name: finding.file.split('/').pop() ?? finding.file,
+                              relPath: finding.file
+                            } as PackageEntry)
+                          }
+                          title={finding.excerpt}
+                        >
+                          {finding.file}:{finding.line}
+                        </button>
+                        <span className="scanwhy">{finding.code}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {detail.drift && (
                 <div className="drift">
                   <span className="drift-text">

@@ -26,6 +26,8 @@ export interface SkillRow {
   tokens: number
   tags: string
   category: string
+  risk: string
+  findings: string
   package_hash: string
   mtime: string
   files: number
@@ -49,7 +51,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 14
+const SCHEMA_VERSION = 15
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
 const HEALTH_VERSION = 2
@@ -91,6 +93,8 @@ function migrate(db: DatabaseSync): void {
       tokens INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL DEFAULT '[]',
       category TEXT NOT NULL DEFAULT '',
+      risk TEXT NOT NULL DEFAULT 'clean',
+      findings TEXT NOT NULL DEFAULT '[]',
       package_hash TEXT NOT NULL DEFAULT '',
       mtime TEXT NOT NULL DEFAULT '',
       files INTEGER NOT NULL DEFAULT 0,
@@ -234,15 +238,22 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     )
   }
 
-  const existing = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ?')
+  const existing = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ? OR path = ?')
   const insert = db.prepare(`
     INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
-                        category, package_hash, mtime, files, bytes, health, seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        category, risk, findings, package_hash, mtime, files, bytes, health, seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET real_path = excluded.real_path, name = excluded.name,
+      description = excluded.description, root_path = excluded.root_path, scope = excluded.scope,
+      body_chars = excluded.body_chars, tokens = excluded.tokens, tags = excluded.tags,
+      category = excluded.category, risk = excluded.risk, findings = excluded.findings,
+      package_hash = excluded.package_hash, mtime = excluded.mtime, files = excluded.files,
+      bytes = excluded.bytes, health = excluded.health, seen_at = excluded.seen_at
   `)
   const update = db.prepare(`
-    UPDATE skills SET path = ?, name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
-      tags = ?, category = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+    UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
+      tags = ?, category = ?, risk = ?, findings = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?,
+      seen_at = ?
     WHERE id = ?
   `)
   const upsertBody = db.prepare(
@@ -253,7 +264,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   const changedPaths: string[] = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
-    const row = existing.get(real) as { id: number; package_hash: string } | undefined
+    const row = existing.get(real, skill.path) as { id: number; package_hash: string } | undefined
     if (!row) {
       insert.run(
         skill.path,
@@ -266,6 +277,8 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         skill.tokens,
         JSON.stringify(skill.tags),
         skill.category,
+        skill.risk,
+        JSON.stringify(skill.findings),
         skill.packageHash,
         skill.mtime,
         skill.files,
@@ -289,9 +302,11 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       continue
     }
     idsByReal.set(real, row.id)
+    // Another row could hold this path from an earlier placement round; the real path is
+    // the identity, so the duplicate goes before anything else touches the table.
+    db.prepare('DELETE FROM skills WHERE path = ? AND id <> ?').run(skill.path, row.id)
     if (row.package_hash === skill.packageHash) continue
     const updateResult = update.run(
-      skill.path,
       skill.name,
       skill.description,
       skill.rootPath,
@@ -300,6 +315,8 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       skill.tokens,
       JSON.stringify(skill.tags),
       skill.category,
+      skill.risk,
+      JSON.stringify(skill.findings),
       skill.packageHash,
       skill.mtime,
       skill.files,
@@ -519,15 +536,23 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   const at = new Date().toISOString()
   const result: SaveResult = { added: 0, changed: 0, removed: 0 }
   const real = skill.realPath ?? skill.path
-  const row = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ?').get(real) as
-    | { id: number; package_hash: string }
-    | undefined
+  const row = db
+    .prepare('SELECT id, package_hash FROM skills WHERE real_path = ? OR path = ?')
+    .get(real, skill.path) as { id: number; package_hash: string } | undefined
+
+  db.prepare('DELETE FROM skills WHERE path = ? AND id <> ?').run(skill.path, row?.id ?? -1)
 
   if (!row) {
     db.prepare(`
       INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
-                          category, package_hash, mtime, files, bytes, health, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          category, risk, findings, package_hash, mtime, files, bytes, health, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET real_path = excluded.real_path, name = excluded.name,
+        description = excluded.description, root_path = excluded.root_path, scope = excluded.scope,
+        body_chars = excluded.body_chars, tokens = excluded.tokens, tags = excluded.tags,
+        category = excluded.category, risk = excluded.risk, findings = excluded.findings,
+        package_hash = excluded.package_hash, mtime = excluded.mtime, files = excluded.files,
+        bytes = excluded.bytes, health = excluded.health, seen_at = excluded.seen_at
     `).run(
       skill.path,
       real,
@@ -539,6 +564,8 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
       skill.tokens,
       JSON.stringify(skill.tags),
       skill.category,
+      skill.risk,
+      JSON.stringify(skill.findings),
       skill.packageHash,
       skill.mtime,
       skill.files,
@@ -556,7 +583,8 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   } else if (row.package_hash !== skill.packageHash) {
     db.prepare(`
       UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
-        tags = ?, category = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+        tags = ?, category = ?, risk = ?, findings = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?,
+        health = ?, seen_at = ?
       WHERE path = ?
     `).run(
       skill.name,
@@ -567,6 +595,8 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
       skill.tokens,
       JSON.stringify(skill.tags),
       skill.category,
+      skill.risk,
+      JSON.stringify(skill.findings),
       skill.packageHash,
       skill.mtime,
       skill.files,

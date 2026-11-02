@@ -9,6 +9,12 @@ export const API_PORT = Number(process.env.SKILL_ACADEMY_API_PORT ?? 4320)
 /** Repository root: server/src -> server -> repo */
 export const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')
 
+/**
+ * File watching is a development convenience, not a requirement: the scan still runs at
+ * startup and on the periodic sweep. Set SKILL_ACADEMY_WATCH=1 to switch it back on.
+ */
+export const WATCH_ENABLED = process.env.SKILL_ACADEMY_WATCH === '1'
+
 export const DATA_DIR = process.env.SKILL_ACADEMY_DATA ?? path.join(os.homedir(), '.skill-academy')
 export const DB_PATH = path.join(DATA_DIR, 'index.db')
 export const LOG_DIR = path.join(DATA_DIR, 'logs')

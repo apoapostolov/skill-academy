@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { countTokens } from 'gpt-tokenizer'
+import { scanPackage, type Finding, type Risk } from './safety'
 
 export interface SkillIssue {
   code:
@@ -28,6 +29,9 @@ export interface SkillRecord {
   tags: string[]
   /** Declared `category:` in frontmatter, empty when absent. */
   category: string
+  /** Content-scan verdict, computed from the package's own files. */
+  risk: Risk
+  findings: Finding[]
   packageHash: string
   mtime: string
   files: number
@@ -226,6 +230,10 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
   const declaredCategory = typeof data.category === 'string' ? data.category.trim() : ''
   const category = declaredCategory || (folderTag && data.category === undefined ? '' : '')
 
+  // The content scan runs on the package as written, so the badge reflects the files the
+  // agent would actually read, not the frontmatter's claims about them.
+  const safety = scanPackage(dir)
+
   const files = listPackageFiles(dir)
   const bytes = files.reduce((sum, entry) => sum + entry.size, 0)
   const hash = crypto.createHash('sha256').update(raw)
@@ -283,6 +291,8 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     tokens: tokenCount(raw),
     tags,
     category,
+    risk: safety.risk,
+    findings: safety.findings,
     packageHash,
     mtime,
     files: files.length,
