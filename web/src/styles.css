@@ -1939,7 +1939,7 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 
 .btn.archive:hover { background: rgba(184, 92, 87, 0.24); }
 
-.detailhead .btn.archive + .seg { margin-left: 8px; }
+.detailhead .btn.archive + .seg { margin-left: 0; }
 
 .nav.trash-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; cursor: default; }
 .nav.trash-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
@@ -2213,4 +2213,23 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .detailhead > h1 {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* One gap for the whole cluster: the segmented control carried its own margin, which
+   made the Archive gap twice the wrap gap. */
+.detailhead {
+  gap: 6px;
+}
+
+.detailhead > .btn,
+.detailhead > .seg,
+.detailhead > .wrapbtn,
+.detailhead .seg {
+  margin: 0;
+}
+
+.detail .detailhead > .seg,
+.detailhead > .seg {
+  margin-left: 0;
+  margin-right: 0;
 }
