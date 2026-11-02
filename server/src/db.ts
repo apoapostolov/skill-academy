@@ -847,3 +847,45 @@ export function deletePreset(id: number): boolean {
   const info = getDb().prepare('DELETE FROM presets WHERE id = ?').run(id)
   return Number(info.changes) > 0
 }
+
+export interface WorkspaceRow {
+  id: number
+  name: string
+  path: string
+  created_at: string
+}
+
+function ensureWorkspaces(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS workspaces (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT NOT NULL,
+         path TEXT NOT NULL UNIQUE,
+         created_at TEXT NOT NULL
+       )`
+    )
+    .run()
+}
+
+export function listWorkspaces(): WorkspaceRow[] {
+  ensureWorkspaces()
+  return getDb().prepare('SELECT * FROM workspaces ORDER BY name').all() as unknown as WorkspaceRow[]
+}
+
+export function saveWorkspace(name: string, workspacePath: string): WorkspaceRow {
+  ensureWorkspaces()
+  getDb()
+    .prepare(
+      `INSERT INTO workspaces (name, path, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET name = excluded.name`
+    )
+    .run(name, workspacePath, new Date().toISOString())
+  return listWorkspaces().find((row) => row.path === workspacePath)!
+}
+
+export function deleteWorkspace(id: number): boolean {
+  ensureWorkspaces()
+  const info = getDb().prepare('DELETE FROM workspaces WHERE id = ?').run(id)
+  return Number(info.changes) > 0
+}

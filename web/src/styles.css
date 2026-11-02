@@ -2416,3 +2416,25 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   color: var(--text-3);
   opacity: 0.75;
 }
+
+/* The header box selects the whole view, and sits before the label it applies to. */
+.listhead {
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.listhead .count {
+  margin-left: auto;
+}
+
+.pick.all {
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+/* Archiving a batch is disruptive even though it is reversible, so it asks once. */
+.bulkbtn.confirming {
+  border-color: rgba(184, 92, 87, 0.85);
+  background: rgba(184, 92, 87, 0.28);
+  color: #f0c4c0;
+}

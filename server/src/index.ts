@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -25,7 +26,10 @@ import {
   totals,
   savePreset,
   deletePreset,
-  listPresets
+  listPresets,
+  listWorkspaces,
+  saveWorkspace,
+  deleteWorkspace,
 } from './db'
 import {
   archiveSkill,
@@ -423,6 +427,82 @@ app.get('/api/placements', async (request, reply) => {
 })
 
 app.get('/api/presets', async () => ({ presets: listPresets() }))
+
+app.get('/api/workspaces', async () => ({ workspaces: listWorkspaces() }))
+
+app.post('/api/workspaces', async (request, reply) => {
+  const body = request.body as { path?: string; name?: string } | undefined
+  const workspacePath = (body?.path ?? '').trim()
+  if (!workspacePath || !existsSync(workspacePath)) {
+    reply.code(400)
+    return { error: 'path must exist' }
+  }
+  const name = (body?.name ?? '').trim() || path.basename(workspacePath)
+  return { workspace: saveWorkspace(name, workspacePath) }
+})
+
+app.delete('/api/workspaces/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const removed = deleteWorkspace(Number(id))
+  if (!removed) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  return { removed }
+})
+
+app.get('/api/workspaces/:id/compare', async (request, reply) => {
+  // A workspace is a repository that keeps its own skills. Compare by name and by the hash of
+  // SKILL.md, so "same skill, different content" cannot hide behind a matching name.
+  const { id } = request.params as { id: string }
+  const workspace = listWorkspaces().find((row) => row.id === Number(id))
+  if (!workspace) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const skillDirs: string[] = []
+  for (const candidate of ['skills', path.join('.claude', 'skills'), path.join('.agents', 'skills')]) {
+    const full = path.join(workspace.path, candidate)
+    if (!existsSync(full)) continue
+    for (const entry of readdirSync(full, { withFileTypes: true })) {
+      if (entry.isDirectory() && existsSync(path.join(full, entry.name, 'SKILL.md'))) {
+        skillDirs.push(path.join(full, entry.name))
+      }
+    }
+  }
+  const hashOf = (dir: string): string => {
+    try {
+      return createHash('sha256').update(readFileSync(path.join(dir, 'SKILL.md'))).digest('hex')
+    } catch {
+      return ''
+    }
+  }
+
+  const rows = skillDirs.map((dir) => {
+    const name = path.basename(dir)
+    const hash = hashOf(dir)
+    const known = querySkills({ q: name, limit: 200 }).rows.find((row) => row.name === name)
+    if (!known) return { name, state: 'workspace-only' as const, hash }
+    const libraryHash = hashOf(known.path)
+    return {
+      name,
+      state: hash === libraryHash ? ('same' as const) : ('different' as const),
+      hash,
+      libraryHash,
+      skillId: known.id
+    }
+  })
+
+  return {
+    workspace: workspace.name,
+    path: workspace.path,
+    total: rows.length,
+    same: rows.filter((row) => row.state === 'same').length,
+    different: rows.filter((row) => row.state === 'different').length,
+    workspaceOnly: rows.filter((row) => row.state === 'workspace-only').length,
+    rows
+  }
+})
 
 app.post('/api/presets', async (request, reply) => {
   const body = request.body as { name?: string; agents?: string[] } | undefined

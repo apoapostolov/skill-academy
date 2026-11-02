@@ -726,6 +726,17 @@ export default function App() {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [presets, setPresets] = useState<{ id: number; name: string; agents: string[] }[]>([])
   const [selectMode, setSelectMode] = useState(false)
+  const [bulkConfirm, setBulkConfirm] = useState(false)
+
+  useEffect(() => {
+    setBulkConfirm(false)
+  }, [checked])
+
+  useEffect(() => {
+    if (!bulkConfirm) return
+    const timer = setTimeout(() => setBulkConfirm(false), 4000)
+    return () => clearTimeout(timer)
+  }, [bulkConfirm])
   const [presetId, setPresetId] = useState<number | ''>('')
 
   useEffect(() => {
@@ -1560,13 +1571,44 @@ export default function App() {
                   </button>
                 </>
               )}
-              <button className="bulkbtn danger" onClick={() => void archiveChecked()}>
-                Archive
+              <button
+                className={`bulkbtn danger ${bulkConfirm ? 'confirming' : ''}`}
+                onClick={() => {
+                  if (!bulkConfirm) {
+                    setBulkConfirm(true)
+                    return
+                  }
+                  setBulkConfirm(false)
+                  void archiveChecked()
+                }}
+              >
+                {bulkConfirm ? `Confirm archive ${checked.size}` : 'Archive'}
               </button>
             </div>
           )}
           <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
           <div className="listhead">
+            {selectMode && (
+              <span
+                className={`pick all ${checked.size > 0 && checked.size === skills.length ? 'on' : ''}`}
+                role="checkbox"
+                aria-checked={checked.size > 0 && checked.size === skills.length}
+                aria-label="Select every skill in this view"
+                title="Select every skill in this view"
+                tabIndex={0}
+                onClick={() => {
+                  const all = checked.size === skills.length && checked.size > 0
+                  setChecked(all ? new Set() : new Set(skills.map((row) => row.id)))
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === ' ' || event.key === 'Enter') {
+                    event.preventDefault()
+                    const all = checked.size === skills.length && checked.size > 0
+                    setChecked(all ? new Set() : new Set(skills.map((row) => row.id)))
+                  }
+                }}
+              />
+            )}
             <span className="scope">{scopeLabel}</span>
             <span className="count">
               {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
