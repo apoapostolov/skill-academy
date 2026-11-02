@@ -2120,19 +2120,27 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 
 .tag-prefix {
   display: inline-block;
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid var(--sep);
+  margin-left: 5px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 999px;
-  font-size: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 10px;
   line-height: 14px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-3);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.055em;
+  color: var(--text-2);
   vertical-align: 1px;
 }
 
 .nav.active .tag-prefix {
-  border-color: rgba(255, 255, 255, 0.22);
-  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.17);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.tag-text {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
 }

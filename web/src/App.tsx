@@ -475,11 +475,12 @@ function TagLabel({ tag }: { tag: string }) {
   const match = tag.match(TAG_PREFIX)
   if (!match) return <>#{tag}</>
   const prefix = match[1].toLowerCase()
+  // One inline unit, so a flex row cannot push the pill away from its own tag.
   return (
-    <>
+    <span className="tag-text">
       <span className="tag-name">{match[2]}</span>
       <span className={`tag-prefix ${prefix}`}>{prefix}</span>
-    </>
+    </span>
   )
 }
 
