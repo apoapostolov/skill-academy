@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { countTokens } from 'gpt-tokenizer'
 
 export interface SkillIssue {
   code: 'no-frontmatter' | 'no-description' | 'long-body' | 'dangling-reference' | 'name-mismatch' | 'unreadable'
@@ -35,6 +36,14 @@ const MAX_PACKAGE_FILES = 400
 const LONG_BODY_CHARS = 24_000
 /** Rough on purpose: four characters per token, labelled as an estimate everywhere. */
 const CHARS_PER_TOKEN = 4
+
+function tokenCount(text: string): number {
+  try {
+    return countTokens(text)
+  } catch {
+    return Math.ceil(text.length / CHARS_PER_TOKEN)
+  }
+}
 
 interface Frontmatter {
   data: Record<string, string | string[]>
@@ -253,7 +262,8 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     rootPath,
     scope,
     bodyChars: raw.length,
-    tokens: Math.ceil(raw.length / CHARS_PER_TOKEN),
+    // A real BPE count, not a character guess: context cost is a number people act on.
+    tokens: tokenCount(raw),
     tags,
     packageHash,
     mtime,

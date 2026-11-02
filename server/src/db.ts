@@ -130,6 +130,18 @@ function migrate(db: DatabaseSync): void {
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
     String(SCHEMA_VERSION)
   )
+
+  // The tables exist by now, so this can actually run. A checker change bumps
+  // HEALTH_VERSION and every row is rewritten on the next scan, which re-runs it.
+  const healthRow = db.prepare("SELECT value FROM meta WHERE key = 'health_version'").get() as
+    | { value: string }
+    | undefined
+  if (Number(healthRow?.value ?? 0) !== HEALTH_VERSION) {
+    db.exec("UPDATE skills SET package_hash = ''")
+    db.prepare(
+      "INSERT INTO meta (key, value) VALUES ('health_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(String(HEALTH_VERSION))
+  }
 }
 
 export function getDb(): DatabaseSync {
