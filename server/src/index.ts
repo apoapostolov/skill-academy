@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -414,13 +414,27 @@ app.post('/api/skills/bulk', async (request, reply) => {
     return { error: 'ids is required' }
   }
   const action = body?.action ?? 'archive'
+  const agent = (request.body as { agent?: string } | undefined)?.agent
 
-  if (action !== 'archive') {
+  if (action !== 'archive' && action !== 'enable' && action !== 'disable') {
     reply.code(400)
     return { error: `unknown action: ${action}` }
   }
+  if ((action === 'enable' || action === 'disable') && !agent) {
+    reply.code(400)
+    return { error: `${action} needs an agent` }
+  }
 
-  const results: Array<{ id: number; ok: boolean; error?: string; trashId?: number }> = []
+  const registry = loadRegistry()
+  const root = agent
+    ? registry.roots.find((entry) => entry.exists && entry.owners.includes(agent))
+    : undefined
+  if ((action === 'enable' || action === 'disable') && !root) {
+    reply.code(404)
+    return { error: `no detected root for ${agent}` }
+  }
+
+  const results: Array<{ id: number; ok: boolean; error?: string; trashId?: number; mode?: string }> = []
   for (const id of ids) {
     const skill = getSkill(id)
     if (!skill) {
@@ -428,8 +442,33 @@ app.post('/api/skills/bulk', async (request, reply) => {
       continue
     }
     try {
-      const result = archiveSkill(id, body?.reason ?? 'bulk')
-      results.push({ id, ok: true, trashId: result.trashId })
+      if (action === 'archive') {
+        const result = archiveSkill(id, body?.reason ?? 'bulk')
+        results.push({ id, ok: true, trashId: result.trashId })
+        continue
+      }
+      const target = path.join(root!.path, path.basename(skill.path))
+      if (action === 'disable') {
+        if (!existsSync(target)) {
+          results.push({ id, ok: true, mode: 'already-off' })
+          continue
+        }
+        unplace(target, TRASH_DIR)
+        addJournal('unplace', { skillId: id, agent, target, bulk: true })
+        results.push({ id, ok: true, mode: 'off' })
+        continue
+      }
+      if (skill.risk === 'high') {
+        results.push({ id, ok: false, error: 'blocked-by-scan' })
+        continue
+      }
+      if (existsSync(target)) {
+        results.push({ id, ok: true, mode: 'already-on' })
+        continue
+      }
+      const placed = place(skill.path, root!.path)
+      addJournal('place', { skillId: id, agent, target: placed.target, mode: placed.mode, bulk: true })
+      results.push({ id, ok: true, mode: placed.mode })
     } catch (error) {
       results.push({ id, ok: false, error: (error as Error).message })
     }
