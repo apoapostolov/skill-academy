@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { getOverride, setOverride } from './providerConfig'
+import { OAUTH_PROVIDERS, oauthAccessToken } from './oauth'
 import { getKey, keyStatus } from './secrets'
 
 /**
@@ -107,24 +109,6 @@ export const PROVIDERS: Provider[] = [
     models: ['grok-4', 'grok-3', 'grok-3-mini']
   },
   {
-    id: 'xai-oauth',
-    label: 'Grok (xAI OAuth)',
-    kind: 'openai',
-    base: 'https://api.x.ai/v1',
-    needsKey: false,
-    requiresSignIn: true,
-    models: ['grok-4.6', 'grok-4', 'grok-3']
-  },
-  {
-    id: 'openai-codex',
-    label: 'Codex (ChatGPT OAuth)',
-    kind: 'openai',
-    base: 'https://chatgpt.com/backend-api/codex',
-    needsKey: false,
-    requiresSignIn: true,
-    models: ['gpt-5.6-luna', 'gpt-5.1-codex']
-  },
-  {
     id: 'local',
     label: 'Local (Ollama / LM Studio)',
     kind: 'openai',
@@ -134,20 +118,78 @@ export const PROVIDERS: Provider[] = [
   }
 ]
 
+/** The declared provider with any saved base URL or discovered models applied. */
 export function providerById(id: string): Provider | undefined {
-  return PROVIDERS.find((provider) => provider.id === id)
+  const declared = PROVIDERS.find((provider) => provider.id === id)
+  if (!declared) return undefined
+  const override = getOverride(id)
+  return {
+    ...declared,
+    base: override.base ?? declared.base,
+    models: override.models?.length ? override.models : declared.models
+  }
+}
+
+/** The credential a model listing should carry: a saved key, or an OAuth session. */
+function listingToken(providerId: string): string | null {
+  if (OAUTH_PROVIDERS[providerId]) return oauthAccessToken(providerId)
+  return getKey(providerId)
+}
+
+/**
+ * Discover models from a provider's own `/models` endpoint. OpenAI-compatible servers answer with
+ * `{ data: [{ id }] }`, which is also the shape xAI and the rest use.
+ */
+export async function discoverModels(provider: Provider): Promise<string[] | null> {
+  const url = `${provider.base.replace(/\/$/, '')}/models`
+  const token = listingToken(provider.id)
+  try {
+    const response = await fetch(url, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(6000)
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as { data?: Array<{ id?: string }>; models?: Array<{ id?: string; name?: string }> }
+    const listed: Array<{ id?: string; name?: string }> = payload.data ?? payload.models ?? []
+    const ids = listed.map((entry) => entry.id ?? entry.name).filter((id): id is string => !!id)
+    return ids.length ? ids : null
+  } catch {
+    return null
+  }
+}
+
+/** A cached list is reused for 48 hours; `refresh` ignores it. */
+const CACHE_HOURS = 48
+
+export function cachedModels(providerId: string): { models: string[]; at: string | null; fresh: boolean } {
+  const override = getOverride(providerId)
+  const at = override.modelsAt ?? null
+  const models = override.models ?? []
+  const age = at ? Date.now() - Date.parse(at) : Number.POSITIVE_INFINITY
+  return { models, at, fresh: models.length > 0 && age < CACHE_HOURS * 3600_000 }
+}
+
+export async function refreshModels(provider: Provider): Promise<{ models: string[]; at: string } | { error: string }> {
+  const models = await discoverModels(provider)
+  if (!models) return { error: `no model list at ${provider.base}/models` }
+  const at = new Date().toISOString()
+  setOverride(provider.id, { models, modelsAt: at })
+  return { models, at }
 }
 
 /** What the renderer is allowed to know: no key material, ever. */
 export function providerSummary(provider: Provider) {
+  const resolved = providerById(provider.id) ?? provider
   return {
     id: provider.id,
     label: provider.label,
     kind: provider.kind,
-    base: provider.base,
+    base: resolved.base,
     needsKey: provider.needsKey,
     requiresSignIn: provider.requiresSignIn ?? false,
-    models: provider.models,
+    models: resolved.models,
+    /** Local servers move between ports, so their address is a field, not a constant. */
+    baseEditable: !provider.needsKey,
     ...keyStatus(provider.id)
   }
 }

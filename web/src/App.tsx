@@ -80,6 +80,19 @@ interface ProviderRow {
   configured: boolean
   hint: string | null
   requiresSignIn: boolean
+  baseEditable: boolean
+}
+
+interface OAuthRow {
+  id: string
+  label: string
+  kind: 'device' | 'authorize' | 'codex'
+  note: string
+  allowsTokenImport: boolean
+  connected: boolean
+  account: string
+  expiresAt: string | null
+  mode: string | null
 }
 
 interface Facets {
@@ -630,12 +643,25 @@ export default function App() {
   const [providerRows, setProviderRows] = useState<ProviderRow[] | null>(null)
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({})
   const [providerNotes, setProviderNotes] = useState<Record<string, string>>({})
+  const [baseDrafts, setBaseDrafts] = useState<Record<string, string>>({})
+  const [oauthRows, setOauthRows] = useState<OAuthRow[]>([])
+  const [oauthFlows, setOauthFlows] = useState<
+    Record<string, { flowId: string; code?: string; url?: string; status: string; message?: string }>
+  >({})
+  const [oauthCode, setOauthCode] = useState('')
+  const [oauthBusy, setOauthBusy] = useState<string>('')
+  const [modelProvider, setModelProvider] = useState('')
+  const [modelList, setModelList] = useState<string[]>([])
+  const [modelAt, setModelAt] = useState<string | null>(null)
+  const [modelCached, setModelCached] = useState(false)
+  const [modelNote, setModelNote] = useState('')
   const [githubToken, setGithubToken] = useState('')
   const [githubNote, setGithubNote] = useState('')
 
   async function openProviders() {
     setProvidersOpen(true)
     await refreshProviders()
+    await refreshOAuth()
     try {
       const response = await fetch('/api/github/status')
       const payload = (await response.json()) as { configured: boolean; source: string | null; remaining: number; limit: number }
@@ -689,6 +715,154 @@ export default function App() {
       ...notes,
       [id]: `${payload.ok ? 'answered' : 'failed'} · ${payload.detail}`
     }))
+  }
+
+  async function refreshOAuth() {
+    try {
+      const response = await fetch('/api/oauth')
+      const payload = (await response.json()) as { providers: OAuthRow[] }
+      setOauthRows(payload.providers)
+    } catch {
+      setOauthRows([])
+    }
+  }
+
+  async function signIn(id: string) {
+    setOauthBusy(id)
+    const response = await fetch(`/api/oauth/${id}/start`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    })
+    const payload = (await response.json()) as {
+      error?: string
+      flowId?: string
+      userCode?: string
+      verificationUri?: string
+      verificationUriComplete?: string
+      url?: string
+      interval?: number
+    }
+    setOauthBusy('')
+    if (payload.error) {
+      setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'failed', message: payload.error } }))
+      return
+    }
+    if (payload.url) {
+      setOauthFlows((flows) => ({ ...flows, [id]: { flowId: payload.flowId ?? '', url: payload.url, status: 'paste' } }))
+      window.open(payload.url, '_blank', 'noopener')
+      return
+    }
+    setOauthFlows((flows) => ({
+      ...flows,
+      [id]: {
+        flowId: payload.flowId ?? '',
+        code: payload.userCode,
+        url: payload.verificationUriComplete || payload.verificationUri,
+        status: 'waiting'
+      }
+    }))
+    void pollSignIn(id, payload.flowId ?? '', Math.max(3, payload.interval ?? 5))
+  }
+
+  async function pollSignIn(id: string, flowId: string, interval: number) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, interval * 1000))
+      const response = await fetch(`/api/oauth/${id}/poll`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ flowId })
+      })
+      const payload = (await response.json()) as { status?: string; interval?: number; message?: string; account?: string; error?: string }
+      if (payload.status === 'pending') {
+        interval = payload.interval ?? interval
+        continue
+      }
+      if (payload.status === 'connected') {
+        setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'connected', message: payload.account ?? '' } }))
+        await refreshOAuth()
+        return
+      }
+      setOauthFlows((flows) => ({
+        ...flows,
+        [id]: { flowId: '', status: payload.status ?? 'error', message: payload.message ?? payload.error ?? '' }
+      }))
+      return
+    }
+    setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'expired', message: 'Stopped polling; start again.' } }))
+  }
+
+  async function finishSignIn(id: string) {
+    const flow = oauthFlows[id]
+    if (!flow?.flowId) return
+    const response = await fetch(`/api/oauth/${id}/complete`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ flowId: flow.flowId, code: oauthCode })
+    })
+    const payload = (await response.json()) as { status?: string; account?: string; error?: string }
+    if (payload.error) {
+      setOauthFlows((flows) => ({ ...flows, [id]: { ...flow, status: 'failed', message: payload.error } }))
+      return
+    }
+    setOauthCode('')
+    setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'connected', message: payload.account ?? '' } }))
+    await refreshOAuth()
+  }
+
+  async function signOut(id: string) {
+    await fetch(`/api/oauth/${id}`, { method: 'DELETE' })
+    setOauthFlows((flows) => {
+      const next = { ...flows }
+      delete next[id]
+      return next
+    })
+    await refreshOAuth()
+  }
+
+  async function loadModels(id: string, refresh = false) {
+    if (!id) {
+      setModelList([])
+      setModelAt(null)
+      setModelNote('')
+      return
+    }
+    setModelNote(refresh ? 'refreshing…' : 'loading…')
+    const response = await fetch(`/api/providers/${id}/models${refresh ? '?refresh=1' : ''}`)
+    const payload = (await response.json()) as { models?: string[]; at?: string | null; cached?: boolean; error?: string }
+    setModelList(payload.models ?? [])
+    setModelAt(payload.at ?? null)
+    setModelCached(!!payload.cached)
+    setModelNote(
+      payload.error
+        ? `${payload.error}${payload.models?.length ? ' · showing a saved list' : ''}`
+        : payload.models?.length
+          ? payload.cached
+            ? `${payload.models.length} models, reused from ${new Date(payload.at ?? '').toLocaleString()}`
+            : `${payload.models.length} models, fetched now`
+          : 'no models listed'
+    )
+  }
+
+  async function saveProviderBase(id: string) {
+    const base = (baseDrafts[id] ?? '').trim()
+    if (!base) return
+    const response = await fetch(`/api/providers/${id}/base`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ base })
+    })
+    const payload = (await response.json()) as { error?: string; base?: string }
+    setProviderNotes((notes) => ({ ...notes, [id]: payload.error ?? `address saved: ${payload.base}` }))
+    await refreshProviders()
+  }
+
+  async function findProviderModels(id: string) {
+    setProviderNotes((notes) => ({ ...notes, [id]: 'asking the server…' }))
+    const response = await fetch(`/api/providers/${id}/models`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    const payload = (await response.json()) as { error?: string; models?: string[] }
+    setProviderNotes((notes) => ({ ...notes, [id]: payload.error ?? 'model list refreshed' }))
+    await refreshProviders()
   }
 
   async function saveGithubToken() {
@@ -1463,6 +1637,9 @@ export default function App() {
           <span>View</span>
           <span>Skills</span>
           <span>Sources</span>
+          <button className="mb-item" onClick={openProviders}>
+            Providers
+          </button>
           <span>Help</span>
         </div>
         <div className="searchwrap">
@@ -1604,9 +1781,144 @@ export default function App() {
                         )}
                       </>
                     )}
+                    {row.baseEditable && (
+                      <>
+                        <input
+                          className="provinput provbase"
+                          placeholder={row.base}
+                          value={baseDrafts[row.id] ?? row.base}
+                          onChange={(event) => setBaseDrafts((drafts) => ({ ...drafts, [row.id]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void saveProviderBase(row.id)
+                          }}
+                        />
+                        <button className="ghost small" onClick={() => void saveProviderBase(row.id)}>
+                          Save URL
+                        </button>
+                        <button className="ghost small" onClick={() => void findProviderModels(row.id)} title="Ask the server what it serves">
+                          Models
+                        </button>
+                      </>
+                    )}
                     {providerNotes[row.id] && <span className="provnote">{providerNotes[row.id]}</span>}
                   </div>
                 ))}
+              </div>
+
+              <div className="provsep" />
+
+              <div className="oauthblock">
+                <div className="imsection">
+                  <span>Sign in</span>
+                </div>
+                {oauthRows.map((row) => {
+                  const flow = oauthFlows[row.id]
+                  return (
+                    <div className="oauthrow" key={row.id}>
+                      <div className="oauthhead">
+                        <span className="provname">{row.label}</span>
+                        <span className={`provdot ${row.connected ? 'on' : ''}`} aria-hidden="true" />
+                        <span className="provstate">
+                          {row.connected ? row.account || 'connected' : 'not signed in'}
+                        </span>
+                        {row.connected ? (
+                          <button className="ghost small dim" onClick={() => void signOut(row.id)}>
+                            Disconnect
+                          </button>
+                        ) : (
+                          <button className="ghost small" onClick={() => void signIn(row.id)} disabled={oauthBusy === row.id}>
+                            {oauthBusy === row.id ? 'Starting…' : 'Sign in'}
+                          </button>
+                        )}
+                        <span className="oauthnote" title={row.note}>{row.note}</span>
+                      </div>
+
+                      {flow?.code && (
+                        <div className="oauthflow">
+                          <code className="oauthcode">{flow.code}</code>
+                          <a className="phlink" href={flow.url} target="_blank" rel="noreferrer">
+                            Open the approval page
+                          </a>
+                          <span className="oauthstate">
+                            {flow.status === 'waiting' ? 'waiting for approval…' : flow.message ?? flow.status}
+                          </span>
+                        </div>
+                      )}
+
+                      {flow?.status === 'paste' && (
+                        <div className="oauthflow">
+                          <input
+                            className="provinput"
+                            placeholder="Paste the code the browser showed"
+                            value={oauthCode}
+                            onChange={(event) => setOauthCode(event.target.value)}
+                          />
+                          <button className="ghost small" onClick={() => void finishSignIn(row.id)}>
+                            Finish
+                          </button>
+                        </div>
+                      )}
+
+                      {flow && flow.status !== 'waiting' && flow.status !== 'paste' && flow.message && (
+                        <div className="oauthstate">{flow.message}</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="provsep" />
+
+              <div className="modelblock">
+                <div className="imsection">
+                  <span>Model</span>
+                </div>
+                <div className="modelrow">
+                  <select
+                    className="modelsel"
+                    value={modelProvider}
+                    onChange={(event) => {
+                      const id = event.target.value
+                      setModelProvider(id)
+                      void loadModels(id)
+                    }}
+                  >
+                    <option value="">Choose a signed-in provider</option>
+                    {providerRows
+                      ?.filter((row) => row.configured && !row.requiresSignIn)
+                      .map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.label} · key
+                        </option>
+                      ))}
+                    {oauthRows
+                      .filter((row) => row.connected)
+                      .map((row) => (
+                        <option key={`oauth-${row.id}`} value={row.id}>
+                          {row.label} · signed in
+                        </option>
+                      ))}
+                  </select>
+
+                  <select className="modelsel" value="" onChange={() => undefined} disabled={!modelList.length}>
+                    <option value="">
+                      {modelList.length ? `${modelList.length} models available` : 'No models yet'}
+                    </option>
+                    {modelList.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button className="ghost small" disabled={!modelProvider} onClick={() => void loadModels(modelProvider, true)}>
+                    Refresh
+                  </button>
+                  <span className="oauthstate">
+                    {modelNote}
+                    {modelCached && modelAt ? '' : ''}
+                  </span>
+                </div>
               </div>
 
               <div className="provsep" />
@@ -2286,24 +2598,7 @@ export default function App() {
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
           <ScrollPane axis={wrap ? 'y' : 'both'} className="detail-scroll">
-          {!detail && (
-            <div className="empty ph">
-              <div className="phtitle">Select a skill to read it.</div>
-              <div className="phrow">
-                <button className="phlink" onClick={openProviders}>
-                  Providers
-                </button>
-                <span className="phsep">·</span>
-                <button className="phlink" onClick={() => setInstallOpen(true)}>
-                  Install Skill
-                </button>
-                <span className="phsep">·</span>
-                <button className="phlink" onClick={() => void scan()}>
-                  Scan folders
-                </button>
-              </div>
-            </div>
-          )}
+          {!detail && <div className="empty">Select a skill to read it.</div>}
           {detail && (
             <div className="detail-inner">
               <div className="detailhead">

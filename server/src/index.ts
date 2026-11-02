@@ -49,7 +49,18 @@ import {
 } from './lifecycle'
 import { curateDryRun } from './curate'
 import { improveDryRun } from './improve'
-import { PROVIDERS, providerById, providerSummary, testProvider } from './providers'
+import { PROVIDERS, cachedModels, providerById, providerSummary, refreshModels, testProvider } from './providers'
+import { setOverride } from './providerConfig'
+import {
+  OAUTH_PROVIDERS,
+  completeAuthorizeFlow,
+  disconnectOAuth,
+  importToken,
+  pollDeviceFlow,
+  publicOAuthProviders,
+  startAuthorizeFlow,
+  startDeviceFlow
+} from './oauth'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
@@ -531,6 +542,122 @@ app.post('/api/curate/dry-run', async () => {
   // Deterministic and read-only: the report names its evidence, so a wrong cluster is arguable.
   return curateDryRun()
 })
+
+app.post('/api/providers/:id/base', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const body = (request.body ?? {}) as { base?: string }
+  const base = (body.base ?? '').trim()
+  if (!base) {
+    reply.code(400)
+    return { error: 'base is required' }
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(base)
+  } catch {
+    reply.code(400)
+    return { error: 'base must be a full URL, for example http://127.0.0.1:11434/v1' }
+  }
+  if (!/^https?:$/.test(parsed.protocol)) {
+    reply.code(400)
+    return { error: 'base must be http or https' }
+  }
+  // A saved address is a preference, not a secret, so it lives in a plain file.
+  setOverride(provider.id, { base: base.replace(/\/$/, '') })
+  return providerSummary(providerById(provider.id)!)
+})
+
+app.get('/api/providers/:id/models', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const cache = cachedModels(provider.id)
+  const wantsFresh = (request.query as { refresh?: string }).refresh === '1'
+  if (cache.fresh && !wantsFresh) return { provider: provider.id, models: cache.models, at: cache.at, cached: true }
+  const result = await refreshModels(provider)
+  if ('error' in result) {
+    reply.code(502)
+    // A stale list still beats an empty dropdown, so it is returned with the failure.
+    return { error: result.error, models: cache.models, at: cache.at, cached: true }
+  }
+  return { provider: provider.id, models: result.models, at: result.at, cached: false }
+})
+
+app.post('/api/providers/:id/models', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const result = await refreshModels(provider)
+  if ('error' in result) {
+    reply.code(502)
+    return { error: result.error, base: provider.base }
+  }
+  return { provider: provider.id, base: provider.base, models: result.models, at: result.at }
+})
+
+app.get('/api/oauth', async () => ({ providers: publicOAuthProviders() }))
+
+app.post('/api/oauth/:id/start', async (request, reply) => {
+  const id = (request.params as { id: string }).id
+  const config = OAUTH_PROVIDERS[id]
+  if (!config) {
+    reply.code(404)
+    return { error: 'no sign-in for that provider' }
+  }
+  try {
+    return config.kind === 'authorize' ? startAuthorizeFlow(id) : await startDeviceFlow(id)
+  } catch (error) {
+    reply.code((error as { status?: number }).status ?? 502)
+    return { error: (error as Error).message, code: (error as { code?: string }).code ?? null }
+  }
+})
+
+app.post('/api/oauth/:id/poll', async (request, reply) => {
+  const id = (request.params as { id: string }).id
+  const body = (request.body ?? {}) as { flowId?: string }
+  if (!body.flowId) {
+    reply.code(400)
+    return { error: 'flowId is required' }
+  }
+  try {
+    return await pollDeviceFlow(id, body.flowId)
+  } catch (error) {
+    reply.code((error as { status?: number }).status ?? 502)
+    return { error: (error as Error).message }
+  }
+})
+
+app.post('/api/oauth/:id/complete', async (request, reply) => {
+  const id = (request.params as { id: string }).id
+  const body = (request.body ?? {}) as { flowId?: string; code?: string }
+  try {
+    return await completeAuthorizeFlow(id, body.flowId ?? '', body.code ?? '')
+  } catch (error) {
+    reply.code((error as { status?: number }).status ?? 502)
+    return { error: (error as Error).message }
+  }
+})
+
+app.post('/api/oauth/:id/import', async (request, reply) => {
+  const id = (request.params as { id: string }).id
+  const body = (request.body ?? {}) as { access?: string; refresh?: string; expiresAt?: string }
+  try {
+    return importToken(id, body)
+  } catch (error) {
+    reply.code((error as { status?: number }).status ?? 400)
+    return { error: (error as Error).message }
+  }
+})
+
+app.delete('/api/oauth/:id', async (request) => ({ removed: disconnectOAuth((request.params as { id: string }).id) }))
 
 app.get('/api/providers', async () => ({
   providers: PROVIDERS.map(providerSummary)
