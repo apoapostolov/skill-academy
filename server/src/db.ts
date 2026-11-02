@@ -222,7 +222,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   )
 
   const idsByReal = new Map<string, number>()
-  const changedIds: (number | bigint)[] = []
+  const changedIds: (string | number | bigint)[] = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
     const row = existing.get(real) as { id: number; package_hash: string } | undefined
@@ -247,8 +247,9 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       // An upsert does not report a usable insert id, so read it back.
       // The id is bound back into SQLite as it came out: node:sqlite hands back a bigint
       // for rowids it cannot represent exactly, and converting it is what crashed first.
-      const created = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(real) as
-        | { id: number | bigint }
+      // CAST to TEXT: node:sqlite throws converting a rowid it reads as a big int.
+      const created = db.prepare('SELECT CAST(id AS TEXT) AS id FROM skills WHERE real_path = ?').get(real) as
+        | { id: string }
         | undefined
       if (created) {
         idsByReal.set(real, Number(created.id))
@@ -282,17 +283,9 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     changedIds.push(row.id)
   }
 
-  if (changedIds.length > 0) {
-    // A savepoint nests inside the transaction saveScan already opened.
-    db.exec('SAVEPOINT index_changes')
-    try {
-      for (const id of changedIds) indexSkill(id)
-      db.exec('RELEASE index_changes')
-    } catch (error) {
-      db.exec('ROLLBACK TO index_changes')
-      throw error
-    }
-  }
+  // A running app beats a fast one: the incremental path trips a node:sqlite binding
+  // defect on rowids, so a changed root rebuilds the index instead.
+  if (changedIds.length > 0) rebuildFts(db)
 
   // Placements are what the scan just observed for this root; replace them only when the
   // observed set differs, so a rescan of unchanged disk performs no writes at all.
@@ -367,7 +360,7 @@ function indexStatementsFor(): { select: StatementSyncLike; drop: StatementSyncL
 }
 
 /** Writes one skill into the search index, replacing its previous row if any. */
-export function indexSkill(id: number | bigint): void {
+export function indexSkill(id: string | number | bigint): void {
   const statement = indexStatementsFor()
   const row = statement.select.get(id) as
     | { id: number; name: string; description: string; tags: string; body: string }
@@ -377,7 +370,7 @@ export function indexSkill(id: number | bigint): void {
   statement.insert.run(row.id, row.name, row.description, row.tags, row.body)
 }
 
-export function dropFromIndex(id: number | bigint): void {
+export function dropFromIndex(id: string | number | bigint): void {
   getDb().prepare('DELETE FROM skills_fts WHERE rowid = ?').run(id)
 }
 
@@ -527,12 +520,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
     result.changed = 1
   }
 
-  if (result.added + result.changed > 0) {
-    const stored = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(skill.realPath ?? skill.path) as
-      | { id: number | bigint }
-      | undefined
-    if (stored) indexSkill(stored.id)
-  }
+  if (result.added + result.changed > 0) rebuildFts(db)
   return result
 }
 
