@@ -38,6 +38,7 @@ export interface SkillRow {
 
 export interface SkillQuery {
   q?: string
+  status?: 'active' | 'archived' | 'all' 
   root?: string
   tag?: string
   category?: string
@@ -497,6 +498,12 @@ function buildMatch(q: string): string {
   return terms.map((term) => `"${term}"*`).join(' AND ')
 }
 
+/**
+ * A skill under `<root>/.archive/` belongs to that platform's archive. Derived from the path,
+ * so an existing index needs no migration and a moved folder changes category on the next scan.
+ */
+export const ARCHIVED_SQL = "path LIKE '%/.archive/%' OR path LIKE '%\\.archive\\%'"
+
 export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[] } {
   const db = getDb()
   const limit = Math.min(Math.max(query.limit ?? 200, 1), 500)
@@ -523,6 +530,9 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     params.push(query.category)
   }
   if (query.health) filters.push("s.health <> '[]'")
+  // Off means moved into the platform's own .archive folder, so status is read from the path.
+  if (query.status === 'archived') filters.push(ARCHIVED_SQL)
+  if (query.status === 'active') filters.push('NOT (' + ARCHIVED_SQL + ')')
 
   if (match) {
     const from =
@@ -1029,4 +1039,14 @@ export function sourceSkills(id: number): string[] {
   } catch {
     return []
   }
+}
+
+/** How many skills sit in each root's own `.archive` folder. */
+export function archivedByRoot(): Record<string, number> {
+  const rows = getDb()
+    .prepare(`SELECT root_path, COUNT(*) AS n FROM skills WHERE ${ARCHIVED_SQL} GROUP BY root_path`)
+    .all() as Array<{ root_path: string; n: number }>
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.root_path] = row.n
+  return out
 }

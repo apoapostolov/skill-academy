@@ -101,6 +101,11 @@ export function scanOne(root: AgentRoot): RootEntry {
   const packages: string[] = []
   findPackages(root.path, 0, packages)
 
+  // `.archive` is where a skill goes when it is switched off for this platform: still on disk,
+  // still indexed, just no longer in the agent's skill folder.
+  const archivedPackages: string[] = []
+  findPackages(path.join(root.path, '.archive'), 1, archivedPackages)
+
   const skills: SkillRecord[] = []
   const placements: PlacementRow[] = []
   const parsed = new Set<string>()
@@ -115,6 +120,14 @@ export function scanOne(root: AgentRoot): RootEntry {
     if (!record) continue
     parsed.add(realPath)
     skills.push({ ...record, realPath })
+  }
+
+  for (const dir of archivedPackages) {
+    if (parsed.has(realPathOf(dir))) continue
+    const record = parseSkill(dir, root.path, root.scope)
+    if (!record) continue
+    parsed.add(realPathOf(dir))
+    skills.push({ ...record, realPath: realPathOf(dir) })
   }
 
   return {

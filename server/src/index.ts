@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -35,7 +35,7 @@ import {
   deleteSource,  recordSourceEvent,
   listSourceEvents,
   acknowledgeSourceEvent,  lockRows,  setSourceSkills,
-  sourceSkills,
+  sourceSkills,  getDb,  archivedByRoot,
 } from './db'
 import {
   archiveSkill,
@@ -246,6 +246,8 @@ app.get('/api/skills', async (request) => {
     root: params.root || undefined,
     tag: params.tag || undefined,
     category: params.category || undefined,
+    status:
+      params.status === 'active' || params.status === 'archived' ? params.status : ('all' as const),
     health: params.health === '1',
     limit: params.limit ? Number(params.limit) : undefined,
     offset: params.offset ? Number(params.offset) : undefined
@@ -359,6 +361,7 @@ app.get('/api/facets', async () => {
         path: root.path,
         origin: root.origin,
         count: tokens[root.path]?.count ?? stored.get(root.path)?.skill_count ?? 0,
+        archived: archivedByRoot()[root.path] ?? 0,
         tokens: tokens[root.path]?.tokens ?? 0
       }))
     )
@@ -1116,6 +1119,60 @@ app.post('/api/presets/:id/apply', async (request, reply) => {
     failed: results.filter((row) => !row.ok).length,
     results
   }
+})
+
+app.post('/api/skills/:id/switch', async (request, reply) => {
+  // Off means the platform stops seeing the skill, and the folder moves inside that platform's
+  // own `.archive`. Nothing is deleted: `.archive/<name>` is the exact inverse of the switch.
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { agent?: string; on?: boolean }
+  if (!body.agent || typeof body.on !== 'boolean') {
+    reply.code(400)
+    return { error: 'agent and on are required' }
+  }
+  const row = getDb()
+    .prepare('SELECT id, name, path, root_path FROM skills WHERE id = ?')
+    .get(Number(id)) as { id: number; name: string; path: string; root_path: string } | undefined
+  if (!row) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const registry = loadRegistry()
+  const root = registry.roots.find((entry) => entry.exists && entry.path === row.root_path)
+  if (!root) {
+    reply.code(404)
+    return { error: `no detected root for ${body.agent}` }
+  }
+  const archiveRoot = path.join(root.path, '.archive')
+  const live = path.join(root.path, row.name)
+  const parked = path.join(archiveRoot, row.name)
+
+  if (body.on === false) {
+    if (!existsSync(live)) {
+      reply.code(409)
+      return { error: 'not-in-root', path: live }
+    }
+    mkdirSync(archiveRoot, { recursive: true })
+    if (existsSync(parked)) {
+      reply.code(409)
+      return { error: 'archive-name-taken', path: parked }
+    }
+    renameSync(live, parked)
+    addJournal('platform-archive', { agent: body.agent, from: live, to: parked })
+    return { on: false, agent: body.agent, movedTo: parked }
+  }
+
+  if (!existsSync(parked)) {
+    reply.code(409)
+    return { error: 'not-archived', path: parked }
+  }
+  if (existsSync(live)) {
+    reply.code(409)
+    return { error: 'name-taken-in-root', path: live }
+  }
+  renameSync(parked, live)
+  addJournal('platform-restore', { agent: body.agent, from: parked, to: live })
+  return { on: true, agent: body.agent, movedTo: live }
 })
 
 app.post('/api/skills/bulk', async (request, reply) => {

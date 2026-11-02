@@ -71,7 +71,7 @@ interface PackageEntry {
 }
 
 interface Facets {
-  agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
+  agents: { agent: string; path: string; origin: string; count: number; archived?: number; tokens: number }[]
   hidden: string[]
   tags: { tag: string; count: number }[]
   categories: { category: string; count: number }[]
@@ -726,6 +726,7 @@ export default function App() {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [presets, setPresets] = useState<{ id: number; name: string; agents: string[] }[]>([])
   const [selectMode, setSelectMode] = useState(false)
+  const [statusSeg, setStatusSeg] = useState<Set<'active' | 'archived'>>(new Set(['active', 'archived']))
   const [bulkConfirm, setBulkConfirm] = useState(false)
 
   useEffect(() => {
@@ -799,6 +800,23 @@ export default function App() {
       else next.add(id)
       return next
     })
+  }
+
+  async function togglePlatform(skill: SkillRow) {
+    if (scope.kind !== 'agent') return
+    const on = skill.path.indexOf('.archive') > -1
+    const response = await fetch(`/api/skills/${skill.id}/switch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: scope.agent, on })
+    })
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      window.alert(`Switch failed: ${payload.error ?? response.status}`)
+      return
+    }
+    await loadState()
+    await fetchPage(0, true)
   }
 
   async function bulkAgents(action: 'enable' | 'disable') {
@@ -939,6 +957,8 @@ export default function App() {
     if (scope.kind === 'tag') params.set('tag', scope.tag)
     if (scope.kind === 'category') params.set('category', scope.category)
     if (scope.kind === 'health') params.set('health', '1')
+    const both = statusSeg.size === 0 || statusSeg.size === 2
+    params.set('status', both ? 'all' : statusSeg.has('active') ? 'active' : 'archived')
     params.set('limit', String(PAGE))
     params.set('offset', String(offset))
     return params.toString()
@@ -1005,7 +1025,7 @@ export default function App() {
     if (pageRef.current) pageRef.current.scrollTop = 0
     fetchPage(0, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, scope])
+  }, [debounced, scope, statusSeg])
 
   function loadMore() {
     if (!hasMore || loadingRef.current) return
@@ -1432,7 +1452,10 @@ export default function App() {
                   {editingAgents ? (
                     <Switch on={!isHidden} />
                   ) : (
-                    <span>{fmt.format(agent.count)}</span>
+                    <span>
+                      {fmt.format(agent.count)}
+                      <span className="archcount">/{fmt.format(agent.archived ?? 0)}</span>
+                    </span>
                   )}
                 </button>
               )
@@ -1551,6 +1574,29 @@ export default function App() {
               />
             )}
             <span className="scope">{scopeLabel}</span>
+            <div className="seg" role="group" aria-label="Shown skills">
+              {(
+                [
+                  ['active', 'Installed'],
+                  ['archived', 'Archived']
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`segbtn ${statusSeg.has(key) ? 'on' : ''}`}
+                  aria-pressed={statusSeg.has(key)}
+                  onClick={() => {
+                    const next = new Set(statusSeg)
+                    if (next.has(key)) next.delete(key)
+                    else next.add(key)
+                    setStatusSeg(next)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <span className="count">
               {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
               {checked.size > 0
@@ -1677,11 +1723,46 @@ export default function App() {
                 <span className="title">
                   {skill.name}
                   {skill.version ? <span className="ver">v{skill.version.replace(/^v/i, '')}</span> : null}
+                  {skill.path.indexOf('.archive') > -1 ? (
+                    <span className="archpill" title="Parked in this platform archive">
+                      Archived
+                    </span>
+                  ) : null}
                   {skill.repo ? <span className="repo">{skill.repo}</span> : null}
                 </span>
                 <span className="desc">{skill.description || 'No description'}</span>
               </span>
-              <span className="tokens">{fmt.format(skill.tokens)}</span>
+              {selectMode ? (
+                <span
+                  className={`switch ${skill.path.indexOf('.archive') > -1 ? '' : 'on'}`}
+                  role="switch"
+                  aria-checked={skill.path.indexOf('.archive') === -1}
+                  tabIndex={0}
+                  title={
+                    scope.kind === 'agent'
+                      ? skill.path.indexOf('.archive') > -1
+                        ? 'Switched off: parked in this platform archive'
+                        : 'Switched on for this platform'
+                      : 'Choose an agent folder to switch a skill'
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (scope.kind !== 'agent') return
+                    void togglePlatform(skill)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === ' ' || event.key === 'Enter') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      if (scope.kind === 'agent') void togglePlatform(skill)
+                    }
+                  }}
+                >
+                  <span className="knob" />
+                </span>
+              ) : (
+                <span className="tokens">{fmt.format(skill.tokens)}</span>
+              )}
             </button>
           ))}
           {loadingMore && <div className="listfoot">Loading…</div>}

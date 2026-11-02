@@ -2470,3 +2470,106 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .headactions + .count {
   margin-left: 0;
 }
+
+/* Segmented status selector, centred in the list header. */
+.listhead {
+  position: relative;
+}
+
+.listhead .seg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.listhead .segbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #7d818a;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 5px;
+  cursor: default;
+}
+
+.listhead .segbtn.on {
+  color: #b9bdc4;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.listhead .segbtn:hover {
+  color: #dcdee3;
+}
+
+/* The switch takes the place the token size held. */
+.switch {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 15px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  cursor: default;
+  transition: background 120ms ease;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #9aa0a8;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.switch.on {
+  background: rgba(110, 158, 138, 0.45);
+  border-color: rgba(110, 158, 138, 0.6);
+}
+
+.switch.on .knob {
+  transform: translateX(11px);
+  background: #d6e4dd;
+}
+
+/* An archived skill says so next to its version, quietly. */
+.archpill {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: #a97874;
+  background: rgba(184, 92, 87, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(184, 92, 87, 0.2);
+}
+
+/* Installed over archived, with the archived half held back. */
+.archcount {
+  color: #6f6a72;
+}
+
+/* The list header holds its place while the rows scroll under it. */
+.listhead {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #17181b;
+  backdrop-filter: blur(8px);
+}
