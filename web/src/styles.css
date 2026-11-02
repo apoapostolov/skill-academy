@@ -2899,3 +2899,24 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   flex: 0 0 auto;
   padding-left: 8px;
 }
+
+/* The mode segment is a control, not a label: it matches the action beside it. */
+.imfoot .immode {
+  height: 30px;
+  padding: 2px;
+  align-items: center;
+}
+
+.imfoot .immode .segbtn {
+  height: 24px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Only a skill carries the dim outline; an agent row keeps a clean surface. */
+.imrow.off.imagent,
+.imagents .imrow.off {
+  box-shadow: none;
+}

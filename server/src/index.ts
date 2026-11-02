@@ -47,10 +47,12 @@ import {
   undoJournal,
   writeSettings
 } from './lifecycle'
+import { PROVIDERS, providerById, providerSummary, testProvider } from './providers'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
 import { compareVersions, provenanceOf } from './provenance'
+import { deleteKey, getKey, keyStatus, setKey } from './secrets'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import { readSkillBody } from './skill'
@@ -492,6 +494,80 @@ app.post('/api/lock/check', async (request, reply) => {
   return { ok: drifted === 0, path: target, added, removed, changed }
 })
 
+app.post('/api/github/key', async (request, reply) => {
+  const body = (request.body ?? {}) as { key?: string }
+  const key = (body.key ?? '').trim()
+  if (!key) {
+    reply.code(400)
+    return { error: 'token is required' }
+  }
+  setKey('github', key)
+  return { configured: true, hint: `…${key.slice(-4)}`, source: process.env.GITHUB_TOKEN ? 'environment' : 'store' }
+})
+
+app.delete('/api/github/key', async () => ({ removed: deleteKey('github'), ...keyStatus('github') }))
+
+app.get('/api/github/status', async () => {
+  const token = githubToken()
+  if (!token) return { configured: false, source: null, remaining: 0, limit: 60 }
+  const response = await fetch('https://api.github.com/rate_limit', { headers: githubHeaders() })
+  const payload = response.ok ? ((await response.json()) as { resources?: { core?: { remaining?: number; limit?: number } } }) : null
+  return {
+    configured: true,
+    source: process.env.GITHUB_TOKEN || process.env.GH_TOKEN ? 'environment' : 'store',
+    remaining: payload?.resources?.core?.remaining ?? null,
+    limit: payload?.resources?.core?.limit ?? null
+  }
+})
+
+app.get('/api/providers', async () => ({
+  providers: PROVIDERS.map(providerSummary)
+}))
+
+app.post('/api/providers/:id/key', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const body = (request.body ?? {}) as { key?: string }
+  const key = (body.key ?? '').trim()
+  if (!key) {
+    reply.code(400)
+    return { error: 'key is required' }
+  }
+  try {
+    setKey(provider.id, key)
+  } catch (error) {
+    reply.code(500)
+    return { error: (error as Error).message }
+  }
+  // The key goes in and never comes back out: the response repeats only the masked status.
+  return providerSummary(provider)
+})
+
+app.delete('/api/providers/:id/key', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const removed = deleteKey(provider.id)
+  return { removed, ...providerSummary(provider) }
+})
+
+app.post('/api/providers/:id/test', async (request, reply) => {
+  const provider = providerById((request.params as { id: string }).id)
+  if (!provider) {
+    reply.code(404)
+    return { error: 'unknown provider' }
+  }
+  const body = (request.body ?? {}) as { model?: string }
+  const result = await testProvider(provider, body.model)
+  if (!result.ok) reply.code(200)
+  return { provider: provider.id, ...result }
+})
+
 app.get('/api/sources', async () => ({ sources: listSources() }))
 
 app.post('/api/sources', async (request, reply) => {
@@ -632,7 +708,7 @@ app.post('/api/install/apply', async (request, reply) => {
       headers: githubHeaders()
     })
     if (!treeResponse.ok) {
-      results.push({ path: skillPath, installed: false, error: `github ${treeResponse.status}` })
+      results.push({ path: skillPath, installed: false, error: githubFailure(treeResponse.status) })
       continue
     }
     const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string }> }
@@ -706,7 +782,7 @@ app.post('/api/install/test', async (request, reply) => {
   const treeResponse = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers })
   if (!treeResponse.ok) {
     reply.code(502)
-    return { error: `github ${treeResponse.status}`, repo }
+    return { error: githubFailure(treeResponse.status), repo }
   }
   const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string; size?: number }> }
   const skillFiles = (tree.tree ?? []).filter(
@@ -749,11 +825,27 @@ app.post('/api/install/test', async (request, reply) => {
   }
 })
 
+function githubToken(): string | null {
+  // Environment first, then the credential store: an unauthenticated GitHub allows 60 requests
+  // an hour, which a handful of checks spends, and then every call looks broken.
+  return process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? getKey('github')
+}
+
 function githubHeaders(): Record<string, string> {
   const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  const token = githubToken()
   if (token) headers.authorization = `Bearer ${token}`
   return headers
+}
+
+function githubFailure(status: number): string {
+  if (status === 403 || status === 429) {
+    return githubToken()
+      ? `github ${status}: rate limit reached, wait for the reset hour`
+      : `github ${status}: unauthenticated limit reached, save a GitHub token in Settings`
+  }
+  if (status === 404) return 'github 404: repository not found, or private without a token'
+  return `github ${status}`
 }
 
 async function fetchRaw(repo: string, ref: string, filePath: string): Promise<{ ok: boolean; text: string; status: number }> {

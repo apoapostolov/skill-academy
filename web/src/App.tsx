@@ -1950,11 +1950,6 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-                        {installPicked.size === 0 && (
-                          <div className="implatz thin">
-                            <span>No skills selected</span>
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
