@@ -190,7 +190,15 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
   const description = declaredDescription || firstParagraph(body)
 
   const tagSource = data.tags ?? data.keywords
-  const tags = Array.isArray(tagSource) ? tagSource.slice(0, 24) : []
+  const declared = (Array.isArray(tagSource) ? tagSource : []).map((tag) => String(tag).trim()).filter(Boolean)
+
+  // A skill kept in a subfolder of an agent's skills root is tagged by that folder:
+  // `~/.hermes/skills/creative/anatomy` carries `creative`. A skill sitting directly
+  // in the root carries no folder tag at all. Declared tags win; the folder adds one
+  // only when it is not already there.
+  const relative = path.relative(rootPath, dir).split(path.sep).filter(Boolean)
+  const folderTag = relative.length > 1 ? relative[0] : ''
+  const tags = Array.from(new Set(folderTag ? [...declared, folderTag] : declared)).slice(0, 24)
 
   const files = listPackageFiles(dir)
   const bytes = files.reduce((sum, entry) => sum + entry.size, 0)
