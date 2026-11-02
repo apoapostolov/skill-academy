@@ -2030,3 +2030,85 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 }
 
 .scanwhy { color: var(--text-3); font-size: 10.5px; }
+
+/* ============================================================================
+   Markdown rhythm, normalized.
+   Earlier passes tightened individual pieces (paragraphs to zero, headings to
+   2px, lists to 1.22 line height), which is why the page reads unevenly: each
+   element answered to a different number. One rhythm unit now governs all of
+   them, the way a typeset A4 page does — every block sits on the same baseline
+   grid, and only headings may claim more air, by whole units.
+   ========================================================================== */
+.md {
+  --md-unit: 8px;
+  --md-line: 1.55;
+  font-size: 12.5px;
+  line-height: var(--md-line);
+}
+
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+
+/* Body text: one line of air after every paragraph, never before it. */
+.md p {
+  margin: 0 0 var(--md-unit);
+  line-height: var(--md-line);
+}
+
+/* Headings keep their place in the flow but take their air in whole units:
+   two above (so a heading never crowds the paragraph it follows), half below. */
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+  margin: calc(var(--md-unit) * 2) 0 calc(var(--md-unit) * 0.5);
+  line-height: 1.28;
+}
+
+.md h1 { font-size: 17px; margin-top: calc(var(--md-unit) * 2.5); }
+.md h2 { font-size: 14.5px; }
+.md h3 { font-size: 13px; }
+.md h4, .md h5, .md h6 { font-size: 12.5px; }
+
+/* The space above a heading belongs to the heading, not to the block before it,
+   so consecutive blocks cannot stack two gaps into one hole. */
+.md p + h1, .md p + h2, .md p + h3, .md p + h4,
+.md ul + h1, .md ul + h2, .md ul + h3, .md ul + h4,
+.md ol + h1, .md ol + h2, .md ol + h3, .md ol + h4,
+.md pre + h1, .md pre + h2, .md pre + h3, .md pre + h4,
+.md .md-table + h1, .md .md-table + h2, .md .md-table + h3, .md .md-table + h4 {
+  margin-top: calc(var(--md-unit) * 2);
+}
+
+/* Lists share the paragraph measure: the same unit below, one line per item,
+   and no gap at all between an item's own text and its nested list. */
+.md ul, .md ol {
+  margin: 0 0 var(--md-unit);
+  padding-left: 20px;
+}
+
+.md li {
+  margin: 0;
+  line-height: var(--md-line);
+}
+
+.md li + li { margin-top: 2px; }
+.md li > ul, .md li > ol { margin: 2px 0 0; }
+.md li > p { margin: 0 0 2px; }
+
+/* Quoted, fenced and tabular blocks are blocks like any other: one unit below. */
+.md blockquote {
+  margin: 0 0 var(--md-unit);
+  padding: 2px 0 2px 12px;
+  line-height: var(--md-line);
+}
+
+.md .md-code,
+.md .md-table {
+  margin: 0 0 var(--md-unit);
+}
+
+.md .md-code pre { line-height: 1.5; }
+
+.md hr {
+  margin: calc(var(--md-unit) * 2) 0;
+}
+
+.md a { line-height: inherit; }
