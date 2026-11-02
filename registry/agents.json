@@ -1,0 +1,554 @@
+{
+  "source": "https://github.com/vercel-labs/skills/blob/main/docs/agents.md",
+  "fetched": "2026-11-02",
+  "rows": [
+    {
+      "agents": [
+        "aider-desk"
+      ],
+      "label": "AiderDesk",
+      "project": ".aider-desk/skills/",
+      "global": "~/.aider-desk/skills/"
+    },
+    {
+      "agents": [
+        "amp",
+        "replit",
+        "universal"
+      ],
+      "label": "Amp, Replit, Universal",
+      "project": ".agents/skills/",
+      "global": "~/.config/agents/skills/"
+    },
+    {
+      "agents": [
+        "antigravity"
+      ],
+      "label": "Antigravity",
+      "project": ".agents/skills/",
+      "global": "~/.gemini/antigravity/skills/"
+    },
+    {
+      "agents": [
+        "antigravity-cli"
+      ],
+      "label": "Antigravity CLI",
+      "project": ".agents/skills/",
+      "global": "~/.gemini/antigravity-cli/skills/"
+    },
+    {
+      "agents": [
+        "astrbot"
+      ],
+      "label": "AstrBot",
+      "project": "data/skills/",
+      "global": "~/.astrbot/data/skills/"
+    },
+    {
+      "agents": [
+        "autohand-code"
+      ],
+      "label": "Autohand Code CLI",
+      "project": ".autohand/skills/",
+      "global": "~/.autohand/skills/"
+    },
+    {
+      "agents": [
+        "augment"
+      ],
+      "label": "Augment",
+      "project": ".augment/skills/",
+      "global": "~/.augment/skills/"
+    },
+    {
+      "agents": [
+        "bob"
+      ],
+      "label": "IBM Bob",
+      "project": ".bob/skills/",
+      "global": "~/.bob/skills/"
+    },
+    {
+      "agents": [
+        "claude-code"
+      ],
+      "label": "Claude Code",
+      "project": ".claude/skills/",
+      "global": "~/.claude/skills/"
+    },
+    {
+      "agents": [
+        "openclaw"
+      ],
+      "label": "OpenClaw",
+      "project": "skills/",
+      "global": "~/.openclaw/skills/"
+    },
+    {
+      "agents": [
+        "cline",
+        "codex",
+        "dexto",
+        "fx",
+        "kimi-code-cli",
+        "loaf",
+        "pi",
+        "sarvam-code",
+        "warp",
+        "zed"
+      ],
+      "label": "Cline, Codex, Dexto, fx, Kimi Code CLI, Loaf, Pi, Sarvam Code, Warp, Zed",
+      "project": ".agents/skills/",
+      "global": "~/.agents/skills/"
+    },
+    {
+      "agents": [
+        "codearts-agent"
+      ],
+      "label": "CodeArts Agent",
+      "project": ".codeartsdoer/skills/",
+      "global": "~/.codeartsdoer/skills/"
+    },
+    {
+      "agents": [
+        "codebuddy"
+      ],
+      "label": "CodeBuddy",
+      "project": ".codebuddy/skills/",
+      "global": "~/.codebuddy/skills/"
+    },
+    {
+      "agents": [
+        "codemaker"
+      ],
+      "label": "Codemaker",
+      "project": ".codemaker/skills/",
+      "global": "~/.codemaker/skills/"
+    },
+    {
+      "agents": [
+        "codestudio"
+      ],
+      "label": "Code Studio",
+      "project": ".codestudio/skills/",
+      "global": "~/.codestudio/skills/"
+    },
+    {
+      "agents": [
+        "command-code"
+      ],
+      "label": "Command Code",
+      "project": ".commandcode/skills/",
+      "global": "~/.commandcode/skills/"
+    },
+    {
+      "agents": [
+        "continue"
+      ],
+      "label": "Continue",
+      "project": ".continue/skills/",
+      "global": "~/.continue/skills/"
+    },
+    {
+      "agents": [
+        "cortex"
+      ],
+      "label": "Cortex Code",
+      "project": ".cortex/skills/",
+      "global": "~/.snowflake/cortex/skills/"
+    },
+    {
+      "agents": [
+        "crush"
+      ],
+      "label": "Crush",
+      "project": ".crush/skills/",
+      "global": "~/.config/crush/skills/"
+    },
+    {
+      "agents": [
+        "cursor"
+      ],
+      "label": "Cursor",
+      "project": ".agents/skills/",
+      "global": "~/.cursor/skills/"
+    },
+    {
+      "agents": [
+        "deepagents"
+      ],
+      "label": "Deep Agents",
+      "project": ".agents/skills/",
+      "global": "~/.deepagents/agent/skills/"
+    },
+    {
+      "agents": [
+        "devin"
+      ],
+      "label": "Devin for Terminal",
+      "project": ".devin/skills/",
+      "global": "~/.config/devin/skills/"
+    },
+    {
+      "agents": [
+        "droid"
+      ],
+      "label": "Droid",
+      "project": ".agents/skills/",
+      "global": "~/.factory/skills/"
+    },
+    {
+      "agents": [
+        "eve"
+      ],
+      "label": "Eve",
+      "project": "agent/skills/",
+      "global": "N/A (project-only)"
+    },
+    {
+      "agents": [
+        "firebender"
+      ],
+      "label": "Firebender",
+      "project": ".agents/skills/",
+      "global": "~/.firebender/skills/"
+    },
+    {
+      "agents": [
+        "forgecode"
+      ],
+      "label": "ForgeCode",
+      "project": ".forge/skills/",
+      "global": "~/.forge/skills/"
+    },
+    {
+      "agents": [
+        "gemini-cli"
+      ],
+      "label": "Gemini CLI",
+      "project": ".agents/skills/",
+      "global": "~/.gemini/skills/"
+    },
+    {
+      "agents": [
+        "github-copilot"
+      ],
+      "label": "GitHub Copilot",
+      "project": ".agents/skills/",
+      "global": "~/.copilot/skills/"
+    },
+    {
+      "agents": [
+        "goose"
+      ],
+      "label": "Goose",
+      "project": ".goose/skills/",
+      "global": "~/.config/goose/skills/"
+    },
+    {
+      "agents": [
+        "grok"
+      ],
+      "label": "Grok Build",
+      "project": ".grok/skills/",
+      "global": "~/.grok/skills/"
+    },
+    {
+      "agents": [
+        "hermes-agent"
+      ],
+      "label": "Hermes Agent",
+      "project": ".hermes/skills/",
+      "global": "~/.hermes/skills/"
+    },
+    {
+      "agents": [
+        "inference-sh"
+      ],
+      "label": "inference.sh",
+      "project": ".inferencesh/skills/",
+      "global": "~/.inferencesh/skills/"
+    },
+    {
+      "agents": [
+        "jazz"
+      ],
+      "label": "Jazz",
+      "project": ".jazz/skills/",
+      "global": "~/.jazz/skills/"
+    },
+    {
+      "agents": [
+        "junie"
+      ],
+      "label": "Junie",
+      "project": ".junie/skills/",
+      "global": "~/.junie/skills/"
+    },
+    {
+      "agents": [
+        "iflow-cli"
+      ],
+      "label": "iFlow CLI",
+      "project": ".iflow/skills/",
+      "global": "~/.iflow/skills/"
+    },
+    {
+      "agents": [
+        "kilo"
+      ],
+      "label": "Kilo Code",
+      "project": ".agents/skills/",
+      "global": "~/.kilo/skills/"
+    },
+    {
+      "agents": [
+        "kimchi"
+      ],
+      "label": "Kimchi",
+      "project": ".kimchi/skills/",
+      "global": "~/.config/kimchi/harness/skills/"
+    },
+    {
+      "agents": [
+        "kiro-cli"
+      ],
+      "label": "Kiro CLI",
+      "project": ".kiro/skills/",
+      "global": "~/.kiro/skills/"
+    },
+    {
+      "agents": [
+        "kode"
+      ],
+      "label": "Kode",
+      "project": ".kode/skills/",
+      "global": "~/.kode/skills/"
+    },
+    {
+      "agents": [
+        "lingma"
+      ],
+      "label": "Lingma",
+      "project": ".lingma/skills/",
+      "global": "~/.lingma/skills/"
+    },
+    {
+      "agents": [
+        "mcpjam"
+      ],
+      "label": "MCPJam",
+      "project": ".mcpjam/skills/",
+      "global": "~/.mcpjam/skills/"
+    },
+    {
+      "agents": [
+        "minimax-code"
+      ],
+      "label": "MiniMax Code",
+      "project": ".minimax/skills/",
+      "global": "~/.minimax/skills/"
+    },
+    {
+      "agents": [
+        "mistral-vibe"
+      ],
+      "label": "Mistral Vibe",
+      "project": ".vibe/skills/",
+      "global": "~/.vibe/skills/"
+    },
+    {
+      "agents": [
+        "moxby"
+      ],
+      "label": "Moxby",
+      "project": ".moxby/skills/",
+      "global": "~/.moxby/skills/"
+    },
+    {
+      "agents": [
+        "mux"
+      ],
+      "label": "Mux",
+      "project": ".mux/skills/",
+      "global": "~/.mux/skills/"
+    },
+    {
+      "agents": [
+        "opencode"
+      ],
+      "label": "OpenCode",
+      "project": ".agents/skills/",
+      "global": "~/.config/opencode/skills/"
+    },
+    {
+      "agents": [
+        "openhands"
+      ],
+      "label": "OpenHands",
+      "project": ".openhands/skills/",
+      "global": "~/.openhands/skills/"
+    },
+    {
+      "agents": [
+        "ona"
+      ],
+      "label": "Ona",
+      "project": ".ona/skills/",
+      "global": "~/.ona/skills/"
+    },
+    {
+      "agents": [
+        "posit-assistant"
+      ],
+      "label": "Posit Assistant",
+      "project": ".posit/assistant/skills/",
+      "global": "~/.posit/assistant/skills/"
+    },
+    {
+      "agents": [
+        "qoder"
+      ],
+      "label": "Qoder",
+      "project": ".qoder/skills/",
+      "global": "~/.qoder/skills/"
+    },
+    {
+      "agents": [
+        "qoder-cn"
+      ],
+      "label": "Qoder CN",
+      "project": ".qoder/skills/",
+      "global": "~/.qoder-cn/skills/"
+    },
+    {
+      "agents": [
+        "qwen-code"
+      ],
+      "label": "Qwen Code",
+      "project": ".qwen/skills/",
+      "global": "~/.qwen/skills/"
+    },
+    {
+      "agents": [
+        "reasonix"
+      ],
+      "label": "Reasonix",
+      "project": ".reasonix/skills/",
+      "global": "~/.reasonix/skills/"
+    },
+    {
+      "agents": [
+        "rovodev"
+      ],
+      "label": "Rovo Dev",
+      "project": ".rovodev/skills/",
+      "global": "~/.rovodev/skills/"
+    },
+    {
+      "agents": [
+        "roo"
+      ],
+      "label": "Roo Code",
+      "project": ".roo/skills/",
+      "global": "~/.roo/skills/"
+    },
+    {
+      "agents": [
+        "tabnine-cli"
+      ],
+      "label": "Tabnine CLI",
+      "project": ".tabnine/agent/skills/",
+      "global": "~/.tabnine/agent/skills/"
+    },
+    {
+      "agents": [
+        "terramind"
+      ],
+      "label": "Terramind",
+      "project": ".terramind/skills/",
+      "global": "~/.terramind/skills/"
+    },
+    {
+      "agents": [
+        "tinycloud"
+      ],
+      "label": "Tinycloud",
+      "project": ".tinycloud/skills/",
+      "global": "~/.tinycloud/skills/"
+    },
+    {
+      "agents": [
+        "trae"
+      ],
+      "label": "Trae",
+      "project": ".trae/skills/",
+      "global": "~/.trae/skills/"
+    },
+    {
+      "agents": [
+        "trae-cn"
+      ],
+      "label": "Trae CN",
+      "project": ".trae/skills/",
+      "global": "~/.trae-cn/skills/"
+    },
+    {
+      "agents": [
+        "windsurf"
+      ],
+      "label": "Windsurf",
+      "project": ".windsurf/skills/",
+      "global": "~/.codeium/windsurf/skills/"
+    },
+    {
+      "agents": [
+        "zcode"
+      ],
+      "label": "ZCode",
+      "project": ".zcode/skills/",
+      "global": "~/.zcode/skills/"
+    },
+    {
+      "agents": [
+        "zencoder",
+        "zenflow"
+      ],
+      "label": "Zencoder, Zenflow",
+      "project": ".zencoder/skills/",
+      "global": "~/.zencoder/skills/"
+    },
+    {
+      "agents": [
+        "neovate"
+      ],
+      "label": "Neovate",
+      "project": ".neovate/skills/",
+      "global": "~/.neovate/skills/"
+    },
+    {
+      "agents": [
+        "pochi"
+      ],
+      "label": "Pochi",
+      "project": ".pochi/skills/",
+      "global": "~/.pochi/skills/"
+    },
+    {
+      "agents": [
+        "promptscript"
+      ],
+      "label": "PromptScript",
+      "project": ".agents/skills/",
+      "global": "N/A (project-only)"
+    },
+    {
+      "agents": [
+        "adal"
+      ],
+      "label": "AdaL",
+      "project": ".adal/skills/",
+      "global": "~/.adal/skills/"
+    }
+  ]
+}

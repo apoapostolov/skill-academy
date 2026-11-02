@@ -1,0 +1,310 @@
+# Interface
+
+Apple HIG behaviour adapted to a browser: same restraint, same hierarchy, same feedback discipline. Not a copy of Apple's visual identity, and no iOS shapes on a desktop surface.
+
+The reference for control behaviour is the `apple-ui-standards` skill. This document owns Skill Academy's concrete decisions: measurements, tokens, screens, states, motion and copy.
+
+## Principles
+
+1. **Calm density.** A professional tool shows a lot without feeling loud. Colour marks state, never decoration.
+2. **One primary action per screen.** The library's primary action is the switch. Everything else is secondary.
+3. **The row is the truth.** If a row says mixed, the detail must explain it in one glance.
+4. **Nothing moves under the pointer.** Scans update rows in place. No reorder mid-hover.
+5. **Reversible actions do not ask.** Toggle and undo. Irreversible actions ask twice.
+
+## Window
+
+A three-pane layout filling the viewport, no page scroll. Only the list and the detail body scroll.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Skill Academy        [ Search skills, agents, sources…        ⌘K ]   ◐ 3   ⚙︎      │  52px
+├───────────────┬──────────────────────────┬───────────────────────────────────┤
+│  Library      │  Filter chips            │  prose-review                  ⋯  │
+│  ▸ All skills │  ┌────────────────────┐  │  ApoMakesMods/prose-review  v2.1  │
+│  ▸ Updates  3 │  │ ▣ prose-review  ◉  │  │  ─────────────────────────────    │
+│  ▸ Drift    1 │  │   Rewrites prose…  │  │  On in 3 of 5 agents              │
+│               │  │ ▣ seo-audit    ◯  │  │  ┌─────────────────────────────┐  │
+│  AGENTS       │  │   Audits pages…    │  │  │ Claude Code        [ ● ]    │  │
+│  Claude Code  │  └────────────────────┘  │  │ Cursor             [ ● ]    │  │
+│  Cursor       │                          │  │ Codex              [ ○ ]    │  │
+│  Codex        │                          │  │ Hermes Agent       [ ● ]    │  │
+│  Hermes       │                          │  │ Zed                [ ◌ ]    │  │
+│               │                          │  └─────────────────────────────┘  │
+│  SOURCES      │                          │  Instructions · Files · Activity  │
+│  sources 4    │                          │                                   │
+└───────────────┴──────────────────────────┴───────────────────────────────────┘
+   232px min        340–420px                    flexible, min 480px
+```
+
+- Sidebar: 232px default, resizable 200–280, collapsible to a 56px rail with icons only.
+- List: 340px default, resizable 300–520, remembers per view.
+- Detail: minimum 480px. Under 1080px total the detail moves to a pushed pane with a back chevron. Under 760px the sidebar becomes a sheet.
+- Splitters: 1px hairline, 8px hit area, cursor `col-resize`, double-click resets to default.
+- No scrollbars unless content overflows; overlay style, 8px wide, fade unless hovered or scrolling.
+
+### Top bar
+
+52px, one row, hairline bottom. Left: wordmark 15px semibold, then the current section name in 13px secondary. Centre: the global search field, 480px max, pill radius 8. Right: scan status, notification bell with unread count, settings gear. No traffic lights; the browser owns those.
+
+Scan status: idle shows nothing. Scanning shows a 14px indeterminate ring plus "Scanning 12 of 66" in 11px secondary, no bar. Finished shows the result for 4 seconds then fades to nothing.
+
+## Tokens
+
+Semantic only. Components never reference raw values.
+
+### Colour
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--bg` | `#FBFBFD` | `#131316` | Window background |
+| `--surface` | `#FFFFFF` | `#1B1B1F` | List rows, cards |
+| `--surface-raised` | `#FFFFFF` + shadow | `#232329` | Sheets, popovers |
+| `--sidebar` | `#F4F4F7` | `#18181C` | Sidebar material |
+| `--text` | `#1D1D1F` | `#F5F5F7` | Primary text |
+| `--text-secondary` | `#6E6E73` | `#98989F` | Descriptions, meta |
+| `--text-tertiary` | `#8E8E93` | `#6E6E73` | Timestamps, counts |
+| `--separator` | `rgba(0,0,0,.08)` | `rgba(255,255,255,.10)` | Hairlines |
+| `--accent` | `#0071E3` | `#0A84FF` | Selection, focus, primary button |
+| `--accent-soft` | `rgba(0,113,227,.10)` | `rgba(10,132,255,.16)` | Selected row background |
+| `--on` | `#248A3D` | `#30D158` | Enabled state |
+| `--off` | `#8E8E93` | `#8E8E93` | Disabled state |
+| `--warn` | `#B25000` | `#FF9F0A` | Drift, local changes |
+| `--danger` | `#D70015` | `#FF453A` | Destructive confirmation only |
+| `--update` | `#0071E3` | `#0A84FF` | Update available dot |
+
+Rules: green and grey never carry a verdict alone — every state also has a label or glyph. Red appears only inside a destructive confirmation, never on a list row. Contrast targets: body text ≥ 7:1, secondary ≥ 4.5:1, large text ≥ 3:1. The contrast check runs in CI over every pair in the table.
+
+### Type
+
+System stack: `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", Inter, sans-serif`. Mono: `"SF Mono", "Cascadia Code", ui-monospace, monospace` for paths, hashes and counts.
+
+| Role | Size / line / weight | Use |
+|---|---|---|
+| Title | 22 / 28 / 600 | Detail title, onboarding headline |
+| Heading | 15 / 20 / 600 | Section headers in sheets |
+| Body | 13 / 18 / 400 | Default text |
+| Body strong | 13 / 18 / 590 | Row name, values |
+| Caption | 11 / 14 / 400 | Meta, timestamps, counts |
+| Micro | 10 / 12 / 500, tracking .04em, uppercase | Sidebar group labels |
+| Mono | 12 / 16 / 400 | Paths, SHAs, token counts |
+
+Tracking: `-0.01em` on 15px and above, `0` below. Never below 11px except the micro label.
+
+### Space, radius, elevation
+
+- Space scale: 2, 4, 8, 12, 16, 24, 32, 48. Only these.
+- Row padding: 12px vertical, 14px horizontal. Section padding: 20px. Sheet padding: 24px.
+- Radius: 6 controls, 10 cards, 14 sheets, 999 pills.
+- Elevation: `0 0 0 1px var(--separator)` for inline surfaces; `0 8px 28px rgba(0,0,0,.12), 0 0 0 1px var(--separator)` for sheets and popovers. No other shadows.
+
+## Sidebar
+
+Grouped lists with 26px rows, 8px group gaps, micro uppercase headers.
+
+1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Archive.
+2. **Agents** — one row per detected agent with its own count of placed skills. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph from the icon set.
+3. **Sources** — one row per source with a state dot (`up to date`, `behind`, `error`), plus "Add source…".
+4. **Tags** — top eight tags by count, then "All tags…".
+
+Selection: accent-soft pill, 6px radius, full row width including 8px side inset. Hover: `rgba(0,0,0,.04)`. Focus ring only from keyboard.
+
+Sidebar footer: a 24px line with `2,140 skills · 66 roots · scanned 4m ago` in tertiary, and a rescan icon button. This is the only place showing global counts.
+
+## Search and filter
+
+The top-bar field is the command palette in disguise. It filters the list as you type and, when the query starts with `>`, runs commands instead.
+
+- Debounce: none. Filter applies on the input event against the client index.
+- Chips appear under the list header, one per parsed clause, removable with a small ×. Typing `is:off ` promotes the clause to a chip and clears the text field, so the next word is a new clause.
+- Suggested completions appear in a 1-row inline hint under the field, never a dropdown covering the list: `agent:`, `source:`, `is:`, `tag:`, `path:`.
+- Match highlighting: the matched substring in name and description gets `background: var(--accent-soft); border-radius: 3px`.
+- Scope indicator: when a sidebar item is selected, the field placeholder reads `Filter in Cursor`, and the chip `agent:cursor` is added automatically.
+- `⌘K` focuses the field; `esc` clears the query and keeps focus; `esc` again blurs.
+- No results: the list area shows the parsed query as chips, then one line naming the clause that eliminated everything (`No skills have both is:off and agent:zed`), then a secondary button `Clear that clause`. Never a shrug illustration.
+
+## List
+
+One row per logical skill. Grouped by `Recently changed` default into Today, This week, Earlier; grouping applies only to that sort.
+
+```
+┌────────────────────────────────────────────────────┐
+│ ▣  prose-review                          ◉    ⋯   │  56px
+│    Rewrites prose without changing meaning · 3     │
+│    ApoMakesMods/prose-review          v2.1  ⌄      │
+└────────────────────────────────────────────────────┘
+```
+
+- Height 56px minimum, grows to 72px when the description wraps to two lines at the current width.
+- 16px agent glyph or source glyph; a stacked glyph with `+3` when placements span agents.
+- Name 13/590, one line, truncating with an ellipsis.
+- Description 11px secondary, max two lines, clamped.
+- Meta line 11px tertiary: source, version, and one badge when relevant (`Update`, `Drift`, `Mixed`, `Internal`, `Pinned`).
+- Right: the switch (state as described below) and a `⋯` menu on hover.
+- Hover: surface lightens to raised, the `⋯` fades in over 120ms. Selected: accent-soft, 3px accent bar on the leading edge.
+- Multi-select: `⌘`/`ctrl` click, `shift` click for a range, `⌘A` selects the filtered set. A floating bulk bar appears 12px above the list foot with `N selected`, `Turn on`, `Turn off`, `Archive`, `Pin`, `Deselect`. Escape clears.
+- Virtualized at 60 rows rendered; scrolling stays 60fps.
+- New rows from a live scan fade and slide 4px in over 180ms, then settle. Rows never reorder while a pointer is inside the list.
+
+## Switches and state
+
+The switch is the product. Its three states must be readable without colour.
+
+| State | Control | Row badge | Meaning |
+|---|---|---|---|
+| On | filled track, knob right | none | placed in every detected agent that can hold it |
+| Off | grey track, knob left | none | placed nowhere |
+| Mixed | filled track with a 2px gap and a dash in the knob | `Mixed` | placed in some agents |
+| Pinned | On with a small pin glyph beside the track | `Pinned` | updates will not apply |
+| Drift | switch shows warning tint and a corner dot | `Drift` | disk disagrees with journal |
+| Shadow | switch disabled, 60% opacity, tooltip with reason | `Read-only` | bundled or external-dir |
+
+- Track 38×22, knob 18, 2px inset, radius 999. On uses `--on`; off uses `--off`; mixed uses `--on` with a 1px `--bg` inset line and a horizontal dash on the knob.
+- Hit target 44×44 including padding.
+- Motion: knob travels 180ms `cubic-bezier(.32,.72,0,1)`; track colour crossfades 120ms.
+- Optimistic: the switch moves immediately, the row gets a 500ms subtle pulse, and a failure reverts with a toast quoting the OS error. No blocking modal.
+- Bulk toggles animate rows in sequence with a 12ms stagger, capped at 10 staggered rows.
+- Keyboard: `space` toggles the focused row, `⌥space` opens the per-agent matrix.
+
+## Detail
+
+Header (sticky, 116px): glyph, name 22/600, source line with a link, version pill, and the primary control — `On in 3 of 5 agents` with the switch at the right. `⋯` holds Rename, Pin, Reveal in file manager, Copy path, Archive.
+
+Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation.
+
+### Instructions
+
+Rendered markdown with a serif-free reading column capped at 720px, 14/22. Code blocks use mono 12 on `--sidebar` with a copy button. Remote images are blocked by default with a line `Image blocked. Load images for this skill?` and a toggle that remembers per source. Raw mode switches to mono text with line numbers. Frontmatter is shown as a 6-row key/value table above the body, with unknown keys collapsed under `More fields`.
+
+### Agents
+
+The matrix: one row per detected agent root that can hold this skill.
+
+```
+Claude Code    ~/.claude/skills          linked     [ ● ]
+Cursor         ~/.cursor/skills          linked     [ ● ]
+Codex          ~/.agents/skills          linked     [ ○ ]
+Hermes Agent   ~/.hermes/skills          native     [ ● ]
+Zed            ~/.agents/skills          same root as Codex  [ ◌ ]
+```
+
+- Ignored/aliased roots state the reason on the right in tertiary instead of showing a switch.
+- Rows group by physical root; agents sharing a root are listed once with all their names (`Codex, Cline, Zed`).
+- Right-click a row for `Reveal`, `Repair placement`, `Convert to linked`.
+- Below the matrix, one line of explanation in 11px tertiary naming the mode the switch uses: `Turned off by renaming SKILL.md. The package stays where it is.`
+
+### Files
+
+Tree with per-file size and hash short form, 12px mono. Directories collapse; `SKILL.md` open by default. A footer shows package size and hash, with `Copy hash`.
+
+### Activity
+
+A timeline, newest first, 40px rows: toggles, scans that changed it, updates applied, curation merges, drift repairs. Each entry has a 20px glyph, the action in body text, the actor (`you`, `scan`, `auto-update`, `curation`), and a relative timestamp. Every reversible entry carries `Undo` on hover. This is the journal made visible.
+
+### Updates
+
+Current version, source head, last checked, and a list of changes: release entries with the tag and notes excerpt, commit entries with the message subject and short SHA. `Check now`, `Update`, `Pin`, and for a refused update a `Local changes` block with the three actions and a diff link.
+
+### Curation
+
+Only for skills the curator can touch. Shows state (active/stale/archived), last decided, usage signal (`unknown` is a first-class value with an explanation), and any proposed merge with a link into the run report.
+
+## Sheets
+
+All sheets are centered, max 560px wide (720 for reports), 14px radius, 24px padding, hairline border, 200ms scale from .98 with fade. Escape closes; the primary button is focused on open only if the sheet is a confirmation.
+
+- **Add source** — segmented type (GitHub, Git repo, Folder), URL or path, branch, then a live check that shows what would be imported: N skills found, M new, K already present, with a scrollable list. Footer: `Add source`.
+- **Update review** — what changed per skill, the old and new hash, and a rendered diff for `SKILL.md`. Buttons: `Update 3 skills`, `Skip`, `Pin these`.
+- **Curation run** — a report sheet with four sections: Clusters found, Proposed merges, Proposed archives, Left alone. Each proposal is a row with the umbrella name, absorbed skills, and one-sentence reason. Footer states the token and cost estimate before applying and requires typing nothing; the confirm button reads `Apply 4 merges`.
+- **Settings** — sidebar inside the sheet: General, Agents, Sources, Providers, Curation, Advanced. Providers and Curation are described in their own documents.
+- **Registry** — the full 67-row agent table with detection state, paths, and an `Add custom root` action.
+
+## Notifications
+
+The bell opens a popover, 360px wide, anchored top-right: unread first, then today, then earlier. Each entry: source, event kind, skill count, time, and one action (`Review`). A footer link opens the Updates view. Badge is a dot when there is unread, a number when over 9.
+
+Toasts: bottom-right, 320px, stack of three, 4s auto-dismiss with a progress hairline, `Undo` when the action is reversible. Never more than one toast per action source per second; bulk actions produce one toast with a count.
+
+## Onboarding
+
+Three steps in a centered 720px column, no sidebar, no tour overlay.
+
+1. **What Skill Academy found.** A list of detected agent roots with counts, each with a switch to include or skip. Headline: `12 agents found on this machine.` Sub: `Skill Academy reads their skill folders. It does not change anything yet.`
+2. **Where skills come from.** Optional sources with two suggestions derived from installed skills' own source metadata, plus `Skip for now`.
+3. **Your library.** A single sentence describing what was found: `2,140 skills, 380 duplicates, 41 with updates.` Primary button: `Open library`.
+
+Progress is a 2px line under the header, not dots.
+
+## Loading, empty and error states
+
+Every surface has four states designed before it is built.
+
+| Surface | Loading | Empty | Error |
+|---|---|---|---|
+| Library | 8 skeleton rows, no spinner, 300ms delay before showing | `No skills in this agent. Install one or add a source.` | `Could not read ~/.cursor/skills. Permission denied.` + `Show in file manager` |
+| Detail | Header from the row, body skeleton | `This skill has no instructions file.` | `Package could not be read.` + path |
+| Updates | `Checking 4 sources…` with per-source rows | `No updates. Last checked 4m ago.` | `GitHub rate limit. Next check at 15:40.` |
+| Curation | `Reading 380 skills…` with a token counter | `No runs yet.` | `Run failed: provider returned 401.` + `Fix provider` |
+| Scan | top-bar ring with counts | — | one aggregated row in the list: `3 paths could not be read` with a disclosure |
+
+Error copy always states what failed, on which path, and the exact OS or HTTP message, then one action. No apologies, no exclamation marks.
+
+## Motion
+
+- Durations: 120ms micro (hover, fade), 180ms standard (toggle, row insert), 240ms sheets, 320ms pane transitions. Nothing longer.
+- Easing: standard `cubic-bezier(.32,.72,0,1)`; enter `cubic-bezier(.16,1,.3,1)`; exit `cubic-bezier(.4,0,1,1)`.
+- Never animate layout of the list while scanning. Never animate width of text.
+- `prefers-reduced-motion: reduce` collapses all of the above to opacity-only 80ms and disables the row stagger.
+- No parallax, no bounce except the toggle's 4px overshoot.
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| `⌘K` | Focus filter |
+| `↑` `↓` | Move selection |
+| `space` | Toggle focused row |
+| `⌥space` | Toggle menu per agent |
+| `⌘⌥S` / `ctrl+alt+S` | Rescan |
+| `⌘,` | Settings |
+| `⌘Z` | Undo last reversible action |
+| `⌘⇧U` | Updates view |
+| `⌘1..6` | Detail tabs |
+| `esc` | Clear query, then deselect, then close sheet |
+
+Shortcuts are shown in tooltips and in Settings › General › Keyboard.
+
+## Accessibility
+
+- Roles: sidebar `navigation`, list `listbox` with `option`, row switch a real `switch` with `aria-checked="mixed"`, tabs `tablist`, sheets `dialog` with `aria-modal` and a focus trap.
+- Focus order: sidebar, filter, list, detail. Focus never enters the detail automatically after a selection change.
+- Visible focus: 2px accent ring at 2px offset, only for `:focus-visible`.
+- Every icon-only control has an accessible name. Agent glyphs carry the agent name.
+- Live regions: scan completion and update arrival announce politely; errors assertively.
+- Reduced transparency: `@media (prefers-reduced-transparency: reduce)` makes the sidebar and sheets opaque.
+- Zoom to 200% must not clip the switch or the meta line; the list reflows to 72px rows.
+- Colour-blind check: every state has a glyph or label. The app is usable in greyscale.
+
+## Copy
+
+Voice: Apostol's operational profile. Short, factual, no encouragement, no personality in error paths. Sentence case for labels and buttons. No terminal periods on labels. Numbers formatted with the locale, but counts in the sidebar use compact form above 1,000 (`2.1k`).
+
+| Surface | Text |
+|---|---|
+| Empty library | No skills in this agent. Install one or add a source. |
+| Mixed badge | Mixed |
+| Toggle off, native mode | Turned off by renaming SKILL.md. The package stays where it is. |
+| Drift row | Drift — the disk changed since Skill Academy placed this. |
+| Repair sheet | Repair placement |
+| Local edits block | This skill changed on disk. Updating would overwrite your edits. |
+| Update confirm | Update 3 skills |
+| Archive confirm | Archive skill. It moves to your archive and can be restored. |
+| Scan failure row | 3 paths could not be read |
+| Curation dry run | Reading 380 skills. Nothing will change. |
+| Curation apply | Apply 4 merges |
+| Provider test ok | Connected. 41 models. |
+| Provider test fail | Anthropic returned 401: invalid x-api-key |
+| Rate limit | GitHub rate limit. Next check at 15:40. |
+| Onboarding headline | 12 agents found on this machine. |
+
+Rules: no "Oops", no "Whoops", no "Awesome", no exclamation marks, no emoji in labels. A hint is one sentence and only appears where the decision is genuinely ambiguous. If a control needs a paragraph to explain, the control is wrong.
