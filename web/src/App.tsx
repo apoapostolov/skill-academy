@@ -682,7 +682,15 @@ export default function App() {
                       <div className="pl-row" key={`${row.agent}:${row.root}`}>
                         <span className="pl-name">{row.agent}</span>
                         {row.state === 'native' ? (
-                          <span className="pl-note">lives here</span>
+                          <button
+                            className="pl-switch"
+                            disabled
+                            aria-pressed="true"
+                            title={`Lives in ${row.root}`}
+                            aria-label={`${detail.name} lives in ${row.agent}'s own folder`}
+                          >
+                            <Switch on />
+                          </button>
                         ) : (
                           <button
                             className="pl-switch"

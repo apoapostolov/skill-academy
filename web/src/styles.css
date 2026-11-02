@@ -964,3 +964,8 @@ h2 {
 .pl-more {
   margin-top: 6px;
 }
+
+.pl-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
