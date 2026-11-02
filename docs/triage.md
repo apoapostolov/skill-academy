@@ -15,7 +15,7 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 
 ## Triage
 
-`v1` ships in the 61-day plan. `v1.1`/`v1.2` are dated later. `Reject` means we are not building it, and the last column says what would change that.
+`v1` ships in the 68-day plan. `v1.1`/`v1.2` are dated later. `Reject` means we are not building it, and the last column says what would change that.
 
 ### Already committed
 
@@ -45,6 +45,10 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 | Health view | **v1** | P1 | 1 | The checks already exist inside a curation report nobody opens |
 | skills.sh discovery | **v1** | P3 | 2 | We already parsed its registry. Search and install, no marketplace |
 | Tags with frontmatter write-back | **v1** | P6 | 1 | Ecosystem-native, versioned with the package, and the cheapest filter axis |
+| Presets: named groups toggled per agent scope | **v1** | P2 | 2 | With 2,140 skills a named set is the difference between a library and a workflow; a shipped 7k-star peer has it |
+| Project workspaces: compare and sync project-local skills with the library | **v1** | P2 | 3 | Project skills are the ones that drift, and the strongest desktop peer ships the whole flow |
+| URL and zip sources | **v1** | P3 | 1 | Half the ecosystem distributes a package as an archive; importing one is a day |
+| Upstream audit verdict shown beside ours | **v1** | P3 | 1 | A second opinion with a source and a date, never merged into our severity |
 
 ### Backlog, with a trigger
 
@@ -56,6 +60,8 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 | Semantic resolve | v1.2 | Two weeks where the lexical filter visibly fails, or the library passes 3,000 skills | 3 |
 | Usage import from agent transcripts | v1.2 | After v1, when there is a real question that usage would answer. Read-only, never drives aging | 3 |
 | Quality lint (trigger clarity, duplicate triggers, description windows) | v1.2 | After Health has been used for a month and the structural problems are gone | 2 |
+| Desired-state manifest (`skill-academy.yml` + apply) | v1.2 | The first time a machine must be reproduced without the database, beyond what the lock gives | 3 |
+| Registry adapters beyond skills.sh (ClawHub and similar) | v1.2 | The first skill that only exists there | 2 |
 
 ### Rejected
 
@@ -69,19 +75,23 @@ A feature that clears none of these goes to the backlog with a trigger, or is re
 | Desktop app, TUI, IDE extensions | The web app plus one service is the whole surface budget | A workflow that genuinely cannot live in a browser tab |
 | Accounts and sign-in | Nothing to authenticate against; keys live in the OS keychain | Sync moving to a hosted service, which it will not |
 | Dependency resolution between skills | No peer does it well, and the format has no dependency field worth honouring | The spec gaining a real dependency contract |
+| Skill translation between languages | The skill language is the agent's language; translating a body is an LLM action, not a management feature | A library that genuinely serves two-language readers |
+| Certification tiers with retained evidence | It is a marketplace trust programme, and it needs an auditor | Publishing skills for strangers to install |
+| In-app updater and tray chrome | A local web app has a browser for both | Never in this product |
+| Activity-log zip export for bug reports | Our journal and report files are already on disk and readable | The agent needing to hand diagnostics to someone else |
 
 ## The v1 line
 
-61 working days, cut into four milestones so value lands early.
+68 working days, cut into four milestones so value lands early.
 
 | Milestone | Phases | Days | What exists after it |
 |---|---|---|---|
-| M1 — Inventory and control | P0, P1, P2 | 19 | Every skill found, listed, filtered, switched per agent, scanned, costed, archived to any drive, every action reversible |
-| M2 — Sources | P3 | 9 | Repos and skills.sh watched, changes notified, updates applied with a guard, a lockfile that reproduces the library |
+| M1 — Inventory and control | P0, P1, P2 | 24 | Every skill and project skill found, listed, filtered, switched per agent, grouped into presets, scanned, costed, archived to any drive, every action reversible |
+| M2 — Sources | P3 | 11 | Repos, skills.sh and archives watched, changes notified, updates applied with a guard, a lockfile that reproduces the library |
 | M3 — Intelligence | P4, P5, P6 | 22 | Curation, composite linking and ingest, authoring |
 | M4 — Continuity | P7, P8 | 11 | Git sync between machines, themes, onboarding, accessibility, copy |
 
-M1 is the point where the app replaces "walking 66 directories". That is 19 days, not 61, and it is worth shipping before the rest exists.
+M1 is the point where the app replaces "walking 66 directories". That is 24 days, not 68, and it is worth shipping before the rest exists.
 
 ## What this deliberately does not do
 

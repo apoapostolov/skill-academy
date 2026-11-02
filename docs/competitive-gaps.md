@@ -123,16 +123,6 @@ Only `skillfile` does it, and the reason is that its update path overwrites. Our
 
 ## What this does to the plan
 
-Four gaps are not optional once the app ingests untrusted repositories and updates them automatically: **scanning, a lockfile, token accounting, and a health view**. Tags and skills.sh discovery are cheap and close real holes. Together they add about 9 days to v1.
-
-| Phase | Change | Days |
-|---|---|---|
-| P1 | + token accounting, health view | 5 → 7 |
-| P2 | + scan pipeline and enable gate | 6 → 9 |
-| P3 | + lockfile, skills.sh source | 6 → 9 |
-| P6 | + tag read/write and filter | 8 → 9 |
-| P9 | CLI and MCP, after v1 | +6 |
-
-v1: about 61 working days. With the deferred parity pass: 67.
+The current phase table, milestone cuts and totals live in [triage.md](triage.md). This audit's contribution was the gap list itself: scanning, a lockfile, token accounting, a health view, tags and skills.sh discovery, all of which triage then priced.
 
 The gaps we are not closing are the ones that require becoming a different product: a registry server, an agent runtime, a team platform.

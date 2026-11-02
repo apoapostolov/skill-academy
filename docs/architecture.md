@@ -121,6 +121,38 @@ CREATE TABLE events (            -- journal and activity timeline
   undone    INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE presets (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at  TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+
+CREATE TABLE preset_skills (
+  preset_id INTEGER NOT NULL REFERENCES presets(id) ON DELETE CASCADE,
+  skill_id  INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+  PRIMARY KEY (preset_id, skill_id)
+);
+
+CREATE TABLE projects (
+  id           INTEGER PRIMARY KEY,
+  path         TEXT NOT NULL UNIQUE,     -- repository root, realpath
+  name         TEXT NOT NULL,
+  roots        TEXT NOT NULL,            -- JSON: discovered skill roots inside it
+  state        TEXT NOT NULL DEFAULT 'ok',  -- ok | missing | ignored
+  last_scan_at TEXT
+);
+
+CREATE TABLE project_skills (
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  path        TEXT NOT NULL,
+  skill_id    INTEGER REFERENCES skills(id),   -- matched library skill, NULL if project-only
+  package_hash TEXT NOT NULL,
+  relation    TEXT NOT NULL,             -- same | diverged | project-only | library-only
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (project_id, path)
+);
+
 CREATE TABLE archives (          -- named archive destinations, not subfolders
   id          INTEGER PRIMARY KEY,
   label       TEXT NOT NULL,
@@ -255,6 +287,19 @@ Watchers: one chokidar instance per root, `depth: 4`, `ignoreInitial: true`, `aw
 
 Cost guard: 66 roots with deep project trees is the failure mode. Each root has a per-root cap (default 2,000 packages) and the walker reports when it hits it instead of silently truncating.
 
+## Scanner
+
+Static only. The scanner never executes a skill, never shells out, and never sends content anywhere unless an external adapter is explicitly configured.
+
+- **Rules are data.** A shipped ruleset with `id`, `category`, `severity`, `matcher` (regex, path glob, or a small structural matcher for fenced code and frontmatter), and `applies_to` (`markdown`, `code`, `all`). Adding a rule is a data change, not a release.
+- **Categories.** Prompt injection and instruction override, destructive filesystem operations, silent network calls and exfiltration, credential and key access, obfuscation (bidi controls, zero-width characters, base64 or hex payloads), persistence, privilege escalation, path escape, oversized or binary payloads.
+- **Correlation.** Findings are combined per package and per source: an excerpt plus a fetch plus a write is a chain even when no single file is dangerous. A chain raises severity by one step and is reported as a chain, not as three unrelated hits.
+- **Capabilities.** The scan derives `network`, `exec`, `filesystem-write`, `privilege` from what it matched, and merges them with any declared in frontmatter. The union is what the UI shows, because a declared capability list is a claim, not evidence.
+- **Adapters.** An external scanner (`skill-scanner`, the one SkillHub uses) can run over HTTP; its results are normalized into the same finding shape with `source: "skill-scanner"`. Built-in rules always run first.
+- **Caching.** Findings are keyed by package hash, so a rescan of an unchanged library is a database read. A changed package re-scans only the changed files plus the correlation pass.
+- **Verdicts.** `pass`, `warn`, `block`, computed from the highest severity against the policy threshold. The verdict is stored on the package and copied into the lockfile, so a machine that restores from a lock inherits the verdict instead of trusting silence.
+- **Overrides.** An override records the finding, the reason, the actor and the timestamp, and the skill stays visibly marked as overridden rather than becoming clean.
+
 ## Placement state machine
 
 Modes are decided by what is on disk, then recorded.
@@ -271,6 +316,8 @@ linked:  enabled  ──remove link──────►  disabled (package kept
 any:     enabled/disabled ──move to archive──► archived
          archived ──restore──► previous state
 ```
+
+**Link strategy on Windows.** A linked placement is attempted in order: directory symlink (needs Developer Mode or elevation), directory junction (`mklink /J`, works unelevated), then a tracked copy with `.skill-academy-source.json` holding the library path and the package hash. The placement records which strategy won, because disabling differs: unlink for the first two, marker-checked removal for the third. A tracked copy whose recorded hash no longer matches is drift, never a normal state.
 
 Every transition:
 
@@ -315,6 +362,28 @@ Download limits borrowed from the skills CLI: 10 MiB per file response, 25 MiB e
 Rate limits: unauthenticated GitHub allows 60 requests per hour. The service tracks `X-RateLimit-Remaining` and pauses with `ratelimited` state and a resume time rather than retrying into a wall. A token raises it to 5,000.
 
 Scheduler: a single timer with a 15-minute tick, reading due sources from the DB. Catch-up on start: any source whose `last_checked_at + interval` has passed runs once, with jitter. Nothing runs while the OS reports the machine asleep; the service re-checks on resume.
+
+### URL and zip sources
+
+A direct URL is fetched with a 10 MiB response cap, extracted into a temp directory with a 25 MiB and 1,000-file cap, and rejected if any entry is absolute, contains `..`, or is a symlink. The extracted tree must contain at least one `SKILL.md`; anything else is a failed import with the reason, not a silent empty source. A zip is the same path without the fetch. Imported packages become library packages with `source: "url:<host>"` or `source: "zip:<filename>"` and are then tracked like any other skill.
+
+## Project workspaces
+
+A project is a git repository root plus the skill directories discovered inside it. Discovery runs the same walker with the project's own roots (`.claude/skills`, `.agents/skills`, `skills/`, and the rest of the registry's project patterns), depth-capped the same way.
+
+Comparison is by package hash against the library:
+
+| Relation | Meaning | Offered action |
+|---|---|---|
+| `same` | identical to a library package | none |
+| `diverged` | same name, different hash | diff, then promote, take library, or keep both |
+| `project-only` | no library counterpart | promote into the library |
+| `library-only` | in the library, absent here | apply to project |
+
+- Promotion copies the package into the library, writes a placement record, and replaces the project directory with the link strategy above. The old directory is snapshotted first.
+- A project skill that shadows a global one with the same name is flagged on both rows; agents load the nearer copy, so the global one is effectively disabled and the UI says so.
+- Project scans are incremental and run on the same watcher; a project registered but missing on disk becomes `missing`, not deleted.
+- Nothing in this feature syncs automatically. Every write is a reviewed action with a diff and a journal entry.
 
 ## Archive service
 
@@ -478,6 +547,24 @@ PATCH  /api/links/:id                {mode, track, ref}
 DELETE /api/links/:id
 POST   /api/links/:id/check          resolve head, report delta size
 POST   /api/links/:id/ingest         {dry:true, budget_usd}
+
+GET    /api/presets
+POST   /api/presets                  {name, skills:[]}
+PATCH  /api/presets/:id
+POST   /api/presets/:id/apply        {agents:['claude-code'] | 'all'}
+DELETE /api/presets/:id
+
+GET    /api/projects
+POST   /api/projects                 {path}
+GET    /api/projects/:id/skills      relations: same|diverged|project-only|library-only
+POST   /api/projects/:id/promote     {path}
+POST   /api/projects/:id/apply       {skill_id, path}
+DELETE /api/projects/:id
+
+GET    /api/context                  per-agent token estimates and top contributors
+GET    /api/health                   structural findings
+POST   /api/skills/:id/scan          force rescan of one package
+GET    /api/skills/:id/scan          findings, capabilities, verdict, upstream verdict
 GET    /api/ingest/runs
 POST   /api/ingest/runs/:id/apply
 

@@ -56,15 +56,15 @@ Full walker, frontmatter parser, file hashing, duplicate folding, drift-free res
 
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
-### P2 — Switches and archives (9 days)
+### P2 — Switches and archives (14 days)
 
-Link farm, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions. Content scanning with a risk badge and a gate on enable: a skill that fails the policy cannot be turned on without an explicit override.
+Link farm with the Windows symlink → junction → tracked-copy chain, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions, presets applied to one agent scope or all, and project workspaces: register a repository, compare its project skills with the library by hash, promote or apply with a diff. Content scanning with a risk badge and a gate on enable: a skill that fails the policy cannot be turned on without an explicit override.
 
 Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; an archive to a second drive restores after `index.db` is deleted; an offline archive location refuses instead of falling back; a skill containing a shell exfiltration line is flagged and blocked from enable with the file and line; killing the app mid-write leaves a recoverable state.
 
-### P3 — Sources and updates (9 days)
+### P3 — Sources and updates (11 days)
 
-Add a GitHub repo, a local git source, or a skills.sh entry. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
+Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
 
 Exit: a real repo (`mattpocock/skills`) reports a new release and a changed skill separately; a locally edited skill is refused with a diff, not overwritten; an auto-update run can be rolled back to the previous bytes; a fresh machine reproduces the same package hashes and placements from the lock alone.
 
@@ -88,7 +88,7 @@ Exit: a one-sentence prompt yields a draft that validates clean; an empty skill 
 
 ### P7 — Cloud sync (5 days)
 
-Git profiles, manifest, push with secrets scan, pull with three-way merge and per-path conflict resolution, schedules, status.
+Git profiles, manifest, push with secrets scan, pull with three-way merge and per-path conflict resolution, schedules, status. Merging is skill-aware: a rename on one machine combines with an edit on another instead of presenting as a delete-plus-add.
 
 Exit: two machines converge on the same package hashes through a private repo; a conflicting edit surfaces as one conflict and loses nothing; a key-shaped string blocks the push; deleting `index.db` and pulling restores skills and placements.
 
@@ -104,7 +104,7 @@ An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` fir
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
-Total: about 61 working days for v1. With the parity pass, 67. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
+Total: about 68 working days for v1. With the parity pass, 74. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 
 ## Risks
 

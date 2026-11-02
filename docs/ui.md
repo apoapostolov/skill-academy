@@ -167,10 +167,12 @@ Tracking: `-0.01em` on 15px and above, `0` below. Never below 11px except the mi
 
 Grouped lists with 26px rows, 8px group gaps, micro uppercase headers.
 
-1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Drafts (count), Archive.
-2. **Agents** — one row per detected agent with its own count of placed skills. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph from the icon set.
-3. **Sources** — one row per source with a state dot (`up to date`, `behind`, `error`), plus "Add source…".
-4. **Tags** — top eight tags by count, then "All tags…".
+1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Idle (count), Drafts (count), Archive.
+2. **Agents** — one row per detected agent with its count of placed skills and its token cost in tertiary, right-aligned: `612 · 48k`. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph.
+3. **Presets** — one row per preset with its skill count and a play glyph on hover that applies it to the current agent scope; then "New preset…".
+4. **Projects** — one row per registered project with the number of skills it holds and a diverged count when non-zero; then "Add project…".
+5. **Sources** — one row per source with a state dot (`up to date`, `behind`, `error`), plus "Add source…".
+6. **Tags** — top eight tags by count, then "All tags…".
 
 Selection: accent-soft pill, 6px radius, full row width including 8px side inset. Hover: `rgba(0,0,0,.04)`. Focus ring only from keyboard.
 
@@ -235,7 +237,7 @@ The switch is the product. Its three states must be readable without colour.
 
 Header (sticky, 116px): glyph, name 22/600, source line with a link, version pill, and the primary control — `On in 3 of 5 agents` with the switch at the right. `⋯` holds Rename, Pin, Reveal in file manager, Copy path, Archive.
 
-Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Linked`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation.
+Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Linked`, `Scan`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation. The `Scan` tab carries a dot when the verdict is `warn` or `block`.
 
 ### Instructions
 
@@ -274,6 +276,17 @@ tracking: commit main · ingested 2 weeks ago · 3 new commits
 - Under the list, one line in tertiary: how the ingest writes, for the mode of the selected link. `Distill merges rules into this skill. Local rules win on conflict.`
 - Empty state: `No linked sources. This skill is self-contained.` with `Add link`.
 - A composite skill shows a link glyph beside its name in the list, and `Linked 3` in the meta line. Pinned and composite are independent.
+
+### Scan
+
+Verdict first, findings second.
+
+- Header row: verdict pill (`Pass`, `Warn`, `Block`, `Overridden`), the rule set version, when it last ran, and `Rescan`. Overridden shows the reason and the actor in tertiary.
+- Capability chips: `network`, `exec`, `filesystem-write`, `privilege`. Derived chips are solid; declared-only chips are outlined, because a claim is not evidence.
+- Findings: 40px rows, severity glyph, category, file and line in mono, one-line excerpt, expandable to the full context. Chains are a single row with `3 steps` that expands to the findings it combines.
+- Upstream verdict, when the registry publishes one: a separate row with its source and date, never merged into our severity.
+- Policy footer: the threshold in force and the source it came from, with `Open policy`.
+- A blocked skill's header switch is disabled with the tooltip `Blocked by scan. Override to enable.`; the override sits behind the `⋯` menu and requires a reason.
 
 ### Files
 
@@ -366,6 +379,9 @@ All sheets are centered, max 560px wide (720 for reports), 8px radius, 24px padd
 - **Archive** — destination picker listing every archive location with its free space and availability, the mode, and one line: `Restorable from E:\Skill archive`. Confirm reads `Archive skill`.
 - **Settings** — sidebar inside the sheet: General, Agents, Sources, Archives, Sync, Providers, Curation, Shortcuts, Advanced. Providers and Curation are described in their own documents. The Archives pane is a table: label, path, mode, default, availability dot, free space, and `Test`. Below it, a per-agent default dropdown and `Add location`. A path that is offline shows the OS error in place, not a toast. The Sync pane is a profile table: label, remote, direction, schedule, ahead/behind, last run, and `Run now`.
 - **Sync conflict** — one row per conflicted path with its state, a two-column diff, and a choice of `Keep local`, `Take remote`, or `Keep both`. The footer's `Finish merge` stays disabled until every row is resolved, and names how many remain.
+- **Preset** — name, a skill picker with the current library filter carried in, agent scope (`This agent`, `All agents`), and a footer that states exactly what applying will do: `12 on, 3 off across Claude Code`. Editing a preset and applying it are separate buttons; changing the list never changes a switch.
+- **Add project** — a folder picker, then a scan that names the roots it found and how many skills each holds before anything is registered. `Add project` is disabled until the scan returns at least one root.
+- **Project view** — selecting a project replaces the list with its skills, each carrying a relation badge (`Same`, `Diverged`, `Project only`, `Library only`). A bar above the list reads `3 diverged · 1 shadowing a global skill` with `Review` and `Promote`. The detail pane is the normal one, so a project skill can be read, scanned and edited like anything else.
 - **Registry** — the full 67-row agent table with detection state, paths, and an `Add custom root` action.
 
 ## Notifications
@@ -475,6 +491,13 @@ Voice: Apostol's operational profile. Short, factual, no encouragement, no perso
 | Sync conflict | Both sides changed this file. Pick one. |
 | Sync blocked | Blocked: 1 key-shaped string in references/api.md |
 | Sync never run | No sync yet. |
+| Preset apply | 12 on, 3 off across Claude Code |
+| Preset edited | Saved. Nothing changed until you apply it. |
+| Project bar | 3 diverged · 1 shadowing a global skill |
+| Project promote | Promote to library |
+| Scan blocked | Blocked by scan. Override to enable. |
+| Scan override | Override reason |
+| Idle list | Placed nowhere. Archiving is your call. |
 | Scan failure row | 3 paths could not be read |
 | Curation dry run | Reading 380 skills. Nothing will change. |
 | Curation apply | Apply 4 merges |

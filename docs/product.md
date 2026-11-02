@@ -50,8 +50,10 @@ Three placement modes, one archive. The mode is a property of the placement, cho
 | Native | The agent or `npx skills` installed a real directory | package present with `SKILL.md` | rename `SKILL.md` to `.SKILL.md.disabled`, keep the directory |
 | Shadow | Package is bundled, external-dir, or read-only | read-only | control disabled with a reason |
 
-- Per-agent: the detail pane carries a matrix of agent roots with a switch each.
-- Per-skill: the row switch sets the whole set on or off in one action, with an undo toast. Its state is `on`, `off`, or `mixed`.
+- **Per-agent**: the detail pane carries a matrix of agent roots with a switch each.
+- **Per-skill**: the row switch sets the whole set on or off in one action, with an undo toast. Its state is `on`, `off`, or `mixed`.
+- **Presets**: named sets of skills applied to one agent scope or all of them — `Frontend`, `Writing`, `Foundry`. Applying a preset is a batch of switches journaled as one event with one undo. Editing a preset changes nothing until it is applied. A skill can belong to several presets. Presets are local and travel through sync.
+- **Windows placement chain**: when Skill Academy writes a placement it tries a directory symlink, then a directory junction, then a tracked copy with a `.skill-academy-source.json` marker recording the library path. The mode that succeeded is stored on the placement and shown in the matrix; a tracked copy can still be disabled and repaired like any other.
 - Archive: moves the package to `~/.skill-academy/archive/<date>-<name>/`, removes all placements, keeps the record. Restore puts it back with the same placements.
 - Journal: every operation writes `before` and `after` state plus the exact filesystem calls, so undo is a recorded inverse, not a guess.
 - Drift: if disk disagrees with the journal (link removed by hand, `npx skills update` recreated `SKILL.md`, package deleted), the row shows `Drift` and offers Repair, which shows the diff and does nothing until confirmed.
@@ -60,8 +62,9 @@ Three placement modes, one archive. The mode is a property of the placement, cho
 
 ### 4. Sources, notifications, scheduled updates
 
-- Source types: GitHub repository (public or token), local git repository, local folder, skills.sh entry.
-- A source contributes skills by the same walk rules as an agent root. A skills.sh entry is searched and previewed through the same client and lands in the library like any other source.
+- Source types: GitHub repository (public or token), local git repository, local folder, skills.sh entry, and a direct URL or zip of a skill package.
+- A source contributes skills by the same walk rules as an agent root. A skills.sh entry is searched and previewed through the same client and lands in the library like any other source. A URL or zip is fetched with the same limits the ecosystem uses: 10 MiB per response, 25 MiB extracted, 1,000 files, path-traversal guarded.
+- Custom roots: any directory can be registered as a read-only or managed root, so skills living outside the default agent paths are first-class instead of invisible.
 - Update detection is per skill, not per repo: the repo's new tree is walked, each skill's package hash is compared with the installed hash. A commit that touches one skill notifies once, not 200 times.
 - Event kinds: `release` (new tag), `commit` (new head), `skill-changed`, `skill-added`, `skill-removed`.
 - Policy per source: `off`, `notify` (default), `auto` (apply), plus per-skill `pin`.
@@ -146,15 +149,19 @@ Sync is git, not a proprietary cloud. A profile points at a repository, and the 
 
 Two views that answer questions the library otherwise hides.
 
-- **Context cost.** Every skill's characters and estimated tokens, per agent: what its enabled set costs at load, what the largest ten contributors are, and what a disable or archive would save before it is done. Estimates carry a range and are labelled as estimates; the tokeniser is calibrated per model family.
+- **Context cost.** Every skill's characters and estimated tokens, per agent: what its enabled set costs at load, what the largest ten contributors are, and what a disable or archive would save before it is done. Estimates carry a range and are labelled as estimates; the tokeniser is calibrated per model family. An agent's cost is shown on its sidebar row, not hidden in a report.
 - **Health.** A permanent list of structural problems the scanner and index already know: unparsed frontmatter, missing description, dangling `references/` links, body over 24,000 characters, duplicate hashes, same-name variants, unreadable roots. Safe fixes are one click (recompute hash, drop a dead link); everything else is report-only and links to the file.
+- **Idle.** A smart list of skills that are placed nowhere or switched off everywhere. It is the honest version of "unused": we can see placement, not invocation. Archiving from Idle is a manual decision, never automatic.
 
-**Acceptance.** The status bar shows a token estimate per agent within 5% of the calibration tokeniser. A skill with a dangling reference appears in Health, and opening it puts the caret on the line that names the missing file.
+**Acceptance.** The status bar shows a token estimate per agent within 5% of the calibration tokeniser. A skill with a dangling reference appears in Health, and opening it puts the caret on the line that names the missing file. A skill disabled in every agent appears in Idle on the next scan.
 
 ### 11. Scanning and the enable gate
 
-- Every package is scanned when it is indexed, when it is updated, and before it is enabled: prompt-injection patterns, destructive shell operations, silent network calls, credential access, hidden unicode, oversized or binary payloads, and files outside the package.
+- Every package is scanned when it is indexed, when it is updated, and before it is enabled: prompt-injection patterns, destructive shell operations, silent network calls, credential access, hidden unicode (bidi controls, zero-width), encoded payloads, oversized or binary files, and paths that escape the package.
+- Correlation runs across the package and across skills from the same source: a harmless excerpt plus a fetch step plus a write step is a chain worth flagging even when no single file is dangerous.
+- Declared capabilities come out of the scan as tags — `network`, `exec`, `filesystem-write`, `privilege` — so a switch can be judged against what the skill actually does, not what its description claims.
 - Findings carry a severity, a file and a line, with an excerpt. The detail pane shows a risk badge; the list shows a dot.
+- When the upstream registry publishes its own audit verdict for a skill (skills.sh does), it is shown beside ours as a second opinion with its source and date, never merged into our severity.
 - Policy is a threshold: `block` (default), `warn`, `off`, configurable per source. A skill above the threshold cannot be enabled without an explicit override, and the override is journaled with the reason.
 - An external scanner (the same `skill-scanner` that SkillHub uses) can be plugged in for deeper analysis; the built-in rules always run.
 
@@ -169,6 +176,18 @@ Two views that answer questions the library otherwise hides.
 - Restoring on a machine without the database is `lock` plus packages: skills and placements are rebuilt, and a placement whose root does not exist is recorded as `unplaced` rather than invented.
 
 **Acceptance.** Copying the lock and the packages to a clean machine reproduces every package hash and placement. Deleting one skill on disk makes `lock --check` fail with that skill named.
+
+### 13. Project workspaces
+
+Skills living inside a repository are invisible to a global manager and are exactly the ones that drift. A project is a folder registered with the app, and its local agent folders are indexed next to the global ones, marked `project`.
+
+- **Compare.** For every project skill, show whether it matches a library version by hash, exists only in the project, exists only in the library, or has diverged.
+- **Actions.** Promote project → library (copy, then re-link the project entry at the library package), apply library → project, keep both as named variants, or ignore this project.
+- **Shadowing.** A project skill with the same name as a global one is flagged, because agents prefer the nearer copy and the global one silently stops being used.
+- **Nested layouts.** `skills/<category>/<name>/` and `.agents/skills/<name>/` are both handled; export to another agent can assign per-agent targets.
+- **Never automatic.** A project sync is a reviewed action with a diff. Registering a project does not change a single file.
+
+**Acceptance.** Registering a repository with three project skills finds all three, flags the one whose hash differs from the library, and promotes it into the library with the project entry re-linked to the new package. No file moves without confirmation.
 
 ## Out of scope for v1
 
