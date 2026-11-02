@@ -974,3 +974,135 @@ h2 {
   opacity: 0.55;
   cursor: default;
 }
+
+/* One scroll surface for the sidebar and the list: the agent block scrolls with the
+   content instead of living in its own clipped box, so the detail pane keeps the height. */
+.main-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.main-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.main-row .sidebar {
+  flex: 0 0 auto;
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
+.main-row .list {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
+/* One page scroll: the whole workspace moves together and the skill body is as tall as
+   it is, instead of living in a window-height box. */
+.app-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-scroll .scrollbody {
+  overflow-x: hidden;
+}
+
+.app .menubar,
+.app .toolbar {
+  position: sticky;
+  z-index: 6;
+  background: var(--bg);
+}
+
+.app .menubar {
+  top: 0;
+}
+
+.app .toolbar {
+  top: 26px;
+}
+
+.panes {
+  display: flex;
+  align-items: flex-start;
+  overflow: visible;
+  min-height: 0;
+}
+
+.main-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.main-row .sidebar,
+.main-row .list,
+.detail {
+  overflow: visible;
+  height: auto;
+  min-height: 0;
+  display: block;
+}
+
+.detail .body {
+  overflow-x: auto;
+}
+
+/* The list must never widen the page: without min-width: 0 a flex row grows to the
+   longest unwrapped description and pushes the detail pane out of the viewport. */
+.panes {
+  width: 100%;
+}
+
+.main-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.main-row .sidebar {
+  flex: 0 0 auto;
+}
+
+.main-row .list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.detail {
+  flex: 0 0 auto;
+}
+
+.app .toolbar {
+  border-bottom: 1px solid var(--sep);
+}
+
+/* The sidebar stays in view while the page scrolls; it only scrolls internally when the
+   agent list is taller than the viewport, so it never leaves a blank column behind. */
+.main-row .sidebar {
+  position: sticky;
+  top: 70px;
+  align-self: flex-start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(233, 234, 236, 0.25) transparent;
+}
+
+.main-row .sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.main-row .sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-row .sidebar::-webkit-scrollbar-thumb {
+  background: rgba(233, 234, 236, 0.25);
+  border-radius: 3px;
+}

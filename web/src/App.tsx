@@ -260,7 +260,7 @@ export default function App() {
   const [showAllAgents, setShowAllAgents] = useState(false)
 
   const dragRef = useRef<{ kind: 'sidebar' | 'detail'; x: number; value: number } | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef(0)
   const loadingRef = useRef(false)
 
@@ -366,7 +366,7 @@ export default function App() {
         return
       }
       loadState()
-      if ((listRef.current?.scrollTop ?? 0) < 120) {
+      if ((pageRef.current?.scrollTop ?? 0) < 120) {
         fetchPageRef.current(0, true)
         setPending(0)
       } else {
@@ -381,7 +381,7 @@ export default function App() {
   useEffect(() => {
     setSelected(null)
     setDetail(null)
-    if (listRef.current) listRef.current.scrollTop = 0
+    if (pageRef.current) pageRef.current.scrollTop = 0
     fetchPage(0, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, scope])
@@ -391,8 +391,8 @@ export default function App() {
     fetchPage(skills.length, false)
   }
 
-  function onListScroll(element: HTMLDivElement) {
-    if (element.scrollHeight - element.scrollTop - element.clientHeight < 600) loadMore()
+  function onPageScroll(element: HTMLDivElement) {
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 900) loadMore()
   }
 
   useEffect(() => {
@@ -486,6 +486,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <ScrollPane className="app-scroll" bodyRef={pageRef} onScroll={onPageScroll}>
       <div className="menubar">
         <b>Skill Academy</b>
         <span>File</span>
@@ -522,7 +523,7 @@ export default function App() {
             onClick={() => {
               setPending(0)
               fetchPage(0, true)
-              if (listRef.current) listRef.current.scrollTop = 0
+              if (pageRef.current) pageRef.current.scrollTop = 0
             }}
           >
             Refresh
@@ -531,8 +532,8 @@ export default function App() {
       )}
 
       <div className="panes">
+          <div className="main-row">
         <aside className="sidebar" style={{ width: widths.sidebar, flexBasis: widths.sidebar }}>
-          <ScrollPane className="sidebar-scroll">
           <button className={`nav ${scope.kind === 'all' ? 'active' : ''}`} onClick={() => setScope({ kind: 'all' })}>
             All skills <span>{state ? fmt.format(state.library.skills) : ''}</span>
           </button>
@@ -588,7 +589,6 @@ export default function App() {
               #{entry.tag} <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
-          </ScrollPane>
         </aside>
 
         <div
@@ -602,7 +602,6 @@ export default function App() {
         />
 
         <section className="list">
-          <ScrollPane className="list-scroll" bodyRef={listRef} onScroll={onListScroll}>
           <div className="listhead">
             <span className="scope">{scopeLabel}</span>
             <span className="count">
@@ -629,8 +628,8 @@ export default function App() {
           {skills.length === 0 && !loadingMore && (
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
-          </ScrollPane>
         </section>
+          </div>
 
         <div
           className="splitter"
@@ -727,12 +726,11 @@ export default function App() {
             </div>
           )}
           {detail && (
-            <ScrollPane axis="both" className="detail-scroll">
-              <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
-            </ScrollPane>
+            <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
           )}
         </aside>
       </div>
+      </ScrollPane>
 
       <div className="statusbar">
         <span className="live">
