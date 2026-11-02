@@ -119,6 +119,21 @@ function fullScan(): { added: number; changed: number; removed: number; ms: numb
 
 const app = Fastify({ logger: false })
 
+// An empty body with a JSON content-type is not an error: DELETE and POST-with-no-payload
+// are normal from a fetch client, and Fastify refuses them by default.
+app.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, done) => {
+  const text = typeof body === "string" ? body.trim() : ""
+  if (!text) {
+    done(null, {})
+    return
+  }
+  try {
+    done(null, JSON.parse(text))
+  } catch (error) {
+    done(error as Error, undefined)
+  }
+})
+
 app.addHook('onResponse', async (request, reply) => {
   requests.unshift({
     at: new Date().toISOString(),
@@ -428,6 +443,65 @@ app.delete('/api/presets/:id', async (request, reply) => {
     return { error: 'not found' }
   }
   return { removed }
+})
+
+app.post('/api/presets/:id/apply', async (request, reply) => {
+  // A preset is a promise about several agents at once, so it reports per agent and per skill
+  // rather than collapsing to a total that hides which one refused.
+  const { id } = request.params as { id: string }
+  const preset = listPresets().find((row) => row.id === Number(id))
+  if (!preset) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const body = request.body as { ids?: number[] } | undefined
+  const ids = Array.isArray(body?.ids) ? body!.ids.filter((value) => Number.isFinite(value)) : []
+  if (!ids.length) {
+    reply.code(400)
+    return { error: 'ids is required' }
+  }
+
+  const registry = loadRegistry()
+  const results: Array<{ agent: string; id: number; ok: boolean; error?: string; mode?: string }> = []
+  for (const agent of preset.agents) {
+    const root = registry.roots.find((entry) => entry.exists && entry.owners.includes(agent))
+    if (!root) {
+      for (const skillId of ids) results.push({ agent, id: skillId, ok: false, error: 'no-root' })
+      continue
+    }
+    for (const skillId of ids) {
+      const skill = getSkill(skillId)
+      if (!skill) {
+        results.push({ agent, id: skillId, ok: false, error: 'not-found' })
+        continue
+      }
+      const target = path.join(root.path, path.basename(skill.path))
+      try {
+        if (skill.risk === 'high') {
+          results.push({ agent, id: skillId, ok: false, error: 'blocked-by-scan' })
+          continue
+        }
+        if (existsSync(target)) {
+          results.push({ agent, id: skillId, ok: true, mode: 'already-on' })
+          continue
+        }
+        const placed = place(skill.path, root.path)
+        addJournal('place', { skillId, agent, target: placed.target, mode: placed.mode, preset: preset.name })
+        results.push({ agent, id: skillId, ok: true, mode: placed.mode })
+      } catch (error) {
+        results.push({ agent, id: skillId, ok: false, error: (error as Error).message })
+      }
+    }
+  }
+
+  return {
+    preset: preset.name,
+    agents: preset.agents.length,
+    placed: results.filter((row) => row.ok && row.mode !== 'already-on').length,
+    alreadyOn: results.filter((row) => row.mode === 'already-on').length,
+    failed: results.filter((row) => !row.ok).length,
+    results
+  }
 })
 
 app.post('/api/skills/bulk', async (request, reply) => {
