@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { deleteKey, getKey, setKey } from './secrets'
+import { deleteKey, deleteLongSecret, getKey, getLongSecret, setKey, setLongSecret } from './secrets'
 
 /**
  * OAuth sessions, ported from String Theory's `server/oauth.mjs` with the same flows, client ids
@@ -160,7 +160,7 @@ function expiresAtFrom(body: Record<string, unknown> | null, fallbackSeconds = 3
 /* ------------------------------- session store ------------------------------- */
 
 function readSession(providerId: string): OAuthSession | null {
-  const raw = getKey(SESSION_KEY(providerId))
+  const raw = getLongSecret(SESSION_KEY(providerId))
   if (!raw) return null
   try {
     return JSON.parse(raw) as OAuthSession
@@ -170,17 +170,60 @@ function readSession(providerId: string): OAuthSession | null {
 }
 
 function writeSession(providerId: string, session: OAuthSession): void {
-  setKey(SESSION_KEY(providerId), JSON.stringify(session))
+  // A Codex session is bigger than one Windows credential can hold, so it is stored in parts.
+  setLongSecret(SESSION_KEY(providerId), JSON.stringify(session))
 }
 
 function clearSession(providerId: string): void {
-  deleteKey(SESSION_KEY(providerId))
+  deleteLongSecret(SESSION_KEY(providerId))
 }
 
 /** What the renderer is allowed to know about a session. Never the tokens. */
+/**
+ * The poll loop lives here, not in the renderer. A device flow completes whether or not the dialog
+ * is still open, so the answer is written to the credential store by the server and the panel only
+ * reads the result.
+ */
+const watch = new Map<string, { status: string; account: string; message: string; at: number }>()
+
+export function watchStatus(providerId: string) {
+  return watch.get(providerId) ?? null
+}
+
+export function startWatch(providerId: string, flowId: string, intervalSeconds: number): void {
+  const interval = Math.max(3, intervalSeconds) * 1000
+  let attempt = 0
+  const tick = async () => {
+    attempt += 1
+    if (attempt > 200) {
+      watch.set(providerId, { status: 'expired', account: '', message: 'Stopped waiting after ten minutes.', at: Date.now() })
+      return
+    }
+    try {
+      const result = await pollDeviceFlow(providerId, flowId)
+      if (result.status === 'pending') {
+        // Recorded so the panel can show that the server is still listening, not just idle.
+        watch.set(providerId, { status: 'pending', account: '', message: '', at: Date.now() })
+        setTimeout(tick, (result.interval ?? Math.max(3, intervalSeconds)) * 1000)
+        return
+      }
+      watch.set(providerId, {
+        status: result.status,
+        account: 'account' in result ? String(result.account ?? '') : '',
+        message: 'message' in result ? String(result.message ?? '') : '',
+        at: Date.now()
+      })
+    } catch (error) {
+      watch.set(providerId, { status: 'error', account: '', message: String((error as Error).message ?? error), at: Date.now() })
+    }
+  }
+  setTimeout(tick, interval)
+}
+
 export function publicOAuthProviders() {
   return Object.entries(OAUTH_PROVIDERS).map(([id, config]) => {
     const session = readSession(id)
+    const seen = watchStatus(id)
     return {
       id,
       label: config.label,
@@ -190,7 +233,8 @@ export function publicOAuthProviders() {
       connected: !!session,
       account: session?.account ?? '',
       expiresAt: session?.expiresAt ?? null,
-      mode: session?.mode ?? null
+      mode: session?.mode ?? null,
+      watch: seen ? { status: seen.status, account: seen.account, message: seen.message } : null
     }
   })
 }

@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { cpSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { bodyOf, consolidateDryRun } from './consolidate'
 import type { Body } from './consolidate'
 import { chat, providerById } from './providers'
+import { sweepReferences } from './sweep'
 
 /**
  * The fold pass: a model reads both bodies and writes one, and then the result is audited against
@@ -146,7 +147,7 @@ export async function applyFold(input: {
   confirm: boolean
   dryRun: boolean
 }): Promise<Record<string, unknown>> {
-  const { archiveFile, writeBody } = await import('./consolidateApply')
+  const { archiveFile, pointerText, writeBody } = await import('./consolidateApply')
   const proposal = await foldGroup(input.key, input.provider, input.model)
   if ('error' in proposal) return { error: proposal.error, detail: proposal.detail }
   if (proposal.status !== 'clean') {
@@ -185,11 +186,50 @@ export async function applyFold(input: {
 
   const archive = archiveFile(file, `fold:${input.key}`)
   writeBody(file, merged)
+
+  // The other copies hold nothing the survivor lacks now. A differently named copy becomes a
+  // pointer; a copy that shares the survivor's name cannot point anywhere meaningful, so its body
+  // is archived and the duplicate is removed rather than left as a self-reference.
+  const pointers: Array<{ path: string; archive: string }> = []
+  const removed: Array<{ path: string; archive: string }> = []
+  for (const member of group.members) {
+    if (path.resolve(member.path) === path.resolve(survivorBody.dir)) continue
+    const other = bodyOf(member.path)
+    if (!other) continue
+    const otherFile = path.join(other.dir, 'SKILL.md')
+    const otherArchive = archiveFile(otherFile, `fold-duplicate:${input.key}`)
+    if (other.name === survivorBody.name) {
+      // The support files belong to the removed copy too, so the whole package is preserved in the
+      // trash beside the SKILL.md before the directory goes.
+      const kept = path.join(path.dirname(otherArchive), 'files')
+      cpSync(other.dir, kept, { recursive: true, force: true })
+      rmSync(other.dir, { recursive: true, force: true })
+      removed.push({ path: otherFile, archive: otherArchive })
+    } else {
+      writeBody(otherFile, pointerText(other, survivorBody))
+      pointers.push({ path: otherFile, archive: otherArchive })
+    }
+  }
+
+  const roots = (await import('./db')).getDb()
+    .prepare('SELECT DISTINCT root_path FROM skills')
+    .all() as Array<{ root_path: string }>
+  const sweep = sweepReferences(
+    roots.map((row) => row.root_path),
+    [...pointers, ...removed].map((entry) => path.basename(path.dirname(entry.path))),
+    survivorBody.name,
+    [survivorBody.dir, ...pointers.map((entry) => path.dirname(entry.path))],
+    [survivorBody.dir, ...pointers.map((entry) => path.dirname(entry.path))]
+  )
+
   return {
     applied: true,
     survivor: survivorBody.name,
     archive,
+    pointers,
+    removed,
     chars: merged.length,
+    rewire: { files: sweep.rewired.length, occurrences: sweep.rewired.reduce((sum, hit) => sum + hit.occurrences, 0), dangling: sweep.dangling.length },
     audit: { keptRules: proposal.keptRules, totalRules: proposal.totalRules, invented: proposal.inventedLines.length }
   }
 }

@@ -642,6 +642,11 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   return result
 }
 
+/** Every indexed package, for the scan's vanishing check. */
+export function allSkillPaths(): { id: number; path: string }[] {
+  return getDb().prepare('SELECT id, path FROM skills').all() as { id: number; path: string }[]
+}
+
 export function removeByPath(skillPath: string): number {
   const db = getDb()
   const row = db.prepare('SELECT id, path FROM skills WHERE path = ?').get(skillPath) as

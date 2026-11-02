@@ -83,6 +83,12 @@ interface ProviderRow {
   baseEditable: boolean
 }
 
+interface OAuthWatch {
+  status: string
+  account: string
+  message: string
+}
+
 interface OAuthRow {
   id: string
   label: string
@@ -93,6 +99,7 @@ interface OAuthRow {
   account: string
   expiresAt: string | null
   mode: string | null
+  watch?: OAuthWatch | null
 }
 
 interface ImproveFinding {
@@ -691,6 +698,7 @@ export default function App() {
   >({})
   const [oauthCode, setOauthCode] = useState('')
   const [oauthBusy, setOauthBusy] = useState<string>('')
+  const [copiedCode, setCopiedCode] = useState('')
   const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
   const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
   const [improveRule, setImproveRule] = useState('')
@@ -816,31 +824,31 @@ export default function App() {
     void pollSignIn(id, payload.flowId ?? '', Math.max(3, payload.interval ?? 5))
   }
 
-  async function pollSignIn(id: string, flowId: string, interval: number) {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, interval * 1000))
-      const response = await fetch(`/api/oauth/${id}/poll`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ flowId })
-      })
-      const payload = (await response.json()) as { status?: string; interval?: number; message?: string; account?: string; error?: string }
-      if (payload.status === 'pending') {
-        interval = payload.interval ?? interval
-        continue
+  async function pollSignIn(id: string, _flowId: string, interval: number) {
+    // The server polls the provider; this only reads the result, so closing the dialog mid-approval
+    // no longer throws the finished sign-in away.
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(3, interval) * 1000))
+      const response = await fetch('/api/oauth')
+      const payload = (await response.json()) as {
+        providers: Array<{ id: string; connected: boolean; account: string; watch: { status: string; account: string; message: string } | null }>
       }
-      if (payload.status === 'connected') {
-        setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'connected', message: payload.account ?? '' } }))
-        await refreshOAuth()
+      const row = payload.providers.find((entry) => entry.id === id)
+      if (!row) return
+      if (row.connected) {
+        setOauthRows(payload.providers)
+        setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'connected', message: row.account } }))
         return
       }
-      setOauthFlows((flows) => ({
-        ...flows,
-        [id]: { flowId: '', status: payload.status ?? 'error', message: payload.message ?? payload.error ?? '' }
-      }))
-      return
+      if (row.watch && row.watch.status !== 'pending') {
+        setOauthFlows((flows) => ({
+          ...flows,
+          [id]: { flowId: '', status: row.watch!.status, message: row.watch!.message || row.watch!.account }
+        }))
+        return
+      }
     }
-    setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'expired', message: 'Stopped polling; start again.' } }))
+    setOauthFlows((flows) => ({ ...flows, [id]: { flowId: '', status: 'expired', message: 'Stopped waiting; start again.' } }))
   }
 
   async function finishSignIn(id: string) {
@@ -2089,8 +2097,31 @@ export default function App() {
 
                       {flow?.code && (
                         <div className="oauthflow">
-                          <code className="oauthcode">{flow.code}</code>
-                          <a className="phlink" href={flow.url} target="_blank" rel="noreferrer">
+                          <span className="oauthcodewrap">
+                            <code className="oauthcode">{flow.code}</code>
+                            <button
+                              className="oauthcopy"
+                              aria-label="Copy the code"
+                              title={copiedCode === flow.code ? 'Copied' : 'Copy the code'}
+                              onClick={() => {
+                                void navigator.clipboard.writeText(flow.code ?? '')
+                                setCopiedCode(flow.code ?? '')
+                                window.setTimeout(() => setCopiedCode(''), 1400)
+                              }}
+                            >
+                              {copiedCode === flow.code ? (
+                                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                                  <path d="M2.5 6.4l2.4 2.4L9.6 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ) : (
+                                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                                  <rect x="4" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.2" />
+                                  <path d="M8 4V3.2A1.2 1.2 0 0 0 6.8 2H3.2A1.2 1.2 0 0 0 2 3.2v3.6A1.2 1.2 0 0 0 3.2 8H4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+                                </svg>
+                              )}
+                            </button>
+                          </span>
+                          <a className="oauthopen" href={flow.url} target="_blank" rel="noreferrer">
                             Open the approval page
                           </a>
                           <span className="oauthstate">

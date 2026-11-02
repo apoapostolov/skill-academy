@@ -91,7 +91,15 @@ function rewireRelatedBullets(text: string, from: string, to: string): { text: s
   return { text: next.join('\n'), hits }
 }
 
-export function sweepReferences(roots: string[], losers: string[], winner: string, skipDirs: string[]): SweepResult {
+export function sweepReferences(
+  roots: string[],
+  losers: string[],
+  winner: string,
+  skipDirs: string[],
+  scopeTo?: string[]
+): SweepResult {
+  // A name that is already the winner needs no rewire, and a no-op rewrite would be reported as work.
+  const moving = losers.filter((loser) => loser !== winner)
   const files: string[] = []
   for (const root of roots) walkFiles(root, files)
   const skip = new Set(skipDirs.map((dir) => path.resolve(dir)))
@@ -108,7 +116,7 @@ export function sweepReferences(roots: string[], losers: string[], winner: strin
     }
     let next = text
     let total = 0
-    for (const loser of losers) {
+    for (const loser of moving) {
       const quoted = rewireBody(next, loser, winner)
       const bullets = rewireRelatedBullets(quoted.text, loser, winner)
       next = bullets.text
@@ -122,9 +130,12 @@ export function sweepReferences(roots: string[], losers: string[], winner: strin
     }
   }
 
-  // Close-out: every references/ or scripts/ target named in a body must exist.
+  // Close-out: every references/ or scripts/ target named in a body must exist. It is scoped to
+  // the skills this merge touched, because a library-wide pass reports every fixture and example
+  // path in every body as missing.
   const dangling: Array<{ file: string; target: string }> = []
-  for (const file of files) {
+  const inScope = scopeTo ? files.filter((file) => scopeTo.some((dir) => path.resolve(file).startsWith(path.resolve(dir) + path.sep))) : files
+  for (const file of inScope) {
     const text = readFileSync(file, 'utf8')
     for (const match of text.matchAll(/(?:references|scripts|assets|templates)\/([\w.-]+\.[a-z]{2,4})/g)) {
       const target = path.join(path.dirname(file), match[0])

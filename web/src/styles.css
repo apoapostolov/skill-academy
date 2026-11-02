@@ -3153,6 +3153,51 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   padding: 2px 8px;
 }
 
+.oauthcodewrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05);
+  padding-right: 2px;
+}
+
+.oauthcodewrap .oauthcode {
+  border: 0;
+  background: transparent;
+  padding: 2px 8px;
+}
+
+.oauthcopy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6f737b;
+}
+
+.oauthcopy:hover {
+  color: #c9d3dd;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.oauthopen {
+  color: #7fa3c7;
+  font-size: 10.5px;
+  text-decoration: none;
+}
+
+.oauthopen:hover {
+  color: #a3c0dc;
+  text-decoration: underline;
+}
+
 .oauthstate {
   font-size: 10.5px;
   color: #75797f;

@@ -36,6 +36,8 @@ import {
   listSourceEvents,
   acknowledgeSourceEvent,  lockRows,  setSourceSkills,
   sourceSkills,  getDb,  archivedByRoot,
+  allSkillPaths,
+  removeByPath
 } from './db'
 import {
   archiveSkill,
@@ -62,7 +64,8 @@ import {
   pollDeviceFlow,
   publicOAuthProviders,
   startAuthorizeFlow,
-  startDeviceFlow
+  startDeviceFlow,
+  startWatch
 } from './oauth'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
@@ -136,13 +139,26 @@ function rescanRoot(rootPath: string): void {
   broadcast({ type: 'library', root: rootPath, added: 0, changed: 0, removed: 0, at: lastScanAt })
 }
 
+/** Rows whose package no longer has a readable SKILL.md. */
+function pruneVanished(): number {
+  let removed = 0
+  for (const row of allSkillPaths()) {
+    if (fs.existsSync(path.join(row.path, 'SKILL.md'))) continue
+    removed += removeByPath(row.path)
+  }
+  return removed
+}
+
 function fullScan(): { added: number; changed: number; removed: number; ms: number; skills: number } {
   const registry = loadRegistry()
   if (WATCH_ENABLED) watcher.sync(registry.roots)
   const outcome = scanAll(registry.roots)
   const result = saveScan(outcome)
+  // A scan indexes what exists; it must also retire what stopped existing, or a removed duplicate
+  // keeps answering searches forever.
+  const vanished = pruneVanished()
   lastScanAt = new Date().toISOString()
-  return { ...result, ms: outcome.ms, skills: outcome.skills }
+  return { ...result, removed: result.removed + vanished, ms: outcome.ms, skills: outcome.skills }
 }
 
 const app = Fastify({ logger: false })
@@ -695,7 +711,11 @@ app.post('/api/oauth/:id/start', async (request, reply) => {
     return { error: 'no sign-in for that provider' }
   }
   try {
-    return config.kind === 'authorize' ? startAuthorizeFlow(id) : await startDeviceFlow(id)
+    if (config.kind === 'authorize') return startAuthorizeFlow(id)
+    const started = await startDeviceFlow(id)
+    // The approval can land long after this dialog closes, so the server keeps polling.
+    startWatch(id, started.flowId, started.interval ?? 5)
+    return started
   } catch (error) {
     reply.code((error as { status?: number }).status ?? 502)
     return { error: (error as Error).message, code: (error as { code?: string }).code ?? null }
