@@ -33,7 +33,7 @@ import {
   undoJournal,
   writeSettings
 } from './lifecycle'
-import { place, unplace } from './placement'
+import { copyDrift, place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
 import { compareVersions, provenanceOf } from './provenance'
@@ -391,7 +391,11 @@ app.get('/api/placements', async (request, reply) => {
           root: root.path,
           target: hit?.targetPath ?? path.join(root.path, path.basename(skill.path)),
           state: hit ? (hit.mode === 'native' ? 'native' : 'on') : 'off',
-          mode: hit?.mode ?? null
+          mode: hit?.mode ?? null,
+          drift:
+            hit && hit.mode === 'copy'
+              ? copyDrift(skill.path, hit.targetPath)
+              : null
         }
       })
     )

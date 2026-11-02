@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 export type PlacementMode = 'junction' | 'symlink' | 'copy' | 'native'
 
@@ -167,4 +169,22 @@ export function describe(target: string): { exists: boolean; link: boolean; ours
   }
   const ours = fs.existsSync(path.join(target, MANIFEST))
   return { exists: true, link: false, ours }
+}
+
+/**
+ * A tracked copy is the last-resort placement, and it can drift: the agent writes into
+ * its copy, or the source moves on without it. Compares the one file that defines the
+ * skill, so a genuine edit is caught without walking the whole package.
+ */
+export function copyDrift(source: string, target: string): { drifted: boolean; sourceHash: string; targetHash: string } {
+  const read = (dir: string): string => {
+    try {
+      return createHash('sha256').update(readFileSync(path.join(dir, 'SKILL.md'))).digest('hex')
+    } catch {
+      return ''
+    }
+  }
+  const sourceHash = read(source)
+  const targetHash = read(target)
+  return { drifted: sourceHash !== '' && targetHash !== '' && sourceHash !== targetHash, sourceHash, targetHash }
 }
