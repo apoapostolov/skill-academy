@@ -79,6 +79,7 @@ interface ProviderRow {
   models: string[]
   configured: boolean
   hint: string | null
+  requiresSignIn: boolean
 }
 
 interface Facets {
@@ -1535,8 +1536,10 @@ export default function App() {
           <div className="installmodal providersmodal" onClick={(event) => event.stopPropagation()}>
             <div className="imhead">
               <span>Providers</span>
-              <button className="iconbtn" aria-label="Close" onClick={() => setProvidersOpen(false)}>
-                ×
+              <button className="iconbtn crossbtn" aria-label="Close" onClick={() => setProvidersOpen(false)}>
+                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
             <div className="imbody">
@@ -1550,8 +1553,21 @@ export default function App() {
                     <span className="provname">{row.label}</span>
                     <span className={`provdot ${row.configured ? 'on' : ''}`} aria-hidden="true" />
                     <span className="provstate">
-                      {row.needsKey ? (row.configured ? `key ${row.hint}` : 'no key') : 'no key needed'}
+                      {row.requiresSignIn
+                        ? row.configured
+                          ? 'signed in'
+                          : 'sign-in pending'
+                        : row.needsKey
+                          ? row.configured
+                            ? `key ${row.hint}`
+                            : 'no key'
+                          : 'no key needed'}
                     </span>
+                    {row.requiresSignIn && (
+                      <button className="ghost small" disabled title="The OAuth flow lands with the next slice">
+                        Sign in
+                      </button>
+                    )}
                     {row.needsKey && (
                       <>
                         <input
@@ -2270,7 +2286,24 @@ export default function App() {
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
           <ScrollPane axis={wrap ? 'y' : 'both'} className="detail-scroll">
-          {!detail && <div className="empty">Select a skill to read it.</div>}
+          {!detail && (
+            <div className="empty ph">
+              <div className="phtitle">Select a skill to read it.</div>
+              <div className="phrow">
+                <button className="phlink" onClick={openProviders}>
+                  Providers
+                </button>
+                <span className="phsep">·</span>
+                <button className="phlink" onClick={() => setInstallOpen(true)}>
+                  Install Skill
+                </button>
+                <span className="phsep">·</span>
+                <button className="phlink" onClick={() => void scan()}>
+                  Scan folders
+                </button>
+              </div>
+            </div>
+          )}
           {detail && (
             <div className="detail-inner">
               <div className="detailhead">

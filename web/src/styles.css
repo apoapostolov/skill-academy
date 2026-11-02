@@ -3045,3 +3045,53 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   color: #cfd2d7;
   background: rgba(255, 255, 255, 0.05);
 }
+
+/* The placeholder is a small menu of ways out of it, not a dead sentence. */
+.empty.ph {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 18px 20px;
+}
+
+.phtitle {
+  color: #8b8f97;
+  font-size: 12px;
+}
+
+.phrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.phlink {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #8fa9c4;
+  font-size: 11.5px;
+  cursor: default;
+}
+
+.phlink:hover {
+  color: #b9cde0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.phsep {
+  color: #4d5158;
+}
+
+.crossbtn svg {
+  display: block;
+}
+
+.ghost.small[disabled] {
+  color: #575b62;
+  border-color: rgba(255, 255, 255, 0.05);
+  cursor: default;
+}

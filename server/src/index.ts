@@ -48,6 +48,7 @@ import {
   writeSettings
 } from './lifecycle'
 import { curateDryRun } from './curate'
+import { improveDryRun } from './improve'
 import { PROVIDERS, providerById, providerSummary, testProvider } from './providers'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
@@ -519,6 +520,11 @@ app.get('/api/github/status', async () => {
     remaining: payload?.resources?.core?.remaining ?? null,
     limit: payload?.resources?.core?.limit ?? null
   }
+})
+
+app.post('/api/improve/dry-run', async () => {
+  // Read-only, and the rule list ships with the report so a finding can be traced to its source.
+  return improveDryRun()
 })
 
 app.post('/api/curate/dry-run', async () => {

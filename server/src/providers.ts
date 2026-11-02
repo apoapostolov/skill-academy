@@ -18,6 +18,8 @@ export interface Provider {
   models: string[]
   /** OpenCode's relay answers 400 MissingSessionID without this header. */
   relaySession?: boolean
+  /** An OAuth provider carries a signed-in session instead of a pasted key. */
+  requiresSignIn?: boolean
 }
 
 export const PROVIDERS: Provider[] = [
@@ -79,11 +81,13 @@ export const PROVIDERS: Provider[] = [
   },
   {
     id: 'zai',
-    label: 'Z.ai',
+    label: 'Z.ai (Coding Plan)',
     kind: 'openai',
-    base: 'https://api.z.ai/api/paas/v4',
+    // The coding plan answers on /api/coding/paas/v4; the plain /api/paas/v4 endpoint reports
+    // no balance for the same key, which is a routing difference rather than an empty account.
+    base: 'https://api.z.ai/api/coding/paas/v4',
     needsKey: true,
-    models: ['glm-4.6', 'glm-4-plus']
+    models: ['glm-4.6', 'glm-4.5', 'glm-4.5-air', 'glm-4.5-flash']
   },
   {
     id: 'opencode-go',
@@ -101,6 +105,24 @@ export const PROVIDERS: Provider[] = [
     base: 'https://api.x.ai/v1',
     needsKey: true,
     models: ['grok-4', 'grok-3', 'grok-3-mini']
+  },
+  {
+    id: 'xai-oauth',
+    label: 'Grok (xAI OAuth)',
+    kind: 'openai',
+    base: 'https://api.x.ai/v1',
+    needsKey: false,
+    requiresSignIn: true,
+    models: ['grok-4.6', 'grok-4', 'grok-3']
+  },
+  {
+    id: 'openai-codex',
+    label: 'Codex (ChatGPT OAuth)',
+    kind: 'openai',
+    base: 'https://chatgpt.com/backend-api/codex',
+    needsKey: false,
+    requiresSignIn: true,
+    models: ['gpt-5.6-luna', 'gpt-5.1-codex']
   },
   {
     id: 'local',
@@ -124,6 +146,7 @@ export function providerSummary(provider: Provider) {
     kind: provider.kind,
     base: provider.base,
     needsKey: provider.needsKey,
+    requiresSignIn: provider.requiresSignIn ?? false,
     models: provider.models,
     ...keyStatus(provider.id)
   }
@@ -301,5 +324,6 @@ export async function testProvider(
     if (result.kind === 'no-key') return { ok: false, detail: 'no key saved', model: chosen }
     return { ok: false, detail: result.message, model: chosen }
   }
-  return { ok: true, detail: `answered in ${result.ms} ms`, model: result.model, ms: result.ms }
+  const note = result.text.trim() ? '' : ' (empty text: the model may spend the whole allowance on reasoning)'
+  return { ok: true, detail: `answered in ${result.ms} ms${note}`, model: result.model, ms: result.ms }
 }
