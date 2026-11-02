@@ -47,7 +47,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
 const HEALTH_VERSION = 2
@@ -64,6 +64,7 @@ function migrate(db: DatabaseSync): void {
     // CREATE TABLE IF NOT EXISTS, so the shape change drops and rebuilds instead.
     db.exec(`
       DROP TABLE IF EXISTS skills_fts;
+      DROP TABLE IF EXISTS skills_doc;
       DROP TABLE IF EXISTS skill_body;
       DROP TABLE IF EXISTS placements;
       DROP TABLE IF EXISTS skills;
@@ -124,9 +125,21 @@ function migrate(db: DatabaseSync): void {
     );
   `)
 
-  // contentless_delete lets one skill's row be removed without rebuilding the whole index,
-  // which is what makes an incremental scan cheap enough to answer in milliseconds.
-  db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(name, description, tags, body, content='', contentless_delete=1);`)
+  // External content: the document row carries the path, so one package can be reindexed
+  // or dropped without touching the rest, and a rowid always maps back to a real skill.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS skills_doc (
+      id INTEGER PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '[]',
+      body TEXT NOT NULL DEFAULT ''
+    );
+    CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+      name, description, tags, body, content='skills_doc', content_rowid='id'
+    );
+  `)
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
     String(SCHEMA_VERSION)
   )
@@ -156,13 +169,13 @@ export function getDb(): DatabaseSync {
 }
 
 function rebuildFts(db: DatabaseSync): void {
-  // A contentless FTS5 table has no row storage to delete from; `delete-all` is the
-  // only supported way to clear it before a rebuild.
-  db.exec("INSERT INTO skills_fts(skills_fts) VALUES('delete-all')")
+  // Repopulate the document table, then let FTS5 rebuild itself from it.
   db.exec(`
-    INSERT INTO skills_fts (rowid, name, description, tags, body)
-    SELECT s.id, s.name, s.description, s.tags, COALESCE(b.body, '')
-    FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id
+    DELETE FROM skills_doc;
+    INSERT INTO skills_doc (path, name, description, tags, body)
+    SELECT s.path, s.name, s.description, s.tags, COALESCE(b.body, '')
+    FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id;
+    INSERT INTO skills_fts(skills_fts) VALUES('rebuild');
   `)
 }
 
@@ -283,10 +296,18 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     changedPaths.push(skill.path)
   }
 
-  // Contentless FTS5 cannot store the lookup column that incremental writes would need,
-  // so a changed root rebuilds the index. Correct beats fast until the index table moves
-  // to external content with a real document row per package.
-  if (changedPaths.length > 0) rebuildFts(db)
+  // Only what actually changed is reindexed: the document row carries the path, so one
+  // package is touched instead of the whole table.
+  if (changedPaths.length > 0) {
+    db.exec('SAVEPOINT index_changes')
+    try {
+      for (const changed of changedPaths) indexSkill(changed)
+      db.exec('RELEASE index_changes')
+    } catch (error) {
+      db.exec('ROLLBACK TO index_changes')
+      throw error
+    }
+  }
 
   // Placements are what the scan just observed for this root; replace them only when the
   // observed set differs, so a rescan of unchanged disk performs no writes at all.
@@ -340,53 +361,54 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   return result
 }
 
-/** Rebuild the search index once, after a batch of writes rather than per package. */
-/** A stable 31-bit rowid per package path: we never read an id back, so no bigint can leak. */
-function ftsRowId(key: string): number {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193) >>> 0
+/** Rebuild the search index from scratch; used after a full scan. */
+function indexedFor(row: { name: string; description: string; tags: string; body: string }, path: string): { rowid: number } | null {
+  const db = getDb()
+  const existing = db.prepare('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
+  if (existing) {
+    db.prepare(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`)
+      .run(existing.id, ...docValues(path))
   }
-  return (hash & 0x7fffffff) || 1
+  const stored = db
+    .prepare(`
+      INSERT INTO skills_doc (path, name, description, tags, body) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET name = excluded.name, description = excluded.description,
+        tags = excluded.tags, body = excluded.body
+      RETURNING id
+    `)
+    .get(path, row.name, row.description, row.tags, row.body) as { id: number } | undefined
+  if (!stored) return null
+  db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)')
+    .run(stored.id, row.name, row.description, row.tags, row.body)
+  return { rowid: stored.id }
 }
 
-let indexStatements: { select: StatementSyncLike; drop: StatementSyncLike; insert: StatementSyncLike } | null = null
-
-type StatementSyncLike = { run: (...args: unknown[]) => unknown; get: (...args: unknown[]) => unknown }
-
-function indexStatementsFor(): { select: StatementSyncLike; drop: StatementSyncLike; insert: StatementSyncLike } {
-  if (!indexStatements) {
-    const db = getDb()
-    indexStatements = {
-      select: db.prepare(`
-        SELECT s.name, s.description, s.tags, COALESCE(b.body, '') AS body
-        FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id WHERE s.path = ?
-      `) as unknown as StatementSyncLike,
-      drop: db.prepare('DELETE FROM skills_fts WHERE rowid = ?') as unknown as StatementSyncLike,
-      insert: db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)') as unknown as StatementSyncLike
-    }
-  }
-  return indexStatements
+/** The indexed text for one package path, straight from the live tables. */
+function docValues(path: string): [string, string, string, string] {
+  const found = getDb()
+    .prepare(`
+      SELECT s.name, s.description, s.tags, COALESCE(b.body, '') AS body
+      FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id WHERE s.path = ?
+    `)
+    .get(path) as { name: string; description: string; tags: string; body: string } | undefined
+  return found ? [found.name, found.description, found.tags, found.body] : ['', '', '[]', '']
 }
 
 /** Writes one package into the search index, replacing its previous row. */
-export function indexSkill(realPath: string): void {
-  const statement = indexStatementsFor()
-  const row = statement.select.get(realPath) as
-    | { name: string; description: string; tags: string; body: string }
-    | undefined
-  const rowid = ftsRowId(realPath)
-  if (!row) {
-    statement.drop.run(rowid)
-    return
-  }
-  statement.drop.run(rowid)
-  statement.insert.run(rowid, row.name, row.description, row.tags, row.body)
+export function indexSkill(path: string): void {
+  const values = docValues(path)
+  indexedFor({ name: values[0], description: values[1], tags: values[2], body: values[3] }, path)
 }
 
-export function dropFromIndex(realPath: string): void {
-  getDb().prepare('DELETE FROM skills_fts WHERE rowid = ?').run(ftsRowId(realPath))
+/** Removes one package from the search index. */
+export function dropFromIndex(path: string): void {
+  const db = getDb()
+  const existing = db.prepare('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
+  if (existing) {
+    db.prepare(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`)
+      .run(existing.id, ...docValues(path))
+  }
+  db.prepare('DELETE FROM skills_doc WHERE path = ?').run(path)
 }
 
 export function rebuildIndex(): void {
@@ -448,7 +470,8 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
   if (query.health) filters.push("s.health <> '[]'")
 
   if (match) {
-    const from = 'FROM skills s JOIN skills_fts ON skills_fts.rowid = s.id'
+    const from =
+    'FROM skills s JOIN skills_doc d ON d.path = s.path JOIN skills_fts ON skills_fts.rowid = d.id'
     const where = `WHERE ${filters.join(' AND ')}`
     const total = db.prepare(`SELECT COUNT(*) AS n ${from} ${where}`).get(...params) as { n: number }
     const rows = db
@@ -535,7 +558,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
     result.changed = 1
   }
 
-  if (result.added + result.changed > 0) rebuildFts(db)
+  if (result.added + result.changed > 0) indexSkill(skill.path)
   return result
 }
 
