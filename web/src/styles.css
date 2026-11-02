@@ -1929,3 +1929,7 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
+
+/* A table needs air underneath or the next paragraph reads as a table row. */
+.md table { margin: 0 0 9px; }
+.md table + p, .md table + ul, .md table + ol { margin-top: 0; }
