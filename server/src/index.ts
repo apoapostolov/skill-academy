@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -1124,6 +1124,8 @@ app.post('/api/presets/:id/apply', async (request, reply) => {
 app.post('/api/skills/:id/switch', async (request, reply) => {
   // Off means the platform stops seeing the skill, and the folder moves inside that platform's
   // own `.archive`. Nothing is deleted: `.archive/<name>` is the exact inverse of the switch.
+  // The live location comes from the index, never from root + name: skills sit in category and
+  // tag subfolders, so root + name points at a directory that does not exist.
   const { id } = request.params as { id: string }
   const body = (request.body ?? {}) as { agent?: string; on?: boolean }
   if (!body.agent || typeof body.on !== 'boolean') {
@@ -1144,33 +1146,78 @@ app.post('/api/skills/:id/switch', async (request, reply) => {
     return { error: `no detected root for ${body.agent}` }
   }
   const archiveRoot = path.join(root.path, '.archive')
-  const live = path.join(root.path, row.name)
-  const parked = path.join(archiveRoot, row.name)
+  const isArchived = row.path.split(/[\\/]/).includes('.archive')
+  const ORIGIN = '.skill-academy-origin.json'
 
   if (body.on === false) {
+    const live = row.path
+    const parked = path.join(archiveRoot, row.name)
     if (!existsSync(live)) {
       reply.code(409)
       return { error: 'not-in-root', path: live }
+    }
+    if (isArchived) {
+      reply.code(409)
+      return { error: 'already-archived', path: live }
     }
     mkdirSync(archiveRoot, { recursive: true })
     if (existsSync(parked)) {
       reply.code(409)
       return { error: 'archive-name-taken', path: parked }
     }
-    renameSync(live, parked)
-    addJournal('platform-archive', { agent: body.agent, from: live, to: parked })
-    return { on: false, agent: body.agent, movedTo: parked }
+    const relative = path.relative(root.path, live).split('\\').join('/')
+    // Move first, then leave a note behind: writing inside the package before the move keeps a
+    // handle open long enough for Windows to refuse the rename with EPERM.
+    let moved = false
+    for (let attempt = 0; attempt < 4 && !moved; attempt += 1) {
+      try {
+        renameSync(live, parked)
+        moved = true
+      } catch (error) {
+        if (attempt === 3) {
+          reply.code(409)
+          return { error: 'locked', detail: (error as Error).message, path: live }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 60 * (attempt + 1)))
+      }
+    }
+    try {
+      writeFileSync(path.join(parked, ORIGIN), JSON.stringify({ root: root.path, relative }, null, 2))
+    } catch {
+      /* a read-only package still archives, it just restores flat */
+    }
+    addJournal('platform-archive', { agent: body.agent, from: live, to: parked, relative })
+    return { on: false, agent: body.agent, movedTo: parked, from: live }
   }
 
+  // After an archive the index still points at the old live path until the next scan, so the
+  // parked folder is looked up by name as well.
+  const candidate = path.join(archiveRoot, row.name)
+  const parked = isArchived && existsSync(row.path) ? row.path : candidate
   if (!existsSync(parked)) {
     reply.code(409)
     return { error: 'not-archived', path: parked }
   }
+  let relative = `${row.name}`
+  try {
+    const origin = JSON.parse(readFileSync(path.join(parked, ORIGIN), 'utf8')) as { relative?: string }
+    if (origin.relative) relative = origin.relative
+  } catch {
+    /* no origin written: fall back to the root */
+  }
+  const live = path.join(root.path, relative)
   if (existsSync(live)) {
     reply.code(409)
     return { error: 'name-taken-in-root', path: live }
   }
+  mkdirSync(path.dirname(live), { recursive: true })
   renameSync(parked, live)
+  try {
+    const manifest = path.join(live, ORIGIN)
+    if (existsSync(manifest)) unlinkSync(manifest)
+  } catch {
+    /* leaving the manifest behind is harmless */
+  }
   addJournal('platform-restore', { agent: body.agent, from: parked, to: live })
   return { on: true, agent: body.agent, movedTo: live }
 })
