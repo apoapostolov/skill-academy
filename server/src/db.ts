@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { DB_PATH } from './config'
@@ -390,6 +391,22 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       remove.run(row.id)
     }
     result.removed = stale.length
+  }
+
+  // A skill whose directory is gone is not a skill, even when it was never placed in an
+  // agent folder. The parent check keeps an unplugged drive from emptying the library.
+  const vanished = (db.prepare('SELECT id, path FROM skills').all() as { id: number; path: string }[]).filter(
+    (row) => !existsSync(row.path) && existsSync(path.dirname(path.dirname(row.path)))
+  )
+  if (vanished.length > 0) {
+    const remove = db.prepare('DELETE FROM skills WHERE id = ?')
+    const removeBody = db.prepare('DELETE FROM skill_body WHERE skill_id = ?')
+    for (const row of vanished) {
+      removeBody.run(row.id)
+      dropFromIndex(row.path)
+      remove.run(row.id)
+    }
+    result.removed += vanished.length
   }
 
   return result
