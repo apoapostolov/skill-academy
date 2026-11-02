@@ -1,0 +1,195 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { bodyOf, consolidateDryRun } from './consolidate'
+import type { Body } from './consolidate'
+import { chat, providerById } from './providers'
+
+/**
+ * The fold pass: a model reads both bodies and writes one, and then the result is audited against
+ * the sources before it is offered.
+ *
+ * The audit is the point. A model merge is only worth having if a reader can see that nothing was
+ * lost, so every rule line from every source is checked for presence in the output, and anything
+ * the model wrote that exists in neither source is reported as invented. A single dropped rule
+ * makes the proposal `lossy` and unappliable. Nothing here writes; applying is a separate call.
+ */
+
+export interface FoldProposal {
+  key: string
+  survivor: string
+  model: string
+  ms: number
+  chars: number
+  keptRules: number
+  totalRules: number
+  droppedRules: string[]
+  inventedLines: string[]
+  status: 'clean' | 'lossy' | 'error'
+  message?: string
+  text: string
+}
+
+function frontmatterBlock(text: string): string {
+  const match = /^(---\r?\n[\s\S]*?\r?\n---)/.exec(text)
+  return match ? match[1] : ''
+}
+
+function normalize(line: string): string {
+  return line
+    .toLowerCase()
+    .replace(/^[-*#>\s]+/, '')
+    .replace(/[`*_“”"']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Rules, headings and every other line with substance, as the audit's comparison set. */
+function substantive(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 18)
+    .map(normalize)
+    .filter(Boolean)
+}
+
+function bodyText(dir: string): string {
+  const source = readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+  const fm = frontmatterBlock(source)
+  return source.slice(fm.length)
+}
+
+export async function foldGroup(
+  key: string,
+  providerId: string,
+  model: string
+): Promise<FoldProposal | { error: string; detail?: unknown }> {
+  const run = consolidateDryRun()
+  const group = run.groups.find((entry) => entry.key === key)
+  if (!group) return { error: 'group-not-found', detail: { key } }
+  if (!group.plan) return { error: 'not-applicable', detail: { reason: group.blocked ?? 'no plan' } }
+
+  const provider = providerById(providerId)
+  if (!provider) return { error: 'unknown-provider', detail: { providerId } }
+
+  const survivorMember = group.members.find((member) => member.name === group.plan!.survivor)
+  if (!survivorMember) return { error: 'survivor-missing', detail: { survivor: group.plan.survivor } }
+  const survivor: Body | null = bodyOf(survivorMember.path)
+  if (!survivor) return { error: 'survivor-missing', detail: { path: survivorMember.path } }
+
+  const others = group.members.filter((member) => member.name !== survivor.name)
+  const sourceBodies = others.map((member) => ({ member, body: bodyOf(member.path) })).filter((entry) => entry.body)
+
+  const survivorText = bodyText(survivor.dir)
+  const otherTexts = sourceBodies.map((entry) => bodyText(entry.body!.dir))
+
+  const system = [
+    'You merge skill documents. Output only the finished markdown body, with no frontmatter and no commentary.',
+    'Keep every rule, caveat and exact token from both inputs. Never invent a rule, a path, a command or a number.',
+    'When two rules say the same thing, keep the more specific wording once.',
+    'Keep the section headings that carry unique content from either input.',
+    'Prefer short, plain sentences. Do not add praise, motivation or filler.'
+  ].join(' ')
+
+  const user = [
+    `Canonical body (${survivor.name}):`,
+    '',
+    survivorText,
+    '',
+    ...sourceBodies.flatMap((entry) => [`Second copy (${entry.member.name}):`, '', bodyText(entry.body!.dir), ''])
+  ].join('\n')
+
+  const result = await chat(provider, { system, user, model, temperature: 0.1, maxTokens: 4000, timeoutMs: 90_000 })
+  if ('kind' in result) {
+    const message = result.kind === 'http' ? `HTTP ${result.status}: ${result.body.slice(0, 200)}` : result.kind === 'no-key' ? 'no key saved' : result.message
+    return { error: 'provider-failed', detail: { message } }
+  }
+
+  const text = result.text.trim().replace(/^```(?:markdown)?\n/, '').replace(/\n```$/, '')
+  if (!text) return { error: 'empty-answer', detail: { model } }
+
+  // Audit: nothing from either source may vanish, and anything new is named.
+  const sources = [survivorText, ...otherTexts].flatMap(substantive)
+  const output = substantive(text)
+  const outputSet = new Set(output)
+  const dropped = [...new Set(sources)].filter((line) => !outputSet.has(line))
+  const sourceSet = new Set(sources)
+  const invented = output.filter((line) => !sourceSet.has(line))
+
+  const proposal: FoldProposal = {
+    key,
+    survivor: survivor.name,
+    model: result.model,
+    ms: result.ms,
+    chars: text.length,
+    keptRules: sources.length - dropped.length,
+    totalRules: sources.length,
+    droppedRules: dropped.slice(0, 40),
+    inventedLines: invented.slice(0, 40),
+    status: dropped.length === 0 ? 'clean' : 'lossy',
+    text
+  }
+  if (dropped.length) proposal.message = `${dropped.length} line(s) from the sources are missing from the merge`
+  return proposal
+}
+
+/**
+ * Writing a fold. The gate is deliberate: a model merge is only written when the caller confirms
+ * the proposal was read, the audit came back clean, and every replaced body has been archived.
+ * `dryRun` runs the whole path and writes nothing, which is how the writer is tested.
+ */
+export async function applyFold(input: {
+  key: string
+  provider: string
+  model: string
+  read: boolean
+  confirm: boolean
+  dryRun: boolean
+}): Promise<Record<string, unknown>> {
+  const { archiveFile, writeBody } = await import('./consolidateApply')
+  const proposal = await foldGroup(input.key, input.provider, input.model)
+  if ('error' in proposal) return { error: proposal.error, detail: proposal.detail }
+  if (proposal.status !== 'clean') {
+    return { error: 'lossy-merge', detail: { dropped: proposal.droppedRules.length, sample: proposal.droppedRules.slice(0, 5) } }
+  }
+  if (!input.read) return { error: 'read-the-merge', detail: 'confirm the merged body was read before writing' }
+  if (!input.confirm) return { error: 'confirmation-required', detail: 'send confirm: true to write it' }
+
+  const run = consolidateDryRun()
+  const group = run.groups.find((entry) => entry.key === input.key)
+  if (!group?.plan) return { error: 'not-applicable' }
+
+  const survivorMember = group.members.find((member) => member.name === group.plan!.survivor)
+  if (!survivorMember) return { error: 'survivor-missing' }
+  const survivorBody = bodyOf(survivorMember.path)
+  if (!survivorBody) return { error: 'survivor-missing' }
+
+  const file = path.join(survivorBody.dir, 'SKILL.md')
+  const source = readFileSync(file, 'utf8')
+  const fm = frontmatterBlock(source)
+  const merged = `${fm}\n\n${proposal.text}\n`
+
+  if (input.dryRun) {
+    return {
+      dryRun: true,
+      wouldWrite: file,
+      chars: merged.length,
+      survivor: survivorBody.name,
+      // Copies of one skill share a name, so the survivor is excluded by path, never by name.
+      pointerize: group.members
+        .filter((member) => path.resolve(member.path) !== path.resolve(survivorBody.dir))
+        .map((member) => member.path),
+      audit: { keptRules: proposal.keptRules, totalRules: proposal.totalRules, invented: proposal.inventedLines.length }
+    }
+  }
+
+  const archive = archiveFile(file, `fold:${input.key}`)
+  writeBody(file, merged)
+  return {
+    applied: true,
+    survivor: survivorBody.name,
+    archive,
+    chars: merged.length,
+    audit: { keptRules: proposal.keptRules, totalRules: proposal.totalRules, invented: proposal.inventedLines.length }
+  }
+}

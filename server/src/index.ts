@@ -49,6 +49,7 @@ import {
 } from './lifecycle'
 import { consolidateDryRun } from './consolidate'
 import { applyConsolidation, undoConsolidation } from './consolidateApply'
+import { applyFold, foldGroup } from './fold'
 import { curateDryRun } from './curate'
 import { improveDryRun } from './improve'
 import { PROVIDERS, cachedModels, providerById, providerSummary, refreshModels, testProvider } from './providers'
@@ -533,6 +534,47 @@ app.get('/api/github/status', async () => {
     remaining: payload?.resources?.core?.remaining ?? null,
     limit: payload?.resources?.core?.limit ?? null
   }
+})
+
+app.post('/api/consolidate/fold/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as {
+    key?: string
+    provider?: string
+    model?: string
+    read?: boolean
+    confirm?: boolean
+    dryRun?: boolean
+  }
+  if (!body.key) {
+    reply.code(400)
+    return { error: 'key is required' }
+  }
+  const result = await applyFold({
+    key: body.key,
+    provider: body.provider ?? 'opencode-go',
+    model: body.model ?? 'deepseek-v4.1-flash',
+    read: !!body.read,
+    confirm: !!body.confirm,
+    dryRun: !!body.dryRun
+  })
+  const error = typeof result.error === 'string' ? result.error : null
+  if (error) reply.code(error === 'group-not-found' ? 404 : error === 'lossy-merge' ? 409 : 428)
+  return result
+})
+
+app.post('/api/consolidate/fold', async (request, reply) => {
+  const body = (request.body ?? {}) as { key?: string; provider?: string; model?: string }
+  if (!body.key) {
+    reply.code(400)
+    return { error: 'key is required' }
+  }
+  const result = await foldGroup(body.key, body.provider ?? 'opencode-go', body.model ?? 'deepseek-v4.1-flash')
+  if ('error' in result) {
+    reply.code(result.error === 'group-not-found' ? 404 : 409)
+    return result
+  }
+  // A lossy merge is returned for reading, and refused by the apply route.
+  return result
 })
 
 app.post('/api/consolidate/apply', async (request, reply) => {

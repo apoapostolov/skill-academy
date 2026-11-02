@@ -31,12 +31,16 @@ function log(entry: Record<string, unknown>): void {
   writeFileSync(JOURNAL, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`, { flag: 'a' })
 }
 
-function archiveFile(file: string, key: string): string {
+export function archiveFile(file: string, key: string): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const target = path.join(TRASH, key.replace(/[^a-z0-9-]+/gi, '_'), stamp, 'SKILL.md')
   mkdirSync(path.dirname(target), { recursive: true })
   copyFileSync(file, target)
   return target
+}
+
+export function writeBody(file: string, text: string): void {
+  writeFileSync(file, text, 'utf8')
 }
 
 function frontmatterBlock(text: string): string {
