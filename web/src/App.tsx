@@ -70,6 +70,17 @@ interface PackageEntry {
   description?: string
 }
 
+interface ProviderRow {
+  id: string
+  label: string
+  kind: string
+  base: string
+  needsKey: boolean
+  models: string[]
+  configured: boolean
+  hint: string | null
+}
+
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; archived?: number; tokens: number }[]
   hidden: string[]
@@ -614,6 +625,83 @@ export default function App() {
   >(null)
   const [openRef, setOpenRef] = useState<{ name: string; rel: string; text: string; image: string | null } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [providersOpen, setProvidersOpen] = useState(false)
+  const [providerRows, setProviderRows] = useState<ProviderRow[] | null>(null)
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({})
+  const [providerNotes, setProviderNotes] = useState<Record<string, string>>({})
+  const [githubToken, setGithubToken] = useState('')
+  const [githubNote, setGithubNote] = useState('')
+
+  async function openProviders() {
+    setProvidersOpen(true)
+    await refreshProviders()
+    try {
+      const response = await fetch('/api/github/status')
+      const payload = (await response.json()) as { configured: boolean; source: string | null; remaining: number; limit: number }
+      setGithubNote(
+        payload.configured
+          ? `${payload.source === 'environment' ? 'from the environment' : 'saved'} · ${payload.remaining}/${payload.limit} calls left`
+          : 'no token · 60 calls an hour, shared with everything on this machine'
+      )
+    } catch {
+      setGithubNote('status unavailable')
+    }
+  }
+
+  async function refreshProviders() {
+    try {
+      const response = await fetch('/api/providers')
+      const payload = (await response.json()) as { providers: ProviderRow[] }
+      setProviderRows(payload.providers)
+    } catch {
+      setProviderRows([])
+    }
+  }
+
+  async function saveProviderKey(id: string) {
+    const key = (keyDrafts[id] ?? '').trim()
+    if (!key) return
+    setProviderNotes((notes) => ({ ...notes, [id]: 'saving…' }))
+    const response = await fetch(`/api/providers/${id}/key`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key })
+    })
+    const payload = (await response.json()) as { error?: string; configured?: boolean; hint?: string }
+    // The draft is cleared the moment it is stored: the field never keeps a key on screen.
+    setKeyDrafts((drafts) => ({ ...drafts, [id]: '' }))
+    setProviderNotes((notes) => ({ ...notes, [id]: payload.error ?? `saved ${payload.hint ?? ''}` }))
+    await refreshProviders()
+  }
+
+  async function removeProviderKey(id: string) {
+    await fetch(`/api/providers/${id}/key`, { method: 'DELETE' })
+    setProviderNotes((notes) => ({ ...notes, [id]: 'removed' }))
+    await refreshProviders()
+  }
+
+  async function testProvider(id: string) {
+    setProviderNotes((notes) => ({ ...notes, [id]: 'testing…' }))
+    const response = await fetch(`/api/providers/${id}/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    const payload = (await response.json()) as { ok: boolean; detail: string; model?: string }
+    setProviderNotes((notes) => ({
+      ...notes,
+      [id]: `${payload.ok ? 'answered' : 'failed'} · ${payload.detail}`
+    }))
+  }
+
+  async function saveGithubToken() {
+    const token = githubToken.trim()
+    if (!token) return
+    const response = await fetch('/api/github/key', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: token })
+    })
+    setGithubToken('')
+    const payload = (await response.json()) as { hint?: string; error?: string }
+    setGithubNote(payload.error ?? `saved ${payload.hint ?? ''} · 5000 calls an hour`)
+  }
   const [compareOpen, setCompareOpen] = useState(false)
   const [closedFolders, setClosedFolders] = useState<Record<string, boolean>>({})
   // Remembers whether markdown reads as prose or as source, across sessions.
@@ -1431,10 +1519,105 @@ export default function App() {
                 <span>Version</span>
                 <span>{state.version}</span>
               </div>
+              <div className="sp-row">
+                <span>Providers</span>
+                <button className="sp-link" onClick={openProviders}>
+                  {providerRows?.filter((row) => row.configured).length ?? 0} configured
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {providersOpen && (
+        <div className="installscrim" onClick={() => setProvidersOpen(false)}>
+          <div className="installmodal providersmodal" onClick={(event) => event.stopPropagation()}>
+            <div className="imhead">
+              <span>Providers</span>
+              <button className="iconbtn" aria-label="Close" onClick={() => setProvidersOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="imbody">
+              <div className="imnote">
+                Keys are kept in the Windows credential store. Nothing here is written to the index, a log or a reply, and
+                the field forgets a key the moment it is saved.
+              </div>
+              <div className="provlist">
+                {(providerRows ?? []).map((row) => (
+                  <div className="provrow" key={row.id} title={row.base}>
+                    <span className="provname">{row.label}</span>
+                    <span className={`provdot ${row.configured ? 'on' : ''}`} aria-hidden="true" />
+                    <span className="provstate">
+                      {row.needsKey ? (row.configured ? `key ${row.hint}` : 'no key') : 'no key needed'}
+                    </span>
+                    {row.needsKey && (
+                      <>
+                        <input
+                          className="provinput"
+                          type="password"
+                          placeholder="Paste key"
+                          autoComplete="off"
+                          value={keyDrafts[row.id] ?? ''}
+                          onChange={(event) =>
+                            setKeyDrafts((drafts) => ({ ...drafts, [row.id]: event.target.value }))
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void saveProviderKey(row.id)
+                          }}
+                        />
+                        <button className="ghost small" onClick={() => void saveProviderKey(row.id)}>
+                          Save
+                        </button>
+                        <button
+                          className="ghost small"
+                          onClick={() => void testProvider(row.id)}
+                          title={`Test ${row.label}`}
+                        >
+                          Test
+                        </button>
+                        {row.configured && (
+                          <button
+                            className="ghost small dim"
+                            onClick={() => void removeProviderKey(row.id)}
+                            title="Forget this key"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {providerNotes[row.id] && <span className="provnote">{providerNotes[row.id]}</span>}
+                  </div>
+                ))}
+              </div>
+
+              <div className="provsep" />
+
+              <div className="provrow">
+                <span className="provname">GitHub</span>
+                <span className="provdot on" aria-hidden="true" />
+                <span className="provstate">{githubNote || 'checked on open'}</span>
+                <input
+                  className="provinput"
+                  type="password"
+                  placeholder="Paste a token"
+                  autoComplete="off"
+                  value={githubToken}
+                  onChange={(event) => setGithubToken(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void saveGithubToken()
+                  }}
+                />
+                <button className="ghost small" onClick={() => void saveGithubToken()}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <div className="banner error">API error: {error}</div>}
       {pending > 0 && (

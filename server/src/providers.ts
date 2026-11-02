@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { getKey, keyStatus } from './secrets'
 
 /**
  * The provider registry, ported from String Theory. `kind` selects the wire format, not the
  * vendor: every OpenAI-compatible endpoint shares one code path.
  */
+
+/** One opaque value per app run: the relay pins a conversation to one backend with it. */
+const RELAY_SESSION = randomUUID()
 
 export interface Provider {
   id: string
@@ -12,6 +16,8 @@ export interface Provider {
   base: string
   needsKey: boolean
   models: string[]
+  /** OpenCode's relay answers 400 MissingSessionID without this header. */
+  relaySession?: boolean
 }
 
 export const PROVIDERS: Provider[] = [
@@ -85,7 +91,8 @@ export const PROVIDERS: Provider[] = [
     kind: 'openai',
     base: 'https://opencode.ai/zen/go/v1',
     needsKey: true,
-    models: ['deepseek-v4.1-flash', 'kimi-k2', 'qwen3-coder']
+    relaySession: true,
+    models: ['deepseek-v4.1-flash', 'deepseek-v4-pro', 'glm-5.3-flash', 'kimi-k2', 'qwen3-coder']
   },
   {
     id: 'xai',
@@ -146,6 +153,7 @@ export type ProviderFailure =
 
 function authHeaders(provider: Provider, key: string | null): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (provider.relaySession) headers['x-opencode-session'] = RELAY_SESSION
   if (provider.kind === 'anthropic') {
     if (key) headers['x-api-key'] = key
     headers['anthropic-version'] = '2023-06-01'
@@ -199,7 +207,7 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
       const url = `${provider.base}/models/${encodeURIComponent(request.model)}:generateContent?key=${encodeURIComponent(key ?? '')}`
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders(provider, key),
         signal: controller.signal,
         body: JSON.stringify({
           systemInstruction: request.system ? { parts: [{ text: request.system }] } : undefined,
