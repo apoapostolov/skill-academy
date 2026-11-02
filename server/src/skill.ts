@@ -58,45 +58,16 @@ function tokenCount(text: string): number {
   }
 }
 
-interface Frontmatter {
-  data: Record<string, string | string[]>
-  body: string
-  present: boolean
+interface FrontmatterMap {
+  [key: string]: FrontmatterValue
 }
 
-function parseYamlLite(block: string): Record<string, string | string[]> {
-  const data: Record<string, string | string[]> = {}
-  let currentKey: string | null = null
+type FrontmatterValue = string | string[] | FrontmatterMap
 
-  for (const rawLine of block.split(/\r?\n/)) {
-    if (!rawLine.trim() || rawLine.trimStart().startsWith('#')) continue
-    const listItem = rawLine.match(/^\s*-\s+(.*)$/)
-    if (listItem && currentKey) {
-      const previous = data[currentKey]
-      const value = stripQuotes(listItem[1].trim())
-      data[currentKey] = Array.isArray(previous) ? [...previous, value] : [value]
-      continue
-    }
-    const pair = rawLine.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (!pair) continue
-    const [, key, rawValue] = pair
-    currentKey = key
-    const value = rawValue.trim()
-    if (!value) {
-      data[key] = []
-      continue
-    }
-    if (value.startsWith('[') && value.endsWith(']')) {
-      data[key] = value
-        .slice(1, -1)
-        .split(',')
-        .map((item) => stripQuotes(item.trim()))
-        .filter(Boolean)
-    } else {
-      data[key] = stripQuotes(value)
-    }
-  }
-  return data
+interface Frontmatter {
+  data: Record<string, FrontmatterValue>
+  body: string
+  present: boolean
 }
 
 function stripQuotes(value: string): string {
@@ -104,6 +75,136 @@ function stripQuotes(value: string): string {
     return value.slice(1, -1)
   }
   return value
+}
+
+function scalar(value: string): string {
+  return stripQuotes(value.trim())
+}
+
+/** Splits a flow list, honouring quotes so a tag containing a comma stays one tag. */
+function flowList(text: string): string[] {
+  const parts: string[] = []
+  let current = ''
+  let quote = ''
+  for (const character of text.slice(1, -1)) {
+    if (quote) {
+      current += character
+      if (character === quote) quote = ''
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      current += character
+      continue
+    }
+    if (character === ',') {
+      parts.push(current)
+      current = ''
+      continue
+    }
+    current += character
+  }
+  parts.push(current)
+  return parts.map(scalar).filter(Boolean)
+}
+
+/**
+ * Reads frontmatter for both conventions in the same pass. Claude Code skills keep `tags`,
+ * `category` and `version` at the top level; Hermes nests them under `metadata.hermes`. The
+ * block is parsed by indentation, so either shape resolves, and a file carrying both is
+ * readable rather than half-ignored.
+ */
+function parseYaml(block: string): Record<string, FrontmatterValue> {
+  const root: Record<string, FrontmatterValue> = {}
+  const stack: Array<{ indent: number; node: Record<string, FrontmatterValue> }> = [{ indent: -1, node: root }]
+  let pending: { node: Record<string, FrontmatterValue>; key: string; indent: number } | null = null
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    if (!rawLine.trim() || rawLine.trimStart().startsWith('#')) continue
+    const indent = rawLine.length - rawLine.trimStart().length
+    const line = rawLine.trimStart()
+
+    if (pending) {
+      if (indent > pending.indent) {
+        const item = line.match(/^-\s*(.*)$/)
+        if (item) {
+          const list = Array.isArray(pending.node[pending.key]) ? (pending.node[pending.key] as string[]) : []
+          list.push(scalar(item[1]))
+          pending.node[pending.key] = list.filter(Boolean)
+          continue
+        }
+        const existing = pending.node[pending.key]
+        if (Array.isArray(existing) && existing.length === 0) {
+          const child: Record<string, FrontmatterValue> = {}
+          pending.node[pending.key] = child
+          stack.push({ indent: pending.indent, node: child })
+        }
+      }
+      pending = null
+    }
+
+    const pair = line.match(/^([A-Za-z0-9_.-]+):\s*(.*)$/)
+    if (!pair) continue
+    const [, key, rawValue] = pair
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop()
+    const node = stack[stack.length - 1].node
+    const value = rawValue.trim()
+
+    if (!value) {
+      node[key] = []
+      pending = { node, key, indent }
+    } else if (value.startsWith('[') && value.endsWith(']')) {
+      node[key] = flowList(value)
+    } else {
+      node[key] = scalar(value)
+    }
+  }
+
+  return root
+}
+
+function readPath(data: Record<string, FrontmatterValue>, path: string): FrontmatterValue | undefined {
+  let node: FrontmatterValue | undefined = data
+  for (const key of path.split('.')) {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return undefined
+    node = (node as Record<string, FrontmatterValue>)[key]
+  }
+  return node
+}
+
+function asText(value: FrontmatterValue | undefined): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function asList(value: FrontmatterValue | undefined): string[] {
+  if (Array.isArray(value)) return value.map((entry) => String(entry).trim()).filter(Boolean)
+  if (typeof value === 'string' && value.trim()) {
+    return value
+      .split(',')
+      .map((entry) => stripQuotes(entry.trim()))
+      .filter(Boolean)
+  }
+  return []
+}
+
+/** The first path that yields text: the documented key wins, the nested one follows. */
+function pickText(data: Record<string, FrontmatterValue>, paths: string[]): string {
+  for (const path of paths) {
+    const text = asText(readPath(data, path))
+    if (text) return text
+  }
+  return ''
+}
+
+/** Tags from every place they are declared, merged: a file may carry both shapes. */
+function pickTags(data: Record<string, FrontmatterValue>): string[] {
+  const merged: string[] = []
+  for (const path of ['tags', 'keywords', 'metadata.hermes.tags', 'metadata.tags', 'metadata.hermes.keywords']) {
+    for (const tag of asList(readPath(data, path))) {
+      if (!merged.includes(tag)) merged.push(tag)
+    }
+  }
+  return merged
 }
 
 function splitFrontmatter(raw: string): Frontmatter {
@@ -114,7 +215,7 @@ function splitFrontmatter(raw: string): Frontmatter {
   const block = text.slice(3, close)
   const afterClose = text.indexOf('\n', close + 1)
   const body = afterClose === -1 ? '' : text.slice(afterClose + 1)
-  return { data: parseYamlLite(block), body, present: true }
+  return { data: parseYaml(block), body, present: true }
 }
 
 function firstParagraph(body: string): string {
@@ -209,13 +310,12 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
 
   const { data, body, present } = splitFrontmatter(raw)
   const folder = path.basename(dir)
-  const declaredName = typeof data.name === 'string' ? data.name.trim() : ''
+  const declaredName = pickText(data, ['name'])
   const name = declaredName || folder
-  const declaredDescription = typeof data.description === 'string' ? data.description.trim() : ''
+  const declaredDescription = pickText(data, ['description'])
   const description = declaredDescription || firstParagraph(body)
 
-  const tagSource = data.tags ?? data.keywords
-  const declared = (Array.isArray(tagSource) ? tagSource : []).map((tag) => String(tag).trim()).filter(Boolean)
+  const declared = pickTags(data)
 
   // A skill kept in a subfolder of an agent's skills root is tagged by that folder:
   // `~/.hermes/skills/creative/anatomy` carries `creative`. A skill sitting directly
@@ -227,8 +327,8 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
 
   // `category` is the author's own grouping, separate from tags: it is not merged into
   // them, so a skill can be `writing` by category and still carry its own tag set.
-  const declaredCategory = typeof data.category === 'string' ? data.category.trim() : ''
-  const category = declaredCategory || (folderTag && data.category === undefined ? '' : '')
+  const declaredCategory = pickText(data, ['category', 'metadata.hermes.category', 'metadata.category'])
+  const category = declaredCategory
 
   // The content scan runs on the package as written, so the badge reflects the files the
   // agent would actually read, not the frontmatter's claims about them.

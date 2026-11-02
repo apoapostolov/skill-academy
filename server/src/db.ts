@@ -54,7 +54,7 @@ export interface SaveResult {
 const SCHEMA_VERSION = 15
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
-const HEALTH_VERSION = 2
+const HEALTH_VERSION = 3
 
 let database: DatabaseSync | undefined
 
