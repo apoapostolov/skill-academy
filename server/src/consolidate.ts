@@ -18,7 +18,7 @@ import { getDb } from './db'
  * reported as `weak-evidence` and cannot be applied.
  */
 
-export type MergeType = 'near-duplicate' | 'partial-overlap' | 'intentional-family' | 'weak-evidence'
+export type MergeType = 'near-duplicate' | 'partial-overlap' | 'intentional-family' | 'weak-evidence' | 'cross-root-placement'
 
 export interface Body {
   dir: string
@@ -194,6 +194,22 @@ function pointerBody(loser: Body, winner: Body): string {
   ].join('\n')
 }
 
+/**
+ * A name that appears once in each of several agent roots is a placement, not a duplicate: the same
+ * skill is being served to different agents, and merging those deletes the copy one agent reads.
+ * Only copies inside one root can be consolidated.
+ */
+function acrossRoots(members: Body[]): boolean {
+  const roots = new Set(
+    members.map((member) => {
+      const parts = member.dir.split(/[\/]/)
+      const skillsAt = parts.lastIndexOf('skills')
+      return skillsAt > 0 ? parts.slice(0, skillsAt + 1).join('/') : parts.slice(0, 2).join('/')
+    })
+  )
+  return roots.size > 1
+}
+
 export function consolidateDryRun(): {
   groups: ConsolidateGroup[]
   summary: Record<MergeType, number>
@@ -226,6 +242,19 @@ export function consolidateDryRun(): {
     const hashes = new Set(copies.map((copy) => copy.hash))
     const key = `name:${name}`
     seen.add(key)
+    if (acrossRoots(copies)) {
+      groups.push({
+        key,
+        mergeType: 'cross-root-placement',
+        evidence: `${name} is installed in ${new Set(copies.map((copy) => copy.dir.split(/[\/]/).slice(0, -1).join('/'))).size} agent roots; that is distribution, not duplication`,
+        survivor: null,
+        members: copies.map((copy) => member(copy, copies.filter((other) => other !== copy))),
+        plan: null,
+        blocked: 'the same skill is served to different agents: merging would delete the copy one agent reads'
+      })
+      continue
+    }
+
     const sorted = [...copies].sort((a, b) => b.chars - a.chars)
     const survivor = sorted[0]
     const rest = sorted.slice(1)
@@ -386,7 +415,8 @@ export function consolidateDryRun(): {
     'near-duplicate': 0,
     'partial-overlap': 0,
     'intentional-family': 0,
-    'weak-evidence': 0
+    'weak-evidence': 0,
+      'cross-root-placement': 0
   }
   for (const group of groups) summary[group.mergeType] += 1
 
