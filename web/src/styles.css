@@ -2233,3 +2233,26 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   margin-left: 0;
   margin-right: 0;
 }
+
+/* A tracked copy that drifted gets one action, in the warning colour of the problem. */
+.pl-repair {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid rgba(181, 139, 98, 0.5);
+  border-radius: 5px;
+  background: rgba(181, 139, 98, 0.16);
+  color: #d3a97f;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pl-repair:hover {
+  background: rgba(181, 139, 98, 0.26);
+  color: #e2bd96;
+}
+
+.pl-repair:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

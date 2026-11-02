@@ -884,6 +884,30 @@ export default function App() {
     }
   }, [selected])
 
+  async function repairPlacement(placement: Placement) {
+    if (!detail) return
+    setPlacementBusy(placement.agent)
+    try {
+      const response = await fetch('/api/placements/repair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skillId: detail.id, agent: placement.agent })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `repair ${response.status}`)
+      setPlacements((current) =>
+        current
+          ? current.map((row) => (row.agent === placement.agent ? { ...row, drift: payload.after } : row))
+          : current
+      )
+      setError(null)
+    } catch (error) {
+      setError((error as Error).message)
+    } finally {
+      setPlacementBusy(null)
+    }
+  }
+
   async function togglePlacement(placement: Placement) {
     if (!detail || placement.state === 'native') return
     const action = placement.state === 'on' ? 'off' : 'on'
@@ -1516,6 +1540,16 @@ export default function App() {
                             aria-label={`${row.state === 'on' ? 'Disable' : 'Enable'} ${detail.name} in ${row.agent}`}
                           >
                             <Switch on={row.state === 'on'} />
+                          </button>
+                        )}
+                        {(row as Placement & { drift?: { drifted: boolean } | null }).drift?.drifted && (
+                          <button
+                            className="pl-repair"
+                            onClick={() => void repairPlacement(row)}
+                            disabled={placementBusy === row.agent}
+                            title="This copy no longer matches the source. Rewrite it from the source."
+                          >
+                            Repair
                           </button>
                         )}
                       </div>
