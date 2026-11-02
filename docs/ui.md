@@ -94,7 +94,7 @@ Semantic only. Components never reference raw values.
 | `--sidebar` | `#F2F2F4` | `#141518` | Sidebar, menu bar, status bar |
 | `--text` | `#1C1C1E` | `#E9EAEC` | Primary text |
 | `--text-secondary` | `#6A6C70` | `#9A9CA1` | Descriptions, meta |
-| `--text-tertiary` | `#8A8C90` | `#6C6E73` | Timestamps, counts |
+| `--text-tertiary` | `#8A8C90` | `#7A7C82` | Timestamps, counts |
 | `--separator` | `rgba(0,0,0,.09)` | `rgba(255,255,255,.08)` | Hairlines |
 | `--accent` | `#3D6B93` | `#7FA3C7` | Selection, focus, primary button |
 | `--accent-soft` | `rgba(61,107,147,.10)` | `rgba(127,163,199,.14)` | Selected row background |

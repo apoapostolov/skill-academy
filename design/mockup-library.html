@@ -6,7 +6,7 @@
 <style>
   :root{
     --bg:#101113; --surface:#17181B; --raised:#1D1F22; --sidebar:#141518;
-    --text:#E9EAEC; --text-2:#9A9CA1; --text-3:#6C6E73;
+    --text:#E9EAEC; --text-2:#9A9CA1; --text-3:#7A7C82;
     --sep:rgba(255,255,255,.08); --accent:#7FA3C7; --accent-soft:rgba(127,163,199,.14);
     --ok:#6E9E8A; --attention:#B58B62; --destructive:#B85C57; --neutral:#6C6E73;
     --hover:rgba(255,255,255,.05);
@@ -108,8 +108,8 @@
         box-shadow:0 1px 2px rgba(0,0,0,.4);transition:transform .18s cubic-bezier(.32,.72,0,1)}
   .sw.on{background:var(--ok)} .sw.on i{transform:translateX(14px)}
   .sw.mixed{background:var(--ok)} .sw.mixed i{transform:translateX(7px)}
-  .sw.mixed i::after{content:"";position:absolute;left:4px;right:4px;top:7.5px;height:1.5px;border-radius:1px;background:var(--ok)}
-  .sw.shadow{background:var(--sep);opacity:.65} .sw.shadow i{background:var(--sidebar)}
+  .sw.mixed i::after{content:"";position:absolute;left:3px;right:3px;top:7px;height:2px;border-radius:1px;background:var(--bg)}
+  .sw.shadow{background:var(--sep);opacity:.5;filter:saturate(.15)} .sw.shadow i{background:var(--sidebar);box-shadow:none}
   .driftdot{position:absolute;top:-1px;right:-1px;width:6px;height:6px;border-radius:50%;background:var(--attention);
             border:1.5px solid var(--bg)}
   .listfoot{height:24px;display:flex;align-items:center;padding:0 12px;color:var(--text-3);font-size:10.5px;
@@ -214,7 +214,7 @@
         <span class="chip"><b>agent:</b>cursor <span class="x">×</span></span>
         <span class="chip"><b>is:</b>mixed <span class="x">×</span></span>
       </div>
-      <div class="listhead"><span>18 results</span><span class="sort">Recently changed ⌄</span></div>
+      <div class="listhead"><span>9 results</span><span class="sort">Recently changed ⌄</span></div>
       <div class="rows">
 
         <div class="row sel">
@@ -298,7 +298,7 @@
         </div>
 
       </div>
-      <div class="listfoot">Showing 18 of 2140 · ⌘A selects all filtered</div>
+      <div class="listfoot">Showing 9 of 2140 · ⌘A selects all filtered</div>
     </section>
 
     <section class="detail">
