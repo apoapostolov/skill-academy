@@ -496,7 +496,7 @@ function splitFacetTags(entries: Array<{ tag: string; count: number }>) {
 function FacetRow({ entry, active, onPick }: { entry: { tag: string; count: number }; active: boolean; onPick: () => void }) {
   return (
     <button className={`nav ${active ? 'active' : ''}`} onClick={onPick}>
-      <TagLabel tag={entry.tag} /> <span>{entry.count.toLocaleString()}</span>
+      <TagLabel tag={entry.tag} withPill={false} /> <span>{entry.count.toLocaleString()}</span>
     </button>
   )
 }
@@ -507,7 +507,7 @@ function FacetRow({ entry, active, onPick }: { entry: { tag: string; count: numb
 // same treatment until told otherwise.
 const TAG_PREFIX = /^(env|tool|artifact|risk|locale|role|family|rev):(.+)$/i
 
-function TagLabel({ tag }: { tag: string }) {
+function TagLabel({ tag, withPill = true }: { tag: string; withPill?: boolean }) {
   const match = tag.match(TAG_PREFIX)
   if (!match) return <>#{tag}</>
   const prefix = match[1].toLowerCase()
@@ -515,7 +515,7 @@ function TagLabel({ tag }: { tag: string }) {
   return (
     <span className="tag-text">
       <span className="tag-name">#{match[2]}</span>
-      <span className={`tag-prefix ${prefix}`}>{prefix}</span>
+      {withPill && <span className={`tag-prefix ${prefix}`}>{prefix}</span>}
     </span>
   )
 }
