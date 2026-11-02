@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getOverride, setOverride } from './providerConfig'
-import { OAUTH_PROVIDERS, oauthAccessToken } from './oauth'
+import { OAUTH_PROVIDERS, oauthAccessToken, readSessionAccount } from './oauth'
 import { getKey, keyStatus } from './secrets'
 
 /**
@@ -272,6 +272,75 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
   const timer = setTimeout(() => controller.abort(), request.timeoutMs ?? 60_000)
 
   try {
+    // A ChatGPT session is not a platform key: only the Codex endpoint accepts it, and it answers
+    // with server-sent events rather than one JSON body.
+    if (provider.id === 'openai' && session) {
+      const codexBase = (process.env.SKILL_ACADEMY_CODEX_BASE ?? 'https://chatgpt.com/backend-api/codex').replace(/\/+$/, '')
+      const account = readSessionAccount(provider.id)
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+        accept: 'text/event-stream',
+        authorization: `Bearer ${session}`,
+        originator: 'codex_cli_rs',
+        'OpenAI-Beta': 'responses=experimental'
+      }
+      if (account) headers['chatgpt-account-id'] = account
+      const response = await fetch(`${codexBase}/responses`, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: request.model,
+          instructions: request.system,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: request.user }] }],
+          store: false,
+          stream: true
+        })
+      })
+      const raw = await response.text()
+      if (!response.ok) return { kind: 'http', status: response.status, body: raw.slice(0, 500) }
+      let text = ''
+      let inputTokens: number | null = null
+      let outputTokens: number | null = null
+      const events: Array<Record<string, unknown>> = []
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const payload = trimmed.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        try {
+          events.push(JSON.parse(payload) as Record<string, unknown>)
+        } catch {
+          // A partial frame is not worth failing the request over.
+        }
+      }
+      if (!events.length) {
+        try {
+          events.push(JSON.parse(raw) as Record<string, unknown>)
+        } catch {
+          return { kind: 'http', status: response.status, body: raw.slice(0, 500) }
+        }
+      }
+      for (const event of events) {
+        if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') text += event.delta
+        const responsePart = (event.response ?? {}) as Record<string, unknown>
+        const usage = (event.usage ?? responsePart.usage) as Record<string, number> | undefined
+        if (usage) {
+          inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? inputTokens
+          outputTokens = usage.output_tokens ?? usage.completion_tokens ?? outputTokens
+        }
+        const output = (event.output ?? responsePart.output) as Array<Record<string, unknown>> | undefined
+        if (Array.isArray(output) && !text) {
+          for (const item of output) {
+            for (const part of (item.content ?? []) as Array<Record<string, unknown>>) {
+              if (typeof part.text === 'string') text += part.text
+            }
+          }
+        }
+      }
+      return { text, model: request.model, inputTokens, outputTokens, ms: Date.now() - started }
+    }
+
     if (provider.kind === 'anthropic') {
       const response = await fetch(`${provider.base}/messages`, {
         method: 'POST',

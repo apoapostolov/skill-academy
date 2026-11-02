@@ -247,6 +247,25 @@ export function oauthAccessToken(providerId: string): string | null {
   return session.access || null
 }
 
+
+/**
+ * The ChatGPT account id, which the Codex endpoint wants beside the bearer token. It lives in the
+ * access token's claims, not in the profile: the email address is not an account id.
+ */
+export function readSessionAccount(providerId: string): string | null {
+  const session = readSession(providerId)
+  const token = session?.access
+  if (!token || token.split('.').length < 3) return null
+  try {
+    const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as Record<string, unknown>
+    const auth = (claims['https://api.openai.com/auth'] ?? {}) as Record<string, unknown>
+    const id = auth.chatgpt_account_id ?? auth.account_id ?? claims.chatgpt_account_id
+    return typeof id === 'string' && id ? id : null
+  } catch {
+    return null
+  }
+}
+
 export function disconnectOAuth(providerId: string): boolean {
   const had = !!readSession(providerId)
   clearSession(providerId)
