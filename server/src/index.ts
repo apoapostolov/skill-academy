@@ -592,6 +592,96 @@ function frontmatterField(text: string, key: string): string | null {
   return value || null
 }
 
+app.post('/api/install/apply', async (request, reply) => {
+  // Two phases: everything downloads into the library first, then placement happens through
+  // the same journalled path the switches use. A replaced copy goes to the trash, never away.
+  const body = (request.body ?? {}) as { repo?: string; paths?: string[]; agents?: string[]; mode?: 'symlink' | 'copy'; ref?: string }
+  const repo = (body.repo ?? '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '')
+  const paths = (body.paths ?? []).map((entry) => entry.replace(/\/+$/, '')).filter(Boolean)
+  const agents = body.agents ?? []
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !paths.length || !agents.length) {
+    reply.code(400)
+    return { error: 'repo, paths and agents are required' }
+  }
+
+  const registry = loadRegistry()
+  const roots = agents
+    .map((agent) => ({ agent, root: registry.roots.find((entry) => entry.exists && entry.owners.includes(agent)) }))
+    .filter((entry): entry is { agent: string; root: NonNullable<typeof entry.root> } => Boolean(entry.root))
+  const missingRoots = agents.filter((agent) => !roots.some((entry) => entry.agent === agent))
+
+  const policy = (readSettings() as { install_replace_policy?: string }).install_replace_policy ?? 'trash'
+  const libraryRoot = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'library')
+  mkdirSync(libraryRoot, { recursive: true })
+  const ref = body.ref ?? 'HEAD'
+  const forceCopy = body.mode === 'copy'
+
+  const results: Array<{ path: string; installed: boolean; replaced?: boolean; error?: string; placements?: unknown[] }> = []
+  for (const skillPath of paths) {
+    const name = path.basename(skillPath)
+    const localDir = path.join(libraryRoot, name)
+    if (path.resolve(localDir) === path.resolve(skillPath)) {
+      results.push({ path: skillPath, installed: false, error: 'inside-library' })
+      continue
+    }
+
+    const treeResponse = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, {
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+    })
+    if (!treeResponse.ok) {
+      results.push({ path: skillPath, installed: false, error: `github ${treeResponse.status}` })
+      continue
+    }
+    const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string }> }
+    const files = (tree.tree ?? []).filter((entry) => entry.type === 'blob' && entry.path.startsWith(skillPath + '/'))
+
+    let replaced = false
+    try {
+      if (existsSync(localDir)) {
+        if (policy === 'refuse') {
+          results.push({ path: skillPath, installed: false, error: 'exists-locally' })
+          continue
+        }
+        unplace(localDir, TRASH_DIR)
+        replaced = true
+      }
+      for (const file of files) {
+        const relative = file.path.slice(skillPath.length + 1)
+        const target = path.join(localDir, relative)
+        const raw = await fetchRaw(repo, ref, file.path)
+        if (!raw.ok) continue
+        mkdirSync(path.dirname(target), { recursive: true })
+        writeFileSync(target, raw.text)
+      }
+      const placements = roots.map((entry) => {
+        try {
+          const placed = place(localDir, entry.root.path, forceCopy ? { forceCopy: true } : {})
+          addJournal('place', { agent: entry.agent, target: placed.target, mode: placed.mode, source: `${repo}@${ref}` })
+          return { agent: entry.agent, ok: true, mode: placed.mode }
+        } catch (error) {
+          return { agent: entry.agent, ok: false, error: (error as Error).message }
+        }
+      })
+      addJournal('install', { repo, ref, path: skillPath, name, files: files.length, replaced, mode: body.mode ?? 'symlink' })
+      results.push({ path: skillPath, installed: true, replaced, placements })
+    } catch (error) {
+      results.push({ path: skillPath, installed: false, error: (error as Error).message })
+    }
+  }
+
+  return {
+    repo,
+    ref,
+    mode: body.mode ?? 'symlink',
+    policy,
+    libraryRoot,
+    installed: results.filter((row) => row.installed).length,
+    failed: results.filter((row) => !row.installed).length,
+    missingRoots,
+    results
+  }
+})
+
 app.post('/api/install/test', async (request, reply) => {
   // Test is read-only on purpose: it says what the repository would install, before anything
   // is downloaded into the library or placed anywhere.
