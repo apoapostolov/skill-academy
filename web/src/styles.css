@@ -2576,3 +2576,130 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   background: #17181b;
   backdrop-filter: blur(8px);
 }
+
+/* Install dialog: read the repository, pick skills, pick agents, place. */
+.installscrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.installmodal {
+  width: 560px;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  background: #1b1c20;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  color: #d6d8dd;
+  font-size: 12px;
+}
+
+.imhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #e8eaee;
+}
+
+.imfield {
+  display: flex;
+  gap: 8px;
+}
+
+.iminput {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e8ec;
+  font: inherit;
+}
+
+.imnote {
+  color: #8f939b;
+  font-size: 11px;
+}
+
+.imsection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #7d818a;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.imlist {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.imlist.imagents {
+  max-height: 150px;
+}
+
+.imrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: 5px;
+}
+
+.imrow:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.imname {
+  flex: 1;
+  color: #cfd2d8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.immeta {
+  color: #6f737b;
+  font-size: 10.5px;
+}
+
+.imfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.immode {
+  position: static;
+  transform: none;
+}
+
+.linkbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #8fa9c4;
+  font: inherit;
+  font-size: 10.5px;
+  padding: 0;
+  cursor: default;
+}

@@ -726,6 +726,17 @@ export default function App() {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [presets, setPresets] = useState<{ id: number; name: string; agents: string[] }[]>([])
   const [selectMode, setSelectMode] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
+  const [installRepo, setInstallRepo] = useState('')
+  const [installTesting, setInstallTesting] = useState(false)
+  const [installNote, setInstallNote] = useState<string | null>(null)
+  const [installFound, setInstallFound] = useState<
+    Array<{ path: string; name: string; version: string | null; description: string | null; files: number; bytes: number }>
+  >([])
+  const [installPicked, setInstallPicked] = useState<Set<string>>(new Set())
+  const [installAgents, setInstallAgents] = useState<Set<string>>(new Set())
+  const [installMode, setInstallMode] = useState<'symlink' | 'copy'>('symlink')
+  const [installing, setInstalling] = useState(false)
   const [statusSeg, setStatusSeg] = useState<Set<'active' | 'archived'>>(new Set(['active', 'archived']))
   const [bulkConfirm, setBulkConfirm] = useState(false)
 
@@ -800,6 +811,69 @@ export default function App() {
       else next.add(id)
       return next
     })
+  }
+
+  async function testInstall() {
+    if (!installRepo.trim()) return
+    setInstallTesting(true)
+    setInstallNote(null)
+    setInstallFound([])
+    setInstallPicked(new Set())
+    try {
+      const response = await fetch('/api/install/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ repo: installRepo })
+      })
+      const payload = (await response.json()) as {
+        found?: number
+        skills?: Array<{ path: string; name: string; version: string | null; description: string | null; files: number; bytes: number }>
+        error?: string
+        note?: string
+      }
+      if (!response.ok) {
+        setInstallNote(payload.error ?? `Test failed: ${response.status}`)
+        return
+      }
+      setInstallFound(payload.skills ?? [])
+      setInstallPicked(new Set((payload.skills ?? []).map((skill) => skill.path)))
+      setInstallNote(payload.found ? `${payload.found} skills found` : (payload.note ?? 'Nothing to install'))
+    } finally {
+      setInstallTesting(false)
+    }
+  }
+
+  async function runInstall() {
+    if (!installPicked.size || !installAgents.size) return
+    setInstalling(true)
+    setInstallNote(null)
+    try {
+      const response = await fetch('/api/install/apply', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          repo: installRepo,
+          paths: [...installPicked],
+          agents: [...installAgents],
+          mode: installMode
+        })
+      })
+      const payload = (await response.json()) as { installed?: number; failed?: number; error?: string; missingRoots?: string[] }
+      if (!response.ok) {
+        setInstallNote(payload.error ?? `Install failed: ${response.status}`)
+        return
+      }
+      setInstallNote(
+        `Installed ${payload.installed ?? 0}${payload.failed ? ` · ${payload.failed} failed` : ''}` +
+          (payload.missingRoots?.length ? ` · no root: ${payload.missingRoots.join(', ')}` : '')
+      )
+      await scan()
+      setInstallFound([])
+      setInstallPicked(new Set())
+      setInstallOpen(false)
+    } finally {
+      setInstalling(false)
+    }
   }
 
   async function togglePlatform(skill: SkillRow) {
@@ -1308,7 +1382,10 @@ export default function App() {
           <a className="ghost btn-quiet" href="/dev">
             Dev panel
           </a>
-          <button className="btn primary" onClick={scan} disabled={scanning}>
+          <button className="ghost btn-quiet" onClick={() => setInstallOpen(true)}>
+            Install…
+          </button>
+                    <button className="btn primary" onClick={scan} disabled={scanning}>
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
           <button
@@ -1773,6 +1850,137 @@ export default function App() {
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
           </ScrollPane>
+          {installOpen && (
+            <div className="installscrim" onClick={() => setInstallOpen(false)}>
+              <div
+                className="installmodal"
+                role="dialog"
+                aria-label="Install skills"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="imhead">
+                  <span>Install skills</span>
+                  <button className="ghost iconbtn" onClick={() => setInstallOpen(false)} aria-label="Close">
+                    ×
+                  </button>
+                </div>
+
+                <div className="imfield">
+                  <input
+                    className="iminput"
+                    placeholder="owner/repo or a GitHub URL"
+                    value={installRepo}
+                    onChange={(event) => setInstallRepo(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void testInstall()
+                    }}
+                    spellCheck={false}
+                  />
+                  <button className="btn" onClick={() => void testInstall()} disabled={installTesting || !installRepo.trim()}>
+                    {installTesting ? 'Testing…' : 'Test'}
+                  </button>
+                </div>
+                {installNote && <div className="imnote">{installNote}</div>}
+
+                {installFound.length > 0 && (
+                  <>
+                    <div className="imsection">
+                      <span>Skills</span>
+                      <button
+                        className="linkbtn"
+                        onClick={() =>
+                          setInstallPicked(
+                            installPicked.size === installFound.length ? new Set() : new Set(installFound.map((entry) => entry.path))
+                          )
+                        }
+                      >
+                        {installPicked.size === installFound.length ? 'None' : 'All'}
+                      </button>
+                    </div>
+                    <div className="imlist">
+                      {installFound.map((entry) => (
+                        <div className="imrow" key={entry.path}>
+                          <span
+                            className={`switch ${installPicked.has(entry.path) ? 'on' : ''}`}
+                            role="switch"
+                            aria-checked={installPicked.has(entry.path)}
+                            tabIndex={0}
+                            onClick={() => {
+                              const next = new Set(installPicked)
+                              if (next.has(entry.path)) next.delete(entry.path)
+                              else next.add(entry.path)
+                              setInstallPicked(next)
+                            }}
+                          >
+                            <span className="knob" />
+                          </span>
+                          <span className="imname">{entry.name}</span>
+                          <span className="immeta">
+                            {entry.files} files · {Math.round(entry.bytes / 1024)} KB
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <div className="imsection">
+                  <span>Agents</span>
+                </div>
+                <div className="imlist imagents">
+                  {(facets?.agents ?? []).map((agent) => (
+                    <div className="imrow" key={`${agent.agent}:${agent.path}`}>
+                      <span
+                        className={`switch ${installAgents.has(agent.agent) ? 'on' : ''}`}
+                        role="switch"
+                        aria-checked={installAgents.has(agent.agent)}
+                        tabIndex={0}
+                        onClick={() => {
+                          const next = new Set(installAgents)
+                          if (next.has(agent.agent)) next.delete(agent.agent)
+                          else next.add(agent.agent)
+                          setInstallAgents(next)
+                        }}
+                      >
+                        <span className="knob" />
+                      </span>
+                      <span className="imname">{agent.agent}</span>
+                      <span className="immeta">{agent.origin}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="imfoot">
+                  <div className="seg immode" role="group" aria-label="Placement mode">
+                    {(
+                      [
+                        ['symlink', 'Symlink'],
+                        ['copy', 'Copy']
+                      ] as const
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`segbtn ${installMode === key ? 'on' : ''}`}
+                        aria-pressed={installMode === key}
+                        onClick={() => setInstallMode(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="btn primary"
+                    disabled={installing || !installPicked.size || !installAgents.size}
+                    onClick={() => void runInstall()}
+                  >
+                    {installing ? 'Installing…' : `Install ${installPicked.size}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {rowMenu && (
             <div
               className="rowmenu"
