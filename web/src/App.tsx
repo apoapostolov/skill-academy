@@ -734,7 +734,14 @@ export default function App() {
     Array<{ path: string; name: string; version: string | null; description: string | null; files: number; bytes: number }>
   >([])
   const [installPicked, setInstallPicked] = useState<Set<string>>(new Set())
-  const [installAgents, setInstallAgents] = useState<Set<string>>(new Set())
+  const [installAgents, setInstallAgents] = useState<Set<string>>(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('skill-academy.install-agents') ?? '[]') as string[]
+      return new Set(saved)
+    } catch {
+      return new Set()
+    }
+  })
   const [installMode, setInstallMode] = useState<'symlink' | 'copy'>('symlink')
   const [installing, setInstalling] = useState(false)
   const [statusSeg, setStatusSeg] = useState<Set<'active' | 'archived'>>(new Set(['active', 'archived']))
@@ -1884,6 +1891,12 @@ export default function App() {
                     </div>
                     {installNote && <div className="imnote">{installNote}</div>}
 
+                    {installFound.length === 0 && (
+                      <div className="implatz">
+                        <span>Check a repository to list its skills</span>
+                      </div>
+                    )}
+
                     {installFound.length > 0 && (
                       <>
                         <div className="imsection">
@@ -1901,7 +1914,7 @@ export default function App() {
                         </div>
                         <div className="imlist">
                           {installFound.map((entry) => (
-                            <div className="imrow" key={entry.path}>
+                            <div className={`imrow ${installPicked.has(entry.path) ? '' : 'off'}`} key={entry.path}>
                               <span
                                 className={`switch ${installPicked.has(entry.path) ? 'on' : ''}`}
                                 role="switch"
@@ -1923,6 +1936,11 @@ export default function App() {
                             </div>
                           ))}
                         </div>
+                        {installPicked.size === 0 && (
+                          <div className="implatz thin">
+                            <span>No skills selected</span>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -1930,10 +1948,33 @@ export default function App() {
                   <div className="imright">
                     <div className="imsection">
                       <span>Agents</span>
+                      <button
+                        className={`imtoggle ${installAgents.size > 0 ? 'on' : ''}`}
+                        title={installAgents.size > 0 ? 'Select none' : 'Select all agents'}
+                        aria-label={installAgents.size > 0 ? 'Select none' : 'Select all agents'}
+                        onClick={() => {
+                          const all = (facets?.agents ?? []).map((agent) => agent.agent)
+                          const next = installAgents.size > 0 ? new Set<string>() : new Set(all)
+                          setInstallAgents(next)
+                          window.localStorage.setItem('skill-academy.install-agents', JSON.stringify([...next]))
+                        }}
+                      >
+                        {installAgents.size > 0 ? (
+                          <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                            <rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke="currentColor" />
+                            <path d="M3.6 6.1h4.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                            <rect x="1.5" y="1.5" width="9" height="9" rx="2" fill="none" stroke="currentColor" />
+                            <path d="M3.5 6.2l1.9 1.9 3.2-3.6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
                     </div>
                     <div className="imlist imagents">
                       {(facets?.agents ?? []).map((agent) => (
-                        <div className="imrow" key={`${agent.agent}:${agent.path}`}>
+                        <div className={`imrow ${installAgents.has(agent.agent) ? '' : 'off'}`} key={`${agent.agent}:${agent.path}`}>
                           <span
                             className={`switch ${installAgents.has(agent.agent) ? 'on' : ''}`}
                             role="switch"
@@ -1944,6 +1985,7 @@ export default function App() {
                               if (next.has(agent.agent)) next.delete(agent.agent)
                               else next.add(agent.agent)
                               setInstallAgents(next)
+                              window.localStorage.setItem('skill-academy.install-agents', JSON.stringify([...next]))
                             }}
                           >
                             <span className="knob" />

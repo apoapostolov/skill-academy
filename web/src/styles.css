@@ -2800,3 +2800,52 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   margin: 0;
   flex: 0 0 auto;
 }
+
+/* A select all or none glyph in the column header. */
+.imtoggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6f737b;
+  cursor: default;
+}
+
+.imtoggle:hover {
+  color: #c9ccd2;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.imtoggle.on {
+  color: #8fa9c4;
+}
+
+/* An unchecked row keeps its place, dimly outlined so the gap reads as a choice. */
+.imrow.off {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+}
+
+/* Empty space is a slot, not a hole. */
+.implatz {
+  flex: 1;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  color: #63676e;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.implatz.thin {
+  min-height: 40px;
+  margin-top: 6px;
+}
