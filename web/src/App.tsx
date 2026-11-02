@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { highlight } from './highlight'
+import { renderMarkdown } from './markdown'
 
 interface State {
   version: string
@@ -1149,7 +1150,10 @@ export default function App() {
             </div>
           )}
           {detail && !openRef && (
-            <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
+            <div
+              className={`md body${wrap ? ' wrapped' : ''}`}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.body || '_Empty body._') }}
+            />
           )}
           {detail && openRef && (
             <div className="refview">
@@ -1163,6 +1167,8 @@ export default function App() {
                 <div className="refimg-wrap">
                   <img className="refimg" src={openRef.image} alt={openRef.name} />
                 </div>
+              ) : extensionOf(openRef.rel) === '.md' || extensionOf(openRef.rel) === '.markdown' ? (
+                <div className="md body" dangerouslySetInnerHTML={{ __html: renderMarkdown(openRef.text) }} />
               ) : (
                 <pre className="body code">
                   {highlight(openRef.text, extensionOf(openRef.rel)).map((token, position) =>
