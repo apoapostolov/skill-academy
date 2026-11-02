@@ -466,7 +466,10 @@ function WrapGlyph({ wrapped }: { wrapped: boolean }) {
 }
 
 /** A tag written as `family:peer-review` reads better as the name plus a quiet pill. */
-const TAG_PREFIX = /^(family|env|rev):(.+)$/i
+// Facet axes that get a pill: env, tool, artifact, risk, locale, role. A family is a
+// workflow bundle and rev is a revision marker, both asked for earlier; they keep the
+// same treatment until told otherwise.
+const TAG_PREFIX = /^(env|tool|artifact|risk|locale|role|family|rev):(.+)$/i
 
 function TagLabel({ tag }: { tag: string }) {
   const match = tag.match(TAG_PREFIX)
