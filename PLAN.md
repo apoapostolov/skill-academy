@@ -64,6 +64,26 @@ Exit: every enable, disable and archive on this workstation is reversible from t
 
 **Deferred out of P2:** the compare panel. The diff engine is live — `GET /api/skills/:id/compare` returns the changed region of both copies with line numbers, and refuses with 409 when nothing is newer — but its presentation belongs with the provider layer, where a side-by-side visual diff and the AI fold-and-replace can be built and judged together. P2 ships the engine, not the panel.
 
+### Install and recovery policies (decided)
+
+Fringe cases are settled here so the code has one answer each, rather than a prompt at runtime.
+
+**Identity and selection.** A skill is identified by its repository-relative path, so two skills with the same folder name in different subtrees install as two distinct entries. A skill without frontmatter name or version is still installable and shows as unversioned. A repository with no `SKILL.md` anywhere reports zero found and installs nothing.
+
+**Test is read-only.** `POST /api/install/test` downloads nothing into the library and stages nothing. It lists each skill with file count, byte size and description, so a heavy skill (some ship 80+ files) is visible before selection. A private repository answers `auth required` rather than a bare 404, and the dialog points at `GITHUB_TOKEN`.
+
+**Reference.** Test reads the default branch unless a commit is given. An install records the commit it came from, so a later check compares against a known point rather than a moving branch.
+
+**Two phases, never half-done.** Files are fetched into staging first, then placed. A failure between phases leaves staging behind and journals the attempt, so nothing enters the library incomplete.
+
+**Assets travel.** Everything under the skill directory is installed, not just `SKILL.md`. A relative link in `SKILL.md` that resolves outside its own directory is reported as a warning, because the link will break once the skill is separated from its repository.
+
+**Placement mode.** Symlink by default, junction when the platform or filesystem refuses a symlink, copy only when both fail; the response always states which happened. A root inside the library itself is refused, an unwritable root is reported per target, and installing into several agent roots is sequential with per-target results.
+
+**Overwrite policy.** A setting, `install_replace_policy`, defaults to `trash`: the copy being replaced goes to the in-app trash for 30 days before the new one lands. `refuse` is the alternative, and then the install stops on that skill with `exists-locally`.
+
+**Recovery.** Restoring a trashed copy whose name is taken offers replace or rename. Replace sends the current occupant to the trash first, so no copy is ever deleted outright. Trash entries record their origin (manual archive, or a source install with `repo@commit`), and a restore that would land with under three days left warns before it starts.
+
 ### P3 — Sources and updates (11 days)
 
 Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
