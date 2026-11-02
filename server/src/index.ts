@@ -403,6 +403,35 @@ app.get('/api/placements', async (request, reply) => {
   return { skill: { id: skill.id, name: skill.name, path: skill.path }, placements: rows }
 })
 
+app.post('/api/placements/repair', async (request, reply) => {
+  // A tracked copy drifted from its source. Repair rewrites the copy from the source and
+  // journals both halves, so the old copy is in the trash and the action can be undone.
+  const body = request.body as { skillId?: number; agent?: string } | undefined
+  const skill = body?.skillId ? getSkill(body.skillId) : undefined
+  if (!skill || !body?.agent) {
+    reply.code(400)
+    return { error: 'skillId and agent are required' }
+  }
+  const registry = loadRegistry()
+  const root = registry.roots.find((entry) => entry.exists && entry.owners.includes(body.agent!))
+  if (!root) {
+    reply.code(404)
+    return { error: `no detected root for ${body.agent}` }
+  }
+  const target = path.join(root.path, path.basename(skill.path))
+  const before = copyDrift(skill.path, target)
+  if (!before.drifted) {
+    reply.code(409)
+    return { error: 'copy-matches-source', sourceHash: before.sourceHash, targetHash: before.targetHash }
+  }
+  const removed = unplace(target, TRASH_DIR)
+  addJournal('repair', { skillId: skill.id, agent: body.agent, target, removed })
+  const placed = place(skill.path, root.path, { forceCopy: true })
+  addJournal('place', { skillId: skill.id, agent: body.agent, target: placed.target, mode: placed.mode, repaired: true })
+  const after = copyDrift(skill.path, placed.target)
+  return { ok: placed.ok && !after.drifted, mode: placed.mode, target: placed.target, before, after }
+})
+
 app.post('/api/placements', async (request, reply) => {
   const body = request.body as
     | { skillId?: number; agent?: string; action?: 'on' | 'off'; override?: boolean; reason?: string }
