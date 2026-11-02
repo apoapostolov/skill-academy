@@ -734,6 +734,32 @@ export default function App() {
     })
   }
 
+  async function bulkAgents(action: 'enable' | 'disable') {
+    const agent = scope.kind === 'agent' ? scope.agent : null
+    const ids = [...checked]
+    if (!agent || !ids.length) return
+    try {
+      const response = await fetch('/api/skills/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids, agent })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `bulk ${response.status}`)
+      const failed = (payload.results ?? []).filter((row: { ok: boolean }) => !row.ok)
+      setChecked(new Set())
+      setError(
+        failed.length
+          ? `${failed.length} of ${payload.total} could not be switched ${action === 'enable' ? 'on' : 'off'} (${[
+              ...new Set(failed.map((row: { error?: string }) => row.error ?? 'unknown'))
+            ].join(', ')})`
+          : null
+      )
+    } catch (error) {
+      setError((error as Error).message)
+    }
+  }
+
   async function archiveChecked() {
     const ids = [...checked]
     if (!ids.length) return
@@ -1440,6 +1466,16 @@ export default function App() {
               <button className="bulkbtn" onClick={() => setChecked(new Set())}>
                 Clear
               </button>
+              {scope.kind === 'agent' && (
+                <>
+                  <button className="bulkbtn" onClick={() => void bulkAgents('enable')}>
+                    On
+                  </button>
+                  <button className="bulkbtn" onClick={() => void bulkAgents('disable')}>
+                    Off
+                  </button>
+                </>
+              )}
               <button className="bulkbtn danger" onClick={() => void archiveChecked()}>
                 Archive
               </button>
