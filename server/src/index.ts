@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -401,6 +402,64 @@ app.get('/api/placements', async (request, reply) => {
     )
 
   return { skill: { id: skill.id, name: skill.name, path: skill.path }, placements: rows }
+})
+
+app.get('/api/skills/:id/compare', async (request, reply) => {
+  // Compare with latest, without a model in the loop: what the two copies actually say.
+  // The AI pass can summarise this later; the diff is the part that must never be guessed.
+  const { id } = request.params as { id: string }
+  const row = getSkill(Number(id))
+  if (!row) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const self = provenanceOf(row.path, String(row.mtime))
+  const copies = copiesOfName(row.name).filter((copy) => copy.id !== row.id)
+  const newest = copies
+    .map((copy) => ({ ...copy, ...provenanceOf(copy.path, copy.mtime) }))
+    .filter((copy) => copy.version)
+    .sort((a, b) => compareVersions(a.version, b.version))
+    .at(-1)
+  if (!newest || !self.version || compareVersions(self.version, newest.version) >= 0) {
+    reply.code(409)
+    return { error: 'nothing-newer', thisVersion: self.version ?? null }
+  }
+
+  const read = (dir: string): string => {
+    try {
+      return readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+    } catch {
+      return ''
+    }
+  }
+  const mine = read(row.path).split(/\r?\n/)
+  const theirs = read(newest.path).split(/\r?\n/)
+
+  // Trim the common head and tail, then report the changed middle with line numbers.
+  let head = 0
+  while (head < mine.length && head < theirs.length && mine[head] === theirs[head]) head += 1
+  let tail = 0
+  while (
+    tail < mine.length - head &&
+    tail < theirs.length - head &&
+    mine[mine.length - 1 - tail] === theirs[theirs.length - 1 - tail]
+  ) {
+    tail += 1
+  }
+  const mineMiddle = mine.slice(head, mine.length - tail)
+  const theirsMiddle = theirs.slice(head, theirs.length - tail)
+
+  return {
+    name: row.name,
+    thisVersion: self.version,
+    latestVersion: newest.version,
+    latestRoot: newest.root_path,
+    latestId: newest.id,
+    changedFrom: head + 1,
+    thisLines: mineMiddle.map((text, index) => ({ line: head + index + 1, text })),
+    latestLines: theirsMiddle.map((text, index) => ({ line: head + index + 1, text })),
+    identical: mineMiddle.length === 0 && theirsMiddle.length === 0
+  }
 })
 
 app.post('/api/placements/repair', async (request, reply) => {
