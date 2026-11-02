@@ -2293,3 +2293,65 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   background: rgba(184, 92, 87, 0.18);
   color: #e0a5a1;
 }
+
+/* Selection is a checkbox on the row, revealed on hover or when it is on. */
+.pick {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 3px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.row:hover .pick,
+.pick.on {
+  opacity: 1;
+}
+
+.pick.on {
+  border-color: rgba(127, 163, 199, 0.9);
+  background: rgba(127, 163, 199, 0.85);
+}
+
+.bulkbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(23, 24, 27, 0.96);
+  backdrop-filter: blur(6px);
+}
+
+.bulkcount {
+  flex: 1 1 auto;
+  color: #c8cacf;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.bulkbtn {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: #c8cacf;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.bulkbtn.danger {
+  border-color: rgba(184, 92, 87, 0.55);
+  color: #e0a5a1;
+}
+
+.bulkbtn.danger:hover {
+  background: rgba(184, 92, 87, 0.18);
+}

@@ -723,6 +723,38 @@ export default function App() {
 
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; skill: Skill } | null>(null)
+  const [checked, setChecked] = useState<Set<number>>(new Set())
+
+  function toggleChecked(id: number) {
+    setChecked((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function archiveChecked() {
+    const ids = [...checked]
+    if (!ids.length) return
+    try {
+      const response = await fetch('/api/skills/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'archive', ids, reason: 'bulk' })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `bulk ${response.status}`)
+      const gone = new Set((payload.results ?? []).filter((row: { ok: boolean }) => row.ok).map((row: { id: number }) => row.id))
+      setSkills((current) => current.filter((row) => !gone.has(row.id)))
+      if (selected !== null && gone.has(selected)) setSelected(null)
+      setChecked(new Set())
+      void loadTrash()
+      if (payload.failed) setError(`${payload.failed} of ${payload.total} could not be archived`)
+    } catch (error) {
+      setError((error as Error).message)
+    }
+  }
 
   useEffect(() => {
     if (!rowMenu) return
@@ -1402,6 +1434,17 @@ export default function App() {
         />
 
         <section className="list">
+          {checked.size > 0 && (
+            <div className="bulkbar">
+              <span className="bulkcount">{checked.size} selected</span>
+              <button className="bulkbtn" onClick={() => setChecked(new Set())}>
+                Clear
+              </button>
+              <button className="bulkbtn danger" onClick={() => void archiveChecked()}>
+                Archive
+              </button>
+            </div>
+          )}
           <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
           <div className="listhead">
             <span className="scope">{scopeLabel}</span>
@@ -1420,6 +1463,23 @@ export default function App() {
                 setRowMenu({ x: event.clientX, y: event.clientY, skill })
               }}
             >
+              <span
+                className={`pick ${checked.has(skill.id) ? 'on' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggleChecked(skill.id)
+                }}
+                role="checkbox"
+                aria-checked={checked.has(skill.id)}
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === ' ' || event.key === 'Enter') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    toggleChecked(skill.id)
+                  }
+                }}
+              />
               <span
                 className={`dot ${skill.health.length ? 'warn' : ''} ${skill.risk === 'high' ? 'risk' : ''}`}
                 title={skill.risk === 'high' ? 'Content scan: high risk' : undefined}
