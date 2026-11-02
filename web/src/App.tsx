@@ -724,6 +724,62 @@ export default function App() {
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; skill: Skill } | null>(null)
   const [checked, setChecked] = useState<Set<number>>(new Set())
+  const [presets, setPresets] = useState<{ id: number; name: string; agents: string[] }[]>([])
+  const [selectMode, setSelectMode] = useState(false)
+  const [presetId, setPresetId] = useState<number | ''>('')
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/presets')
+        const payload = await response.json()
+        setPresets(payload.presets ?? [])
+      } catch {
+        /* presets are optional; the bar simply has no selector */
+      }
+    })()
+  }, [])
+
+  async function applyPreset() {
+    if (presetId === '' || !checked.size) return
+    try {
+      const response = await fetch(`/api/presets/${presetId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...checked] })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `apply ${response.status}`)
+      setError(
+        payload.failed
+          ? `${payload.failed} of ${payload.results.length} could not be placed by ${payload.preset}`
+          : null
+      )
+      setChecked(new Set())
+    } catch (error) {
+      setError((error as Error).message)
+    }
+  }
+
+  async function savePresetFromScope() {
+    const agent = scope.kind === 'agent' ? scope.agent : null
+    if (!agent) return
+    const name = window.prompt('Preset name', agent)
+    if (!name) return
+    try {
+      const response = await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, agents: [agent] })
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `preset ${response.status}`)
+      setPresets((current) => [...current.filter((row) => row.id !== payload.preset.id), payload.preset])
+      setPresetId(payload.preset.id)
+    } catch (error) {
+      setError((error as Error).message)
+    }
+  }
 
   function toggleChecked(id: number) {
     setChecked((current) => {
@@ -1466,6 +1522,31 @@ export default function App() {
               <button className="bulkbtn" onClick={() => setChecked(new Set())}>
                 Clear
               </button>
+              <button className="bulkbtn planned" disabled title="Consolidate a set of skills into one, planned">
+                Consolidate
+              </button>
+              <button className="bulkbtn planned" disabled title="Improve a skill against its sources, planned">
+                Improve
+              </button>
+              {presets.length > 0 && (
+                <>
+                  <select
+                    className="bulkselect"
+                    value={presetId}
+                    onChange={(event) => setPresetId(event.target.value ? Number(event.target.value) : '')}
+                  >
+                    <option value="">Preset…</option>
+                    {presets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="bulkbtn" disabled={presetId === ''} onClick={() => void applyPreset()}>
+                    Apply
+                  </button>
+                </>
+              )}
               {scope.kind === 'agent' && (
                 <>
                   <button className="bulkbtn" onClick={() => void bulkAgents('enable')}>
@@ -1473,6 +1554,9 @@ export default function App() {
                   </button>
                   <button className="bulkbtn" onClick={() => void bulkAgents('disable')}>
                     Off
+                  </button>
+                  <button className="bulkbtn" onClick={() => void savePresetFromScope()} title="Save this agent as a preset">
+                    Save preset
                   </button>
                 </>
               )}
@@ -1488,6 +1572,28 @@ export default function App() {
               {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
               {skills.length < total ? ` · ${fmt.format(skills.length)} loaded` : ''}
             </span>
+            <button
+              className={`listedit ${selectMode ? 'on' : ''}`}
+              title={selectMode ? 'Done selecting' : 'Select skills'}
+              aria-pressed={selectMode}
+              onClick={() => {
+                setSelectMode((current) => {
+                  if (current) setChecked(new Set())
+                  return !current
+                })
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2.5 13.5h11M4 9.6V12h2.4l6-6a1.7 1.7 0 0 0-2.4-2.4l-6 6Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
           </div>
           {skills.map((skill) => (
             <button
@@ -1499,6 +1605,7 @@ export default function App() {
                 setRowMenu({ x: event.clientX, y: event.clientY, skill })
               }}
             >
+              {selectMode && (
               <span
                 className={`pick ${checked.has(skill.id) ? 'on' : ''}`}
                 onClick={(event) => {
@@ -1516,6 +1623,7 @@ export default function App() {
                   }
                 }}
               />
+              )}
               <span
                 className={`dot ${skill.health.length ? 'warn' : ''} ${skill.risk === 'high' ? 'risk' : ''}`}
                 title={skill.risk === 'high' ? 'Content scan: high risk' : undefined}

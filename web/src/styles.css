@@ -2355,3 +2355,64 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .bulkbtn.danger:hover {
   background: rgba(184, 92, 87, 0.18);
 }
+
+.bulkselect {
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel, #17181b);
+  color: #c8cacf;
+  font: inherit;
+  font-size: 11px;
+}
+
+/* Selection is a mode you enter, so the boxes are always readable while it is on. */
+.pick {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.listedit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  margin-left: 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.listedit:hover {
+  border-color: var(--border);
+  color: var(--text-2);
+}
+
+.listedit.on {
+  border-color: rgba(127, 163, 199, 0.55);
+  background: rgba(127, 163, 199, 0.14);
+  color: #a9c4de;
+}
+
+/* The bar's actions read as controls, not as words. */
+.bulkbtn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bulkbtn.danger {
+  border-color: rgba(184, 92, 87, 0.55);
+  background: rgba(184, 92, 87, 0.1);
+}
+
+.bulkbtn.planned {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: none;
+  color: var(--text-3);
+  opacity: 0.75;
+}
