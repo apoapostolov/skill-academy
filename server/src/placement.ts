@@ -56,7 +56,26 @@ export function place(
 
   if (path.resolve(target) === source) return { ok: true, mode: 'native', target }
   if (exists(target)) {
-    return { ok: false, target, reason: isLinkLike(target) ? 'linked-elsewhere' : 'occupied' }
+    // Already placed by us is a success, not a collision: the switch must be idempotent.
+    if (isLinkLike(target)) {
+      try {
+        if (path.resolve(fs.readlinkSync(target)).toLowerCase() === source.toLowerCase()) {
+          return { ok: true, mode: 'junction', target }
+        }
+      } catch {
+        /* fall through to the refusal */
+      }
+      return { ok: false, target, reason: 'linked-elsewhere' }
+    }
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(target, MANIFEST), 'utf8')) as { source?: string }
+      if (manifest.source && path.resolve(manifest.source).toLowerCase() === source.toLowerCase()) {
+        return { ok: true, mode: 'copy', target }
+      }
+    } catch {
+      /* not a tracked copy */
+    }
+    return { ok: false, target, reason: 'occupied' }
   }
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) {
     return { ok: false, target, reason: 'no-skill-md' }

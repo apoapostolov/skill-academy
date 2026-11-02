@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentRoot } from './registry'
-import { isLinked } from './placement'
+import { MANIFEST, isLinked } from './placement'
 import { parseSkill, type SkillRecord } from './skill'
 
 const SKIP = new Set(['node_modules', '.git', '.archive', '.cache'])
@@ -19,9 +19,17 @@ export interface RootScan {
   error?: string
 }
 
+/** One agent root's view of a package: the folder it sees, and how it got it. */
+export interface PlacementRow {
+  realPath: string
+  targetPath: string
+  mode: 'native' | 'link' | 'copy'
+}
+
 export interface RootEntry {
   root: RootScan
   skills: SkillRecord[]
+  placements: PlacementRow[]
 }
 
 export interface ScanOutcome {
@@ -39,19 +47,38 @@ function findPackages(dir: string, depth: number, out: string[]): void {
     return
   }
   if (entries.some((entry) => entry.isFile() && entry.name === 'SKILL.md')) {
-    // A linked package is a placement of a skill that lives elsewhere: indexing it
-    // again would list one skill twice and double its token cost.
-    if (!isLinked(dir)) out.push(dir)
+    out.push(dir)
     return
   }
   if (depth >= MAX_DEPTH) return
   for (const entry of entries) {
-    if (!entry.isDirectory() || SKIP.has(entry.name)) continue
+    // A junction or symlink reports isSymbolicLink(), never isDirectory(): skipping those
+    // would hide exactly the placements this index exists to show.
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+    if (SKIP.has(entry.name)) continue
     findPackages(path.join(dir, entry.name), depth + 1, out)
   }
 }
 
 /** One root, parsed. Used by both the full sweep and the watcher. */
+function realPathOf(dir: string): string {
+  try {
+    return fs.realpathSync.native(dir)
+  } catch {
+    return dir
+  }
+}
+
+function modeOf(dir: string): PlacementRow['mode'] {
+  if (isLinked(dir)) return 'link'
+  try {
+    fs.accessSync(path.join(dir, MANIFEST))
+    return 'copy'
+  } catch {
+    return 'native'
+  }
+}
+
 export function scanOne(root: AgentRoot): RootEntry {
   const started = Date.now()
   if (!root.exists) {
@@ -66,16 +93,28 @@ export function scanOne(root: AgentRoot): RootEntry {
         ms: 0,
         error: root.error ?? 'MISSING'
       },
-      skills: []
+      skills: [],
+      placements: []
     }
   }
 
   const packages: string[] = []
   findPackages(root.path, 0, packages)
+
   const skills: SkillRecord[] = []
+  const placements: PlacementRow[] = []
+  const parsed = new Set<string>()
+
   for (const dir of packages) {
+    // Identity is the resolved directory, not the folder the agent happens to see:
+    // one package placed in three agents is one skill with three placements.
+    const realPath = realPathOf(dir)
+    placements.push({ realPath, targetPath: dir, mode: modeOf(dir) })
+    if (parsed.has(realPath)) continue
     const record = parseSkill(dir, root.path, root.scope)
-    if (record) skills.push(record)
+    if (!record) continue
+    parsed.add(realPath)
+    skills.push({ ...record, realPath })
   }
 
   return {
@@ -88,7 +127,8 @@ export function scanOne(root: AgentRoot): RootEntry {
       truncated: packages.length >= MAX_SKILLS_PER_ROOT,
       ms: Date.now() - started
     },
-    skills
+    skills,
+    placements
   }
 }
 

@@ -7,12 +7,11 @@ import {
   addJournal,
   getSkill,
   listHiddenAgents,
+  listPlacements,
   querySkills,
   readRoots,
   rebuildIndex,
   recentJournal,
-  removeByPath,
-  saveOne,
   saveRoot,
   saveScan,
   setAgentHidden,
@@ -20,10 +19,10 @@ import {
   tokensByRoot,
   totals
 } from './db'
-import { describe as describePlacement, place, unplace } from './placement'
+import { place, unplace } from './placement'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
-import { parseSkill, readSkillBody } from './skill'
+import { readSkillBody } from './skill'
 import { RootWatcher, type Change } from './watch'
 
 const startedAt = new Date()
@@ -53,49 +52,27 @@ function broadcast(payload: Record<string, unknown>): void {
   }
 }
 
-/** A changed path is a package when its directory holds a SKILL.md. */
+/**
+ * Any change in a watched root rescans that root. Links make per-path bookkeeping
+ * wrong: the file that changed may be reached through a junction, and the thing that
+ * changed may be the placement itself, not the package.
+ */
 function handleChange(change: Change): void {
-  const targets = new Set<string>()
-  for (const changed of change.paths) {
-    const dir = path.basename(changed) === 'SKILL.md' ? path.dirname(changed) : changed
-    if (fs.existsSync(path.join(dir, 'SKILL.md'))) targets.add(dir)
-  }
-
-  let added = 0
-  let changedCount = 0
-  let removed = 0
-
-  if (targets.size > 0 && targets.size <= 25) {
-    for (const dir of targets) {
-      const skill = parseSkill(dir, change.root.path, change.root.scope)
-      if (!skill) {
-        removed += removeByPath(dir)
-        continue
-      }
-      const result = saveOne(change.root.path, change.root.scope, skill)
-      added += result.added
-      changedCount += result.changed
-    }
-    // Paths that vanished: a removed directory has no SKILL.md, so it is caught here.
-    for (const gone of change.paths) {
-      if (fs.existsSync(gone)) continue
-      const dir = path.basename(gone) === 'SKILL.md' ? path.dirname(gone) : gone
-      removed += removeByPath(dir)
-    }
-  } else {
-    const entry = scanOne(change.root)
-    const result = saveRoot(entry)
-    added += result.added
-    changedCount += result.changed
-    removed += result.removed
-    if (added + changedCount + removed > 0) rebuildIndex()
-  }
-
-  if (added + changedCount + removed === 0) return
+  const entry = scanOne(change.root)
+  const result = saveRoot(entry)
+  if (result.added + result.changed + result.removed === 0) return
+  rebuildIndex()
   lastScanAt = new Date().toISOString()
   lastEventAt = lastScanAt
-  lastEvent = { added, changed: changedCount, removed, root: change.root.path }
-  broadcast({ type: 'library', root: change.root.path, added, changed: changedCount, removed, at: lastScanAt })
+  lastEvent = { added: result.added, changed: result.changed, removed: result.removed, root: change.root.path }
+  broadcast({
+    type: 'library',
+    root: change.root.path,
+    added: result.added,
+    changed: result.changed,
+    removed: result.removed,
+    at: lastScanAt
+  })
 }
 
 const watcher = new RootWatcher(handleChange)
@@ -260,8 +237,8 @@ app.get('/api/facets', async () => {
         agent,
         path: root.path,
         origin: root.origin,
-        count: stored.get(root.path)?.skill_count ?? 0,
-        tokens: tokens[root.path] ?? 0
+        count: tokens[root.path]?.count ?? stored.get(root.path)?.skill_count ?? 0,
+        tokens: tokens[root.path]?.tokens ?? 0
       }))
     )
     .sort((a, b) => a.agent.localeCompare(b.agent))
@@ -298,20 +275,19 @@ app.get('/api/placements', async (request, reply) => {
   }
 
   const registry = loadRegistry()
-  const source = path.resolve(skill.path).toLowerCase()
+  const stored = listPlacements(skill.id)
+  const byRoot = new Map(stored.map((placement) => [placement.rootPath.toLowerCase(), placement]))
   const rows = registry.roots
     .filter((root) => root.exists)
     .flatMap((root) =>
       root.owners.map((agent) => {
-        const target = path.join(root.path, path.basename(skill.path))
-        const native = source.startsWith(`${path.resolve(root.path).toLowerCase()}${path.sep}`)
-        const info = describePlacement(target)
+        const hit = byRoot.get(root.path.toLowerCase())
         return {
           agent,
           root: root.path,
-          target,
-          state: native ? 'native' : info.exists ? 'on' : 'off',
-          mode: native ? 'native' : info.link ? 'link' : info.ours ? 'copy' : null
+          target: hit?.targetPath ?? path.join(root.path, path.basename(skill.path)),
+          state: hit ? (hit.mode === 'native' ? 'native' : 'on') : 'off',
+          mode: hit?.mode ?? null
         }
       })
     )

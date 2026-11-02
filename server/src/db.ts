@@ -46,13 +46,27 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 7
 
 let database: DatabaseSync | undefined
 
 function migrate(db: DatabaseSync): void {
+  db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);')
+  const stored = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
+    | { value?: string }
+    | undefined
+  if (Number(stored?.value ?? 0) !== SCHEMA_VERSION) {
+    // Derived data only. A column change cannot be patched onto an existing table with
+    // CREATE TABLE IF NOT EXISTS, so the shape change drops and rebuilds instead.
+    db.exec(`
+      DROP TABLE IF EXISTS skills_fts;
+      DROP TABLE IF EXISTS skill_body;
+      DROP TABLE IF EXISTS placements;
+      DROP TABLE IF EXISTS skills;
+    `)
+  }
+
   db.exec(`
-    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS roots (
       path TEXT PRIMARY KEY, scope TEXT NOT NULL, owners TEXT NOT NULL,
       present INTEGER NOT NULL, skill_count INTEGER NOT NULL DEFAULT 0,
@@ -61,6 +75,7 @@ function migrate(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS skills (
       id INTEGER PRIMARY KEY,
       path TEXT NOT NULL UNIQUE,
+      real_path TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       root_path TEXT NOT NULL,
@@ -77,6 +92,16 @@ function migrate(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS skills_root ON skills(root_path);
     CREATE INDEX IF NOT EXISTS skills_name ON skills(name COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS skills_real ON skills(real_path);
+    CREATE TABLE IF NOT EXISTS placements (
+      skill_id    INTEGER NOT NULL,
+      root_path   TEXT NOT NULL,
+      target_path TEXT NOT NULL,
+      mode        TEXT NOT NULL,
+      seen_at     TEXT NOT NULL,
+      PRIMARY KEY (skill_id, root_path)
+    );
+    CREATE INDEX IF NOT EXISTS placements_root ON placements(root_path);
     CREATE TABLE IF NOT EXISTS skill_body (
       skill_id INTEGER PRIMARY KEY,
       body     TEXT NOT NULL
@@ -95,16 +120,6 @@ function migrate(db: DatabaseSync): void {
     );
   `)
 
-  const stored = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
-    | { value?: string }
-    | undefined
-  if (Number(stored?.value ?? 0) !== SCHEMA_VERSION) {
-    db.exec('DROP TABLE IF EXISTS skills_fts;')
-    // The index is derived data: drop it and let the next scan re-parse every package,
-    // which is also how bodies get (re)indexed after a shape change.
-    db.exec('DELETE FROM skill_body;')
-    db.exec('DELETE FROM skills;')
-  }
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(name, description, tags, body, content='');`)
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
     String(SCHEMA_VERSION)
@@ -170,27 +185,29 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     )
   }
 
-  const existing = db.prepare('SELECT id, package_hash FROM skills WHERE path = ?')
+  const existing = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ?')
   const insert = db.prepare(`
-    INSERT INTO skills (path, name, description, root_path, scope, body_chars, tokens, tags,
+    INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
                         package_hash, mtime, files, bytes, health, seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const update = db.prepare(`
-    UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
+    UPDATE skills SET path = ?, name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
       tags = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
-    WHERE path = ?
+    WHERE id = ?
   `)
   const upsertBody = db.prepare(
     'INSERT INTO skill_body (skill_id, body) VALUES (?, ?) ON CONFLICT(skill_id) DO UPDATE SET body = excluded.body'
   )
 
-  const keptIds: number[] = []
+  const idsByReal = new Map<string, number>()
   for (const skill of entry.skills) {
-    const row = existing.get(skill.path) as { id: number; package_hash: string } | undefined
+    const real = skill.realPath ?? skill.path
+    const row = existing.get(real) as { id: number; package_hash: string } | undefined
     if (!row) {
       insert.run(
         skill.path,
+        real,
         skill.name,
         skill.description,
         skill.rootPath,
@@ -205,17 +222,18 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         JSON.stringify(skill.health),
         at
       )
-      result.added += 1
-      const created = db.prepare('SELECT id FROM skills WHERE path = ?').get(skill.path) as { id: number } | undefined
+      const created = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(real) as { id: number } | undefined
       if (created) {
-        keptIds.push(created.id)
+        idsByReal.set(real, created.id)
         upsertBody.run(created.id, skill.text)
       }
+      result.added += 1
       continue
     }
-    keptIds.push(row.id)
+    idsByReal.set(real, row.id)
     if (row.package_hash === skill.packageHash) continue
     update.run(
+      skill.path,
       skill.name,
       skill.description,
       skill.rootPath,
@@ -229,18 +247,32 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       skill.bytes,
       JSON.stringify(skill.health),
       at,
-      skill.path
+      row.id
     )
     upsertBody.run(row.id, skill.text)
     result.changed += 1
   }
 
-  const stale = keptIds.length
-    ? db.prepare(`SELECT id FROM skills WHERE root_path = ? AND id NOT IN (${keptIds.map(() => '?').join(',')})`).all(
-        entry.root.path,
-        ...keptIds
-      )
-    : (db.prepare('SELECT id FROM skills WHERE root_path = ?').all(entry.root.path) as { id: number }[])
+  // Placements are what the scan just observed for this root; replace them wholesale.
+  db.prepare('DELETE FROM placements WHERE root_path = ?').run(entry.root.path)
+  const insertPlacement = db.prepare(`
+    INSERT INTO placements (skill_id, root_path, target_path, mode, seen_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(skill_id, root_path) DO UPDATE SET
+      target_path = excluded.target_path, mode = excluded.mode, seen_at = excluded.seen_at
+  `)
+  const placed = new Set<string>()
+  for (const placement of entry.placements) {
+    const id = idsByReal.get(placement.realPath)
+    if (!id) continue
+    insertPlacement.run(id, entry.root.path, placement.targetPath, placement.mode, at)
+    placed.add(placement.realPath)
+  }
+
+  // A skill survives as long as any root can still see it, whatever path it is seen at.
+  const stale = db
+    .prepare('SELECT id FROM skills WHERE id NOT IN (SELECT skill_id FROM placements)')
+    .all() as { id: number }[]
   if (stale.length > 0) {
     const remove = db.prepare('DELETE FROM skills WHERE id = ?')
     const removeBody = db.prepare('DELETE FROM skill_body WHERE skill_id = ?')
@@ -303,8 +335,8 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     params.push(match)
   }
   if (query.root) {
-    filters.push('s.root_path = ?')
-    params.push(query.root)
+    filters.push('(s.root_path = ? OR s.id IN (SELECT skill_id FROM placements WHERE root_path = ?))')
+    params.push(query.root, query.root)
   }
   if (query.tag) {
     filters.push('s.tags LIKE ?')
@@ -339,17 +371,19 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
   const db = getDb()
   const at = new Date().toISOString()
   const result: SaveResult = { added: 0, changed: 0, removed: 0 }
-  const row = db.prepare('SELECT id, package_hash FROM skills WHERE path = ?').get(skill.path) as
+  const real = skill.realPath ?? skill.path
+  const row = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ?').get(real) as
     | { id: number; package_hash: string }
     | undefined
 
   if (!row) {
     db.prepare(`
-      INSERT INTO skills (path, name, description, root_path, scope, body_chars, tokens, tags,
+      INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
                           package_hash, mtime, files, bytes, health, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       skill.path,
+      real,
       skill.name,
       skill.description,
       rootPath,
@@ -364,7 +398,7 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
       JSON.stringify(skill.health),
       at
     )
-    const created = db.prepare('SELECT id FROM skills WHERE path = ?').get(skill.path) as { id: number } | undefined
+    const created = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(real) as { id: number } | undefined
     if (created) {
       db.prepare(
         'INSERT INTO skill_body (skill_id, body) VALUES (?, ?) ON CONFLICT(skill_id) DO UPDATE SET body = excluded.body'
@@ -431,12 +465,16 @@ export function totals(): { skills: number; tokens: number; issues: number; root
   return { skills: row.skills, tokens: row.tokens, issues: row.issues ?? 0, roots: row.roots }
 }
 
-export function tokensByRoot(): Record<string, number> {
+export function tokensByRoot(): Record<string, { tokens: number; count: number }> {
   const rows = getDb()
-    .prepare('SELECT root_path, SUM(tokens) AS tokens, COUNT(*) AS count FROM skills GROUP BY root_path')
+    .prepare(`
+      SELECT p.root_path AS root_path, SUM(s.tokens) AS tokens, COUNT(*) AS count
+      FROM placements p JOIN skills s ON s.id = p.skill_id
+      GROUP BY p.root_path
+    `)
     .all() as { root_path: string; tokens: number; count: number }[]
-  const out: Record<string, number> = {}
-  for (const row of rows) out[row.root_path] = row.tokens
+  const out: Record<string, { tokens: number; count: number }> = {}
+  for (const row of rows) out[row.root_path] = { tokens: row.tokens, count: row.count }
   return out
 }
 
@@ -500,6 +538,22 @@ export function addJournal(action: string, payload: unknown): number {
 
 export function recentJournal(limit = 50): JournalRow[] {
   return getDb().prepare('SELECT * FROM journal ORDER BY id DESC LIMIT ?').all(limit) as unknown as JournalRow[]
+}
+
+export interface SkillPlacement {
+  rootPath: string
+  targetPath: string
+  mode: string
+}
+
+/** Every root that can see this skill, with the path it sees and how it got there. */
+export function listPlacements(skillId: number): SkillPlacement[] {
+  return getDb()
+    .prepare(`
+      SELECT root_path AS rootPath, target_path AS targetPath, mode
+      FROM placements WHERE skill_id = ? ORDER BY root_path
+    `)
+    .all(skillId) as unknown as SkillPlacement[]
 }
 
 export type { RootScan }

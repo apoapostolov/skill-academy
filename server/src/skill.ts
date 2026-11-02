@@ -9,6 +9,8 @@ export interface SkillIssue {
 
 export interface SkillRecord {
   path: string
+  /** Resolved directory: the identity of a package, whatever path an agent links it to. */
+  realPath?: string
   name: string
   description: string
   rootPath: string

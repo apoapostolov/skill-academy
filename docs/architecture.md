@@ -435,7 +435,9 @@ Making one agent see one package is a physical operation, so it is written to be
 5. **Remove by kind.** A link is unlinked. A tracked copy is moved to `~/.skill-academy/trash/`, never deleted, so a mistaken uninstall stays recoverable.
 6. **Journaled.** Every place and unplace writes the skill path, agent, root, target and outcome to `journal`, which is the raw material for undo.
 
-Links are not indexed. A package inside a root whose directory is a link is a placement of a skill that lives elsewhere; indexing it would list one skill twice and double its token cost, so the walker skips it and the placement API answers the state question instead.
+Links are indexed, and the identity of a skill is its **resolved** directory (`realpath`), not the folder an agent happens to see. A package placed in three agents is one row in `skills` with three rows in `placements`; listing it three times would triple its token cost and lie about how much of the context budget it owns. The agent scopes, the per-agent counts and the root filters all read from `placements`, so a linked package shows up under every agent that can see it, including the `link` and `copy` modes.
+
+The walker must treat `Dirent.isSymbolicLink()` as a directory, because a junction never reports `isDirectory()`. Skipping those entries silently hides every placement the index exists to show.
 
 ```
 GET  /api/placements?skillId=6      every agent with native | on | off, the target path and the mode
