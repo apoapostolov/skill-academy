@@ -610,7 +610,7 @@ export default function App() {
   const [debounced, setDebounced] = useState('')
   const [selected, setSelected] = useState<number | null>(null)
   const [detail, setDetail] = useState<
-    (Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> }; drift?: Drift | null }) | null
+    (Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> }; drift?: Drift | null; sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }> }) | null
   >(null)
   const [openRef, setOpenRef] = useState<{ name: string; rel: string; text: string; image: string | null } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -1437,6 +1437,15 @@ export default function App() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {detail.sameVersionDrift && detail.sameVersionDrift.length > 0 && (
+                <div className="drift same-version">
+                  <span className="drift-text">
+                    Same version, different content: <b>v{detail.version}</b> also exists as a changed copy in{' '}
+                    <code>{detail.sameVersionDrift[0].root}</code>.
+                    {detail.sameVersionDrift.length > 1 ? ` ${detail.sameVersionDrift.length} copies differ.` : ''}
+                  </span>
                 </div>
               )}
               {detail.drift && (

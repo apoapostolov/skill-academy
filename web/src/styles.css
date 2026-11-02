@@ -2176,3 +2176,12 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .nav.active .tag-name {
   color: #eceef1;
 }
+
+.drift.same-version {
+  border-color: rgba(217, 164, 65, 0.32);
+  background: rgba(217, 164, 65, 0.08);
+}
+
+.drift.same-version .drift-text {
+  color: #e3c184;
+}
