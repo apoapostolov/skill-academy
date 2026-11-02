@@ -194,7 +194,12 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
     .all() as Array<{ root_path: string }>).map((row) => row.root_path)
   const losers = [...pointerized, ...routerized]
   const skipDirs = [survivor.dir, ...losers.map((name) => bodies.get(name)?.dir ?? '').filter(Boolean)]
-  const sweep = losers.length ? sweepReferences(roots, losers, survivor.name, skipDirs) : { rewired: [], untouched: [], dangling: [] }
+  // The close-out check is scoped to the skills this merge touched: a library-wide pass reports every
+  // fixture path in every unrelated body as missing.
+  const touched = [survivor.dir, ...losers.map((loser) => bodies.get(loser)?.dir).filter((dir): dir is string => !!dir)]
+  const sweep = losers.length
+    ? sweepReferences(roots, losers, survivor.name, skipDirs, touched)
+    : { rewired: [], untouched: [], dangling: [] }
 
   log({
     key,
