@@ -244,6 +244,18 @@ app.get('/api/skills/:id', async (request, reply) => {
     .map((copy) => ({ ...copy, ...provenanceOf(copy.path, copy.mtime) }))
     .filter((copy) => copy.version)
   const newest = copies.sort((a, b) => compareVersions(a.version, b.version)).at(-1)
+  // Same version, different bytes: a copy edited in place without a version bump. The
+  // version warning cannot see this, so the detail payload names the copies explicitly.
+  const selfHash = String((row as { package_hash?: string }).package_hash ?? '')
+  const sameVersionDrift = copies
+    .filter(
+      (copy) =>
+        copy.id !== row.id &&
+        copy.version === self.version &&
+        selfHash !== '' &&
+        String((copy as { package_hash?: string }).package_hash ?? '') !== selfHash
+    )
+    .map((copy) => ({ id: copy.id, path: copy.path, root: copy.root_path, version: copy.version }))
   const drift =
     self.version && newest && newest.id !== row.id && compareVersions(self.version, newest.version) < 0
       ? { thisVersion: self.version, latestVersion: newest.version, latestId: newest.id, latestRoot: newest.root_path }
@@ -257,7 +269,8 @@ app.get('/api/skills/:id', async (request, reply) => {
     health: safeJson(row.health, []),
     body: readSkillBody(row.path),
     package: readPackage(row.path),
-    drift
+    drift,
+    sameVersionDrift
   }
 })
 
