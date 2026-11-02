@@ -4,7 +4,7 @@ import path from 'node:path'
 
 export const APP_VERSION = '0.1.0-p1'
 export const HOST = '127.0.0.1'
-export const API_PORT = Number(process.env.SKILL_ACADEMY_API_PORT ?? 4320)
+export const API_PORT = Number(process.env.SKILL_ACADEMY_API_PORT ?? 10008)
 
 /** Repository root: server/src -> server -> repo */
 export const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..')

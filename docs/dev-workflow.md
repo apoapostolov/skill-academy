@@ -13,10 +13,10 @@ That starts one supervisor (`scripts/dev.mjs`) with two children:
 
 | Process | Port | Behaviour |
 |---|---|---|
-| API service (`tsx watch`) | 4320 | Restarts in under a second when a server file changes |
-| Web client (Vite) | 4319 | Hot module replacement; the page updates without a reload |
+| API service (`tsx watch`) | 10008 | Restarts in under a second when a server file changes |
+| Web client (Vite) | 10009 | Hot module replacement; the page updates without a reload |
 
-Open <http://127.0.0.1:4319>. It proxies `/api` to the service, so there is one URL.
+Open <http://127.0.0.1:10008>. The service serves the built interface itself, so product and API share one port.
 
 The service is persistent: it stays up while you work, and a file save restarts only the server process. State lives in SQLite and on disk, so a restart is a re-read, not a rebuild. The browser reconnects over SSE and keeps its scroll position and selection.
 
@@ -47,7 +47,7 @@ Logs also go to `~/.skill-academy/logs/dev.log`, so a crash that kills the page 
 ## What I do
 
 - I edit files in this repository and let the watcher pick them up. I do not restart your service, kill your processes, or open new consoles. If a change needs a restart, the supervisor does it.
-- I verify against the live app at `127.0.0.1:4319` with a browser and against the API with `curl`, then read the log file if something failed. You should not have to tell me what the error was.
+- I verify against the live app at `127.0.0.1:10008` with a browser and against the API with `curl`, then read the log file if something failed. You should not have to tell me what the error was.
 - When I need a clean database I use `npm run seed`, which writes a synthetic library under `~/.skill-academy/fixtures/` and points the service at it. Your real agent folders are never the test fixture.
 - A change is done when the running app shows it. Not when the file is saved, not when it typechecks.
 
@@ -58,8 +58,8 @@ Logs also go to `~/.skill-academy/logs/dev.log`, so a crash that kills the page 
 - **State survives.** SQLite and files are the state; a restart must never lose a scan or a toggle.
 - **Errors are visible.** A crash shows a banner with the last error and the dev panel keeps the trace. No silent dead page.
 - **No hidden consoles.** Background jobs run without a visible window; the only terminal is the one you started `npm run dev` in.
-- **Ports are fixed.** 4319 for the app, 4320 for the API, checked at startup with a clear message if taken.
+- **Ports are fixed.** 10008 for the product, 10009 for the dev-only Vite client, checked at startup with a clear message if taken.
 
 ## When the app is not running
 
-If `127.0.0.1:4319` does not answer, I start it myself with `npm run dev` in the background, read the log, and tell you it is up. I still do not restart a process you already have running.
+If `127.0.0.1:10008` does not answer, I start it myself with `npm run dev` in the background, read the log, and tell you it is up. I still do not restart a process you already have running.

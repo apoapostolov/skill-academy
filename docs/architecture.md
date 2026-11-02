@@ -12,7 +12,7 @@
 | Frontend | React 19, Vite, Tailwind v4, Radix primitives, TanStack Query | Same stack as the other local apps on this machine; accessible primitives |
 | Filter | In-memory index over a snapshot, `Intl.Collator` plus a small fuzzy scorer | Typing must not touch the network |
 
-Process: one foreground service, `node dist/server.js`, bound to `127.0.0.1:4319`. The browser opens automatically on first start. A single-instance lock file under the data directory refuses a second copy with a clear message rather than corrupting the database.
+Process: one foreground service, `node dist/server.js`, bound to `127.0.0.1:10008`, serving both the API and the built interface. The browser opens automatically on first start. A single-instance lock file under the data directory refuses a second copy with a clear message rather than corrupting the database.
 
 Data directory: `~/.skill-academy/`
 

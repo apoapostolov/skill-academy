@@ -4,9 +4,9 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "dev": "vite --port 4319 --strictPort",
+    "dev": "vite --port 10009 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --port 4319"
+    "preview": "vite preview --port 10009"
   },
   "dependencies": {
     "marked": "^18.1.3",

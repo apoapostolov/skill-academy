@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "service": "node scripts/service.mjs",
+    "app": "node scripts/app.mjs",
     "stop": "node scripts/stop-dev.mjs",
     "test:placements": "cd server && npx tsx ../scripts/test-placements.ts",
     "dev:server": "npm -w @skill-academy/server run dev",

@@ -13,10 +13,10 @@ import path from 'node:path'
 
 const repo = path.resolve(import.meta.dirname, '..')
 const stateDir = path.join(os.homedir(), '.skill-academy')
-const logPath = path.join(stateDir, 'logs', 'dev.log')
-const pidFile = path.join(stateDir, 'dev.pid')
-const launcher = path.join(stateDir, 'start-dev.vbs')
-const devScript = path.join(repo, 'scripts', 'dev.mjs')
+const logPath = path.join(stateDir, 'logs', 'app.log')
+const pidFile = path.join(stateDir, 'app.pid')
+const launcher = path.join(stateDir, 'start-app.vbs')
+const appScript = path.join(repo, 'scripts', 'app.mjs')
 
 fs.mkdirSync(path.dirname(logPath), { recursive: true })
 
@@ -38,7 +38,7 @@ if (fs.existsSync(pidFile)) {
 if (process.platform === 'win32') {
   // Inner quotes are doubled inside a VBScript string literal.
   const quote = (value) => `"${value.replace(/"/g, '""')}"`
-  const command = `${quote(process.execPath)} ${quote(devScript)}`
+  const command = `${quote(process.execPath)} ${quote(appScript)}`
   const script = [
     'Set sh = CreateObject("WScript.Shell")',
     `sh.CurrentDirectory = ${quote(repo)}`,
@@ -50,7 +50,7 @@ if (process.platform === 'win32') {
 } else {
   const { spawn } = await import('node:child_process')
   const fd = fs.openSync(logPath, 'a')
-  const child = spawn(process.execPath, [devScript], {
+  const child = spawn(process.execPath, [appScript], {
     cwd: repo,
     detached: true,
     stdio: ['ignore', fd, fd],
@@ -60,7 +60,6 @@ if (process.platform === 'win32') {
 }
 
 console.log('Skill Academy is starting in the background.')
-console.log('  app  http://127.0.0.1:4319')
-console.log('  dev  http://127.0.0.1:4319/dev')
+console.log(`  app  http://127.0.0.1:${process.env.SKILL_ACADEMY_API_PORT ?? '10008'}`)
 console.log(`  log  ${logPath}`)
 console.log('  stop npm run stop')

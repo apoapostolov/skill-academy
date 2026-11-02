@@ -2,7 +2,7 @@
 
 ## What this is
 
-Skill Academy is a local web application. A Node service scans every agent skill directory on the machine, indexes what it finds into SQLite, and serves a browser UI on `127.0.0.1:4319`. The UI lists skills, filters them as you type, and switches them on or off per agent. The same service watches the git repositories those skills came from, reports commits and releases, and can apply updates on a schedule. A curation pass, ported from Hermes' curator, proposes merges for skills that should be one class-level skill instead of five narrow ones.
+Skill Academy is a local web application. A Node service scans every agent skill directory on the machine, indexes what it finds into SQLite, and serves a browser UI on `127.0.0.1:10008`. The UI lists skills, filters them as you type, and switches them on or off per agent. The same service watches the git repositories those skills came from, reports commits and releases, and can apply updates on a schedule. A curation pass, ported from Hermes' curator, proposes merges for skills that should be one class-level skill instead of five narrow ones.
 
 Three things make it different from the tools that already exist. It treats the same skill installed in nine agent directories as one row with nine placements, not nine rows. It never destroys anything: every mutation is journaled with its inverse. And the curation pass copies Hermes' actual policy rather than inventing a similarity score.
 
