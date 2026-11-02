@@ -47,6 +47,7 @@ import {
   undoJournal,
   writeSettings
 } from './lifecycle'
+import { curateDryRun } from './curate'
 import { PROVIDERS, providerById, providerSummary, testProvider } from './providers'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
@@ -518,6 +519,11 @@ app.get('/api/github/status', async () => {
     remaining: payload?.resources?.core?.remaining ?? null,
     limit: payload?.resources?.core?.limit ?? null
   }
+})
+
+app.post('/api/curate/dry-run', async () => {
+  // Deterministic and read-only: the report names its evidence, so a wrong cluster is arguable.
+  return curateDryRun()
 })
 
 app.get('/api/providers', async () => ({
