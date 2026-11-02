@@ -1909,8 +1909,8 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 }
 
 .seg button svg { display: block; }
-.detailhead .wrapbtn { margin-left: 6px; }
-.detailhead .seg { margin-left: auto; }
+.detailhead .wrapbtn { margin-left: 0; }
+.detailhead .seg { margin-left: 0; }
 
 /* Fourth pass: tighter again, list rhythm included. */
 .md { line-height: 1.24; }
@@ -2184,4 +2184,33 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 
 .drift.same-version .drift-text {
   color: #e3c184;
+}
+
+/* The three controls in the detail head sit as one cluster; the gap was eating the
+   width that belongs to the title. */
+.detailhead {
+  gap: 6px;
+}
+
+.detailhead .btn.archive,
+.detailhead .seg,
+.detailhead .wrapbtn {
+  margin-left: 0;
+}
+
+.btn.archive.confirming {
+  background: rgba(184, 92, 87, 0.18);
+  border-color: rgba(184, 92, 87, 0.55);
+  color: #e0a5a1;
+}
+
+/* Free space belongs to the title, not between the buttons: the three-control cluster
+   stays tight against the right edge instead of drifting apart. */
+.detailhead {
+  justify-content: flex-start;
+}
+
+.detailhead > h1 {
+  flex: 1 1 auto;
+  min-width: 0;
 }

@@ -721,6 +721,24 @@ export default function App() {
     }
   }
 
+  const [confirmArchive, setConfirmArchive] = useState(false)
+
+  useEffect(() => {
+    setConfirmArchive(false)
+  }, [detail?.id])
+
+  function archiveClick() {
+    // Two stages: the first click asks, the second does the work, so a slip of the
+    // pointer cannot move a skill out of the library.
+    if (!confirmArchive) {
+      setConfirmArchive(true)
+      window.setTimeout(() => setConfirmArchive(false), 4000)
+      return
+    }
+    setConfirmArchive(false)
+    void archiveCurrent()
+  }
+
   async function archiveCurrent() {
     if (!detail) return
     await fetch(`/api/skills/${detail.id}/archive`, { method: 'POST' })
@@ -1386,8 +1404,12 @@ export default function App() {
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>
-                <button className="btn archive" onClick={() => void archiveCurrent()}>
-                  Archive
+                <button
+                  className={`btn archive${confirmArchive ? ' confirming' : ''}`}
+                  onClick={archiveClick}
+                  title={confirmArchive ? 'Click again to archive this skill' : 'Archive this skill'}
+                >
+                  {confirmArchive ? 'Confirm' : 'Archive'}
                 </button>
                 <MarkdownModeSwitch mode={mdMode} onChange={setMdMode} />
                 <button
