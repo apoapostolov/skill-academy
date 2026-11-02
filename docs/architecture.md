@@ -20,7 +20,7 @@ Data directory: `~/.skill-academy/`
 ~/.skill-academy/
 ├── index.db            # SQLite index + journal
 ├── library/            # canonical packages for linked placements
-├── archive/            # archived packages, <date>-<name>/
+├── archive/            # default archive location; any drive path can be configured instead
 ├── snapshots/          # pre-update and pre-merge copies
 ├── reports/            # curation run reports
 ├── logs/               # rotating service log
@@ -117,6 +117,60 @@ CREATE TABLE events (            -- journal and activity timeline
   after     TEXT,                        -- JSON filesystem state
   undo_of   INTEGER,                     -- event id this reverses
   undone    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE archives (          -- named archive destinations, not subfolders
+  id          INTEGER PRIMARY KEY,
+  label       TEXT NOT NULL,
+  path        TEXT NOT NULL UNIQUE,      -- absolute or UNC
+  mode        TEXT NOT NULL DEFAULT 'move',  -- move | copy
+  is_default  INTEGER NOT NULL DEFAULT 0,
+  agent_code  TEXT,                      -- optional per-agent default
+  available   INTEGER NOT NULL DEFAULT 1,
+  last_check_at TEXT, error TEXT
+);
+
+CREATE TABLE archived_skills (
+  id          INTEGER PRIMARY KEY,
+  skill_name  TEXT NOT NULL,
+  archive_id  INTEGER NOT NULL REFERENCES archives(id),
+  dir_path    TEXT NOT NULL,             -- <archive>/<date>-<name>
+  package_hash TEXT NOT NULL,
+  placements  TEXT NOT NULL,             -- JSON, original placements
+  reason      TEXT,
+  event_id    INTEGER,
+  archived_at TEXT NOT NULL,
+  state       TEXT NOT NULL DEFAULT 'archived'  -- archived | restored | missing
+);
+
+CREATE TABLE skill_links (       -- a local composite skill absorbing a remote skill
+  id            INTEGER PRIMARY KEY,
+  skill_id      INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+  source_id     INTEGER NOT NULL REFERENCES sources(id),
+  source_path   TEXT NOT NULL,
+  source_name   TEXT NOT NULL,
+  track         TEXT NOT NULL DEFAULT 'commit',  -- release | commit
+  ref           TEXT,                    -- branch or tag when track=release
+  mode          TEXT NOT NULL DEFAULT 'distill', -- distill | attach | summarize
+  last_ingest_sha TEXT,
+  last_ingest_ref TEXT,                  -- tag name for release tracking
+  last_ingest_hash TEXT,                 -- hash of the local skill after ingest
+  state         TEXT NOT NULL DEFAULT 'ok',      -- ok | behind | error | paused
+  last_checked_at TEXT,
+  UNIQUE(skill_id, source_id, source_path)
+);
+
+CREATE TABLE ingest_runs (
+  id           INTEGER PRIMARY KEY,
+  skill_id     INTEGER NOT NULL REFERENCES skills(id),
+  link_id      INTEGER REFERENCES skill_links(id),
+  from_sha     TEXT, to_sha TEXT,
+  provider     TEXT, model TEXT,
+  tokens_in    INTEGER, tokens_out INTEGER, cost_usd REAL,
+  status       TEXT NOT NULL,            -- queued|running|dry|applied|failed|partial
+  added        INTEGER, changed INTEGER, conflicts INTEGER, dropped INTEGER,
+  snapshot_path TEXT, report_path TEXT, error TEXT,
+  started_at   TEXT, finished_at TEXT
 );
 
 CREATE TABLE llm_runs (
@@ -216,6 +270,57 @@ Rate limits: unauthenticated GitHub allows 60 requests per hour. The service tra
 
 Scheduler: a single timer with a 15-minute tick, reading due sources from the DB. Catch-up on start: any source whose `last_checked_at + interval` has passed runs once, with jitter. Nothing runs while the OS reports the machine asleep; the service re-checks on resume.
 
+## Archive service
+
+Archive is a location, not a convention. The service owns three rules.
+
+1. **Resolve, don't assume.** A location is resolved with `realpath` at use time. A missing drive, an unmounted network path, or a permission change marks it `available = 0` and refuses the operation with the path and the OS error. There is no silent fallback to a local folder.
+2. **Write the index before the move.** The `archived_skills` row and the location's `skill-academy-index.ndjson` line are written and flushed before the package moves, so a crash between the two leaves a recoverable record rather than an orphan.
+3. **Cross-volume is copy-then-verify-then-remove.** A move inside one volume is a rename. Across volumes it is: copy to a temp directory inside the destination, hash every file, rename into place, then remove the source. A hash mismatch aborts and keeps both copies.
+
+Restore reads `metadata.json` in the package directory, verifies the package hash, refuses on mismatch unless the user picks `restore as variant`, then recreates placements in their recorded modes. A location that moved on disk is re-pointed through Settings, and the index is rebuilt from the directories present.
+
+## Ingest engine
+
+Linked sources are a second write path into a local skill, and the only one that writes prose the user did not type. It is designed like the curator: read, propose, apply, snapshot.
+
+### Resolving the delta
+
+```
+last_ingest_sha ──► compare API ──► changed files ──► knowledge files ──► prompt
+```
+
+- GitHub: `GET /repos/{o}/{r}/compare/{base}...{head}` gives status, filenames and patches in one call. Release tracking resolves the tag to a commit first, then compares commits.
+- Local git: `git diff --name-status base..head`, then read the changed files at `head`.
+- A link with no `last_ingest_sha` ingests the whole skill at its current ref; that is the first run, and the report says so.
+
+Knowledge files: `SKILL.md`, `references/**/*.md`, `templates/**/*.{md,txt}`, and any `.md` inside the package. Excluded by default: scripts, binaries, anything over 256 KB, and anything outside the linked skill's directory. A `include_code` toggle adds scripts as text, off by default because code is not knowledge a model should paraphrase.
+
+### Prompt contract
+
+The model receives the local skill (body and reference manifest), the delta with file paths, and the existing ingested sections. It must return JSON with four arrays: `added_rules`, `changed_rules`, `conflicts`, `dropped`. Rules are imperative plus one clause of why. The prompt carries the same prohibitions as curation: no incident narration, no dates, no issue numbers, no duplication of content already present.
+
+Conflicts are first class. When the upstream rule contradicts a local rule, the local rule stays and the conflict is reported with both texts and the upstream commit. The model may not resolve a conflict by picking a side.
+
+### Applying
+
+1. Re-read the local skill; refuse if its hash differs from the hash captured when the run started.
+2. Snapshot to `~/.skill-academy/snapshots/ingest/<run-id>/`.
+3. Write the distilled sections into the body, and `references/ingested/<source-slug>.md` with the upstream commit and the list of rules taken from it. If the body would pass 24,000 characters, the new material goes to the reference file and the body gets one pointer line instead; the report states that it did.
+4. Record `last_ingest_sha`, `last_ingest_ref`, and the resulting `last_ingest_hash`.
+5. Journal one event with both hashes so undo is a restore, not a re-run.
+
+`attach` mode skips the model: it copies selected files into `references/ingested/<slug>/` and adds a manifest line. `summarize` writes one `references/ingested/<slug>-digest.md` from the delta and adds a one-line pointer in the body.
+
+### Loop protection
+
+- A run for a given skill takes a lock; a second run queues behind it.
+- An ingest that would produce zero new rules marks the link `up to date` and writes no files.
+- If the same delta fails twice, the link goes to `error` with the provider message and does not retry automatically.
+- Budget: per-run token cap with a clean stop and a partial report, same as curation.
+
+
+
 ## Curation runtime
 
 Described in [curation.md](curation.md). The runtime contract:
@@ -255,6 +360,23 @@ GET    /api/updates
 POST   /api/updates/:id/apply
 POST   /api/updates/:id/skip
 
+GET    /api/archives                 named destinations + availability
+POST   /api/archives                 {label, path, mode, is_default, agent_code}
+PATCH  /api/archives/:id
+POST   /api/archives/:id/check       realpath probe, free space
+GET    /api/archives/:id/items
+POST   /api/skills/:id/archive       {archive_id}
+POST   /api/archived/:id/restore     {on_mismatch:'variant'|'refuse'}
+
+GET    /api/skills/:id/links
+POST   /api/skills/:id/links         {source_id, source_path, track, ref, mode}
+PATCH  /api/links/:id                {mode, track, ref}
+DELETE /api/links/:id
+POST   /api/links/:id/check          resolve head, report delta size
+POST   /api/links/:id/ingest         {dry:true, budget_usd}
+GET    /api/ingest/runs
+POST   /api/ingest/runs/:id/apply
+
 GET    /api/events?cursor=            journal and activity
 POST   /api/events/:id/undo
 
@@ -277,7 +399,9 @@ Conventions: JSON in, JSON out; errors are `{error:{message, code, detail}}` wit
 ## Security
 
 - **Bind.** `127.0.0.1` only. A `--lan` flag requires a token generated on first use, sent as `Authorization: Bearer`, and rejects non-private source addresses.
-- **Path confinement.** Every path from the client is resolved with `realpath` and must sit under a registered root or under the data directory. Symlinks are resolved and re-checked; loops are rejected.
+- **Path confinement.** Every path from the client is resolved with `realpath` and must sit under a registered root, a configured archive location, or the data directory. Symlinks are resolved and re-checked; loops are rejected.
+- **Archive targets.** An archive location is user-chosen and may be any writable path, so it is validated separately: the path must exist, be writable, not be a skill root, and not be inside a skill package. A location that becomes unavailable fails the operation instead of falling back.
+- **Ingest writes.** Upstream text is untrusted data in the prompt, fenced and labelled. The model may only return JSON matching the schema; the app validates it before writing. Writes are confined to the composite skill's own directory plus its `references/ingested/`, snapshotted first, and a hash guard refuses if the local skill changed under the run.
 - **Untrusted content.** Markdown is rendered with a sanitizer that allows no scripts, no iframes, no event handlers, and no `javascript:` URLs. Remote images are blocked by default and load only after an explicit per-source opt-in.
 - **Prompt injection.** Skill text entering a model prompt is fenced as data, the system prompt says so, and the tool surface is an allowlist that cannot run shell commands or open network connections. Curation is dry-run by default.
 - **Secrets.** OS keychain (`@napi-rs/keyring`) with a DPAPI-encrypted fallback file; never in SQLite, never in `config.json`, never in a log, never in an SSE payload.

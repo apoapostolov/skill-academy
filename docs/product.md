@@ -84,6 +84,34 @@ Detail, including the ported prompt policy and thresholds, is in [curation.md](c
 
 **Acceptance.** A dry run over a library with known duplicates proposes the correct umbrellas, archives nothing, and its report validates against the schema. An applied merge restores byte-identical from archive. A prompt-injection string inside a skill body does not change the run's tool calls.
 
+### 6. Archive anywhere on disk
+
+Archive is a destination, not a folder hidden inside the skill directory. The app never writes `.archive` next to a skill.
+
+- **Named locations.** Settings › Archives holds a list: label, absolute path (including UNC and another drive), mode (`move` or `copy`), and one default. A location can also be the default for one agent, so archiving a Claude Code skill goes to `D:\Archives\claude` while everything else goes to `E:\Skill archive`.
+- **Layout.** `<location>/<YYYY-MM-DD>-<name>/` holds the package plus `metadata.json` (original placements, mode, source, hashes, reason, event id). The location also carries `skill-academy-index.ndjson`, one line per archived package, so a restore works after the database is rebuilt or the folder is carried to another machine.
+- **Availability is checked, not assumed.** A location on a disconnected drive shows `offline` and refuses the action with the path and the OS error. It never silently falls back to the local disk, because that is how an archive becomes a deletion.
+- **Restore.** Hash the package, compare with `metadata.json`, recreate placements in their original modes. A hash mismatch restores as a variant (`name-2`) instead of overwriting the live skill.
+- **Retention is off by default.** A location may carry a prune policy (keep N days), and pruning is a scheduled job that reports what it would remove before it removes anything.
+
+**Acceptance.** Archiving to `D:\Archives\skills` and restoring after deleting `index.db` returns the exact tree hash. Unplugging the drive makes the action fail with `E:\Skill archive is offline` and leaves the skill in place. Two archives containing the same skill name restore side by side without collision.
+
+### 7. Linked sources (composite skills)
+
+A local skill can absorb knowledge from several remote skills and stay one skill. The local package is the single artifact an agent loads; the remote skills are sources, not placements.
+
+- **Links.** Each link names a source, a skill path inside it, and what to track: a release tag or a commit on a branch. The skill detail shows a Linked list under the skill: source, tracked ref, last ingested, and status (`up to date`, `3 new commits`, `new release`, `local edits`, `error`).
+- **Change detection.** A link is compared against its last ingested ref, not against the repository head. A remote skill that changed five times while you were away reads as one delta, not five.
+- **Ingest modes.** `distill` (default) extracts durable rules and merges them into the local skill. `attach` copies upstream reference files under `references/ingested/<slug>/` without rewriting the body. `summarize` adds a digest section. The mode is per link.
+- **Ingest run.** Resolve the delta since the last ingested ref → select knowledge-bearing files (`SKILL.md`, `references/`, `templates/`, text only, size-capped) → one model call per link or per batch → structured result (`added_rules`, `changed_rules`, `conflicts`, `dropped`) → dry-run diff → apply with a snapshot.
+- **Local wins.** A rule that contradicts the local skill stays local and is listed as a conflict in the report. The app never silently replaces a rule the user wrote.
+- **Deduplication.** Content already present, or already ingested from another link, is dropped and reported. Two links teaching the same rule produce one rule with two provenance entries.
+- **Refresh.** Ingesting again with no upstream change is a no-op, not a rewrite. The resulting local hash is recorded so a later run can tell a user edit from an upstream delta.
+- **Protection.** A skill with links is marked composite. The curator never archives or absorbs it automatically; it may propose changes in a report only.
+- **Unlink** removes the relationship and keeps everything it produced.
+
+**Acceptance.** Linking two skills from different repositories and ingesting produces labelled sections plus `references/ingested/` entries with per-link commits. A second ingest with no upstream change writes nothing. A new upstream commit produces a dry-run containing only new rules. A contradicting rule keeps the local text and appears under conflicts. Restoring the snapshot returns the skill to its pre-ingest hash.
+
 ## Out of scope for v1
 
 Skill authoring from scratch, skill execution, cloud sync, team permissions, a hosted registry, Windows service installation, mobile.

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — linked sources</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#7A7C82;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--surface);
+           border-bottom:1px solid var(--sep)}
+  .mark{font-size:13px;font-weight:600}.mark span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .filter{flex:1;max-width:440px;height:28px;display:flex;align-items:center;gap:8px;padding:0 9px;border-radius:6px;
+          background:var(--bg);border:1px solid var(--sep);color:var(--text-2);font-size:12px}
+  .filter .kbd{margin-left:auto;font-size:10px;color:var(--text-3);border:1px solid var(--sep);border-radius:3px;padding:1px 4px}
+  .tright{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-2)}
+  .btn{height:26px;padding:0 10px;border-radius:5px;border:1px solid var(--sep);background:var(--surface);color:var(--text);
+       font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.45}
+  .panes{flex:1;display:flex;min-height:0}
+  .sidebar{width:232px;flex:0 0 232px;background:var(--sidebar);border-right:1px solid var(--sep);padding:8px;display:flex;
+           flex-direction:column;gap:1px}
+  .group{margin:12px 8px 3px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);font-weight:500}
+  .nav{display:flex;align-items:center;gap:8px;height:24px;padding:0 8px;border-radius:4px;font-size:12.5px;color:var(--text-2)}
+  .nav.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .nav .count{margin-left:auto;font-size:11px;color:var(--text-3)}
+  .nav.sel .count{color:var(--accent)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)} .dot.att{background:var(--attention)}
+  .listpane{width:340px;flex:0 0 340px;border-right:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
+  .lhead{display:flex;align-items:baseline;padding:9px 12px 5px;font-size:10.5px;color:var(--text-3)}
+  .lhead .r{margin-left:auto}
+  .row{position:relative;display:flex;gap:9px;padding:7px 10px 7px 12px;min-height:44px;align-items:flex-start;border-radius:6px}
+  .row:hover{background:var(--surface)} .row.sel{background:var(--accent-soft)}
+  .row.sel::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2.5px;background:var(--accent);border-radius:2px}
+  .row .ico{width:15px;height:15px;border-radius:3px;background:#C08A72;color:#101113;font-size:8.5px;font-weight:700;
+            display:grid;place-items:center;margin-top:3px;flex:0 0 15px}
+  .row .n{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px}
+  .row .d{font-size:10.5px;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .m{font-size:10.5px;color:var(--text-3);margin-top:2px;display:flex;gap:6px;align-items:center}
+  .pill{display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:3px;font-size:9.5px;
+        border:1px solid var(--sep);background:var(--bg);color:var(--text-2)}
+  .pill.att{color:var(--attention);border-color:rgba(181,139,98,.35);background:rgba(181,139,98,.10)}
+  .pill.upd{color:var(--accent);border-color:rgba(127,163,199,.35);background:var(--accent-soft)}
+  .linkico{font-size:10px;color:var(--text-3)}
+  .detail{flex:1;min-width:0;display:flex;flex-direction:column}
+  .dhead{padding:14px 22px 10px;border-bottom:1px solid var(--sep);display:flex;gap:11px;align-items:flex-start}
+  .dhead .ico{width:30px;height:30px;border-radius:6px;background:#C08A72;color:#101113;display:grid;place-items:center;
+              font-size:11px;font-weight:700}
+  .dtitle{min-width:0;flex:1}
+  .dtitle h1{font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.015em;display:flex;align-items:center;gap:8px}
+  .sub{font-size:10.5px;color:var(--text-3);margin-top:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .mono{font-family:var(--mono);font-size:10.5px}
+  .dctl{display:flex;align-items:center;gap:9px;padding-top:4px}
+  .ontxt{font-size:10.5px;color:var(--text-2);text-align:right;line-height:13px}
+  .tabs{display:flex;gap:18px;padding:0 22px;border-bottom:1px solid var(--sep)}
+  .tab{height:32px;display:flex;align-items:center;font-size:12.5px;color:var(--text-2);position:relative}
+  .tab.sel{color:var(--text);font-weight:600}
+  .tab.sel::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent);border-radius:2px 2px 0 0}
+  .tab .n{font-size:10.5px;color:var(--text-3);margin-left:5px}
+  .dbody{flex:1;overflow:hidden;padding:14px 22px 8px}
+  .head-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .head-row .t{font-size:10.5px;color:var(--text-3)}
+  .head-row .right{margin-left:auto;display:flex;gap:6px}
+  .lk{border:1px solid var(--sep);border-radius:6px;background:var(--surface);margin-bottom:6px;overflow:hidden}
+  .lk .main{display:flex;align-items:center;gap:10px;height:44px;padding:0 11px}
+  .lk .src{font-size:12.5px;font-weight:600;min-width:196px}
+  .lk .src span{color:var(--text-3);font-weight:400}
+  .lk .ref{font-family:var(--mono);font-size:10.5px;color:var(--text-3);flex:1}
+  .lk .state{font-size:10.5px;margin-right:6px;display:flex;align-items:center;gap:5px;color:var(--text-2)}
+  .lk .state.att{color:var(--attention)}
+  .lk .exp{border-top:1px solid var(--sep);padding:9px 11px;background:var(--bg)}
+  .lk .exp .line{font-size:10.5px;color:var(--text-2);display:flex;gap:8px;margin-bottom:4px}
+  .lk .exp .line b{color:var(--text-3);font-weight:500;width:78px;flex:0 0 78px}
+  .lk .exp .line span{font-family:var(--mono);font-size:10px}
+  .lk .exp .conf{color:var(--attention)}
+  .hint{font-size:10.5px;color:var(--text-3);margin-top:8px}
+  .empty-note{font-size:10.5px;color:var(--text-3);margin-top:12px}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .statusbar .mid,.statusbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+
+  <div class="toolbar">
+    <div class="mark">Library<span>Mixed</span></div>
+    <div class="filter"><span>Filter in Cursor</span><span class="kbd">⌘K</span></div>
+    <div class="tright"><span>Scanning 12 of 66</span><span>◉ 3</span></div>
+  </div>
+
+  <div class="panes">
+    <nav class="sidebar">
+      <div class="nav sel">All skills<span class="count">2140</span></div>
+      <div class="nav">Updates<span class="count">3</span></div>
+      <div class="nav">Mixed<span class="count">12</span></div>
+      <div class="nav">Drift<span class="count">1</span></div>
+      <div class="nav">Archive<span class="count">41</span></div>
+      <div class="group">Agents</div>
+      <div class="nav"><span class="dot"></span>Claude Code<span class="count">612</span></div>
+      <div class="nav"><span class="dot"></span>Cursor<span class="count">488</span></div>
+      <div class="nav"><span class="dot"></span>Hermes Agent<span class="count">398</span></div>
+      <div class="group">Sources</div>
+      <div class="nav"><span class="dot"></span>mattpocock/skills</div>
+      <div class="nav"><span class="dot att"></span>anthropics/skills</div>
+      <div class="nav">Add source…</div>
+    </nav>
+
+    <section class="listpane">
+      <div class="lhead"><span>Skills</span><span class="r">Recently changed ⌄</span></div>
+
+      <div class="row sel">
+        <div class="ico">P</div>
+        <div>
+          <div class="n">prose-review <span class="linkico">⛓</span></div>
+          <div class="d">Rewrites prose without changing meaning.</div>
+          <div class="m"><span class="pill upd">Linked 3</span><span class="pill">v2.2</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ico" style="background:#8FB3A4">T</div>
+        <div>
+          <div class="n">tdd</div>
+          <div class="d">Test-first loop with a failing test first.</div>
+          <div class="m"><span>mattpocock/skills</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ico" style="background:#A79BC4">H</div>
+        <div>
+          <div class="n">handoff</div>
+          <div class="d">Writes the next session's context.</div>
+          <div class="m"><span>mattpocock/skills</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ico" style="background:#8FA8C4">S</div>
+        <div>
+          <div class="n">seo-audit</div>
+          <div class="d">Technical and on-page audit.</div>
+          <div class="m"><span class="pill att">Update</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail">
+      <div class="dhead">
+        <div class="ico">P</div>
+        <div class="dtitle">
+          <h1>prose-review</h1>
+          <div class="sub"><span>local · custom</span><span>·</span><span class="pill upd">Composite</span>
+            <span>·</span><span class="mono">3 links</span><span>·</span><span>9 files</span><span>·</span><span>18 KB</span></div>
+        </div>
+        <div class="dctl">
+          <div class="ontxt">On in 3 of 5<br>agents</div>
+          <div class="sw" style="width:34px;height:20px;border-radius:999px;background:var(--ok);position:relative">
+            <i style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#F4F5F7;transform:translateX(14px)"></i>
+          </div>
+          <div style="width:24px;height:24px;display:grid;place-items:center;color:var(--text-3)">⋯</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab">Instructions</div>
+        <div class="tab">Agents</div>
+        <div class="tab sel">Linked<span class="n">3</span></div>
+        <div class="tab">Files<span class="n">9</span></div>
+        <div class="tab">Activity</div>
+        <div class="tab">Updates</div>
+        <div class="tab">Curation</div>
+      </div>
+
+      <div class="dbody">
+        <div class="head-row">
+          <span class="t">Sources this skill absorbs</span>
+          <span class="right"><button class="btn ghost">Add link</button><button class="btn primary">Ingest 2</button></span>
+        </div>
+
+        <div class="lk">
+          <div class="main">
+            <div class="src">mattpocock/skills <span>· prose-review</span></div>
+            <div class="ref">commit main · 4c81e0d</div>
+            <div class="state att">● 3 new commits</div>
+            <button class="btn">Ingest</button>
+          </div>
+          <div class="exp">
+            <div class="line"><b>Last ingest</b><span>a91f3c2 → 2f7c1b0 · 12 days ago</span></div>
+            <div class="line"><b>Contributed</b><span>4 rules added · 2 dropped as duplicates</span></div>
+            <div class="line conf"><b>Conflict</b><span>Local: keep quoted passages verbatim · Upstream: rewrite freely</span></div>
+            <div class="line"><b>Mode</b><span>distill → references/ingested/mattpocock-prose-review.md</span></div>
+          </div>
+        </div>
+
+        <div class="lk">
+          <div class="main">
+            <div class="src">anthropics/skills <span>· humanizer</span></div>
+            <div class="ref">release v1.4.0 · 9ab31cd</div>
+            <div class="state">● Up to date</div>
+            <button class="btn" disabled>Ingest</button>
+          </div>
+        </div>
+
+        <div class="lk">
+          <div class="main">
+            <div class="src">stop-slop <span>· short-humanizer</span></div>
+            <div class="ref">commit main · 77de412</div>
+            <div class="state att">● New release v2.2.0</div>
+            <button class="btn">Ingest</button>
+          </div>
+        </div>
+
+        <div class="hint">Distill merges rules into this skill. Local rules win on conflict, and every ingested rule keeps its commit.</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="statusbar"><span>2,140 skills · 66 roots · scanned 4m ago</span><span class="mid">2 links behind · 1 up to date</span><span class="right">148 MB · anthropic</span></div>
+</div>
+</body>
+</html>

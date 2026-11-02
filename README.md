@@ -21,7 +21,7 @@ Skill Academy scans those directories, treats duplicates as one skill with many 
 | [docs/curation.md](docs/curation.md) | Hermes curator port, both passes |
 | [docs/providers.md](docs/providers.md) | String Theory provider port |
 | [registry/agents.json](registry/agents.json) | The 67-row agent registry parsed from skills.sh |
-| [design/README.md](design/README.md) | Five screen mockups: library, updates, curation, onboarding, settings |
+| [design/README.md](design/README.md) | Six screen mockups: library, linked sources, updates, curation, onboarding, settings |
 
 ## Look
 

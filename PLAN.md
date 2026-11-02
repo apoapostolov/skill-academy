@@ -54,11 +54,11 @@ Full walker, frontmatter parser, file hashing, duplicate folding, drift-free res
 
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes.
 
-### P2 — Switches (5 days)
+### P2 — Switches and archives (6 days)
 
-Link farm, native rename mode, archive, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions.
+Link farm, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions.
 
-Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; killing the app mid-write leaves a recoverable state.
+Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; an archive to a second drive restores after `index.db` is deleted; an offline archive location refuses instead of falling back; killing the app mid-write leaves a recoverable state.
 
 ### P3 — Sources and updates (6 days)
 
@@ -72,13 +72,19 @@ Port the provider layer, settings UI with key and OAuth sign-in, model catalogue
 
 Exit: every one of the 11 providers answers a test call with a real key or a real sign-in; a dry-run curation on this library produces a report with merges that survive reading; an applied merge restores exactly from archive.
 
-### P5 — Polish (5 days)
+### P5 — Linked sources (6 days)
+
+Link a local skill to remote skills, resolve deltas since the last ingested ref, ingest in three modes, conflicts surfaced, provenance written, snapshot and undo.
+
+Exit: a first ingest on a skill linked to two repositories writes distilled sections and `references/ingested/` with per-link commits; a second run with no upstream change writes nothing; a contradicting rule keeps the local text and is listed; restore returns the pre-ingest hash; a composite skill survives a curation run untouched.
+
+### P6 — Polish (5 days)
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, notification center, reduced motion. Copy pass in Apo's voice.
 
 Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan.
 
-Total: about 31 working days. P0-P2 is a usable product.
+Total: about 37 working days. P0-P3 is a usable product; linking and curation are amplifiers, not prerequisites.
 
 ## Risks
 
@@ -91,6 +97,9 @@ Total: about 31 working days. P0-P2 is a usable product.
 | Prompt injection through skill text | Skill bodies are attacker-controlled content in a prompt | Fenced data blocks, tool allowlist, no shell, no network tools, dry-run first |
 | Scan cost on a large disk | Watching 66 roots including project trees | Depth cap, ignore list, per-root opt-out, incremental rescan, coalesced events |
 | Provider keys leak | Local web app with a browser surface | Keys in OS keychain, never in SQLite, never sent to the renderer, redacted logs |
+| Archive location offline or moved | Drive letters change, network shares drop; a silent fallback would orphan the skill | Resolve at use time, refuse with the path, index on disk, re-point in Settings |
+| Ingest writes bad prose into a good skill | It is the second LLM write path, and it edits a skill the user owns | Dry run, distilled rules only, conflicts listed, snapshot, hash guard, one-click restore |
+| Ingest cost on a large first delta | A whole-skill first ingest can be 100k tokens | File caps, per-run budget, `attach` mode for cheap copies, chunk by file group |
 
 ## Decisions
 
@@ -107,6 +116,8 @@ Total: about 31 working days. P0-P2 is a usable product.
 | D9 | Curation is dry-run by default | It is the only feature that can make the library worse |
 | D10 | Usage telemetry is honest about being unknown | No cross-agent usage signal exists; pretending otherwise would archive good skills |
 | D11 | Dark-first, grey-forward, PC-software density | Apo's stated taste: polished desktop software, dark default, neutral grey chrome, and a replaced signal palette (verdigris / raw sienna / rosewood / dusty blue) instead of system green, amber and red. Owned by [docs/ui.md](docs/ui.md) |
+| D12 | Archive is a configured destination, never a folder inside the skill | Users keep archives on another drive; a hidden `.archive` next to a skill is invisible to backups and dies with the folder |
+| D13 | Linked sources are composites owned locally, with remote provenance | One skill an agent loads, many upstreams; the local file stays the user's, and every ingested rule traces to a commit |
 
 ## Open questions for Apo
 

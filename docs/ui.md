@@ -169,7 +169,7 @@ One row per logical skill. Grouped by `Recently changed` default into Today, Thi
 - 16px agent glyph or source glyph; a stacked glyph with `+3` when placements span agents.
 - Name 13/590, one line, truncating with an ellipsis.
 - Description 11px secondary, max two lines, clamped.
-- Meta line 11px tertiary: source, version, and one badge when relevant (`Update`, `Drift`, `Mixed`, `Internal`, `Pinned`).
+- Meta line 11px tertiary: source, version, and one badge when relevant (`Update`, `Drift`, `Mixed`, `Linked 3`, `Internal`, `Pinned`).
 - Right: the switch (state as described below) and a `⋯` menu on hover.
 - Hover: surface lightens to raised, the `⋯` fades in over 120ms. Selected: accent-soft, 3px accent bar on the leading edge.
 - Multi-select: `⌘`/`ctrl` click, `shift` click for a range, `⌘A` selects the filtered set. A floating bulk bar appears 12px above the list foot with `N selected`, `Turn on`, `Turn off`, `Archive`, `Pin`, `Deselect`. Escape clears.
@@ -200,7 +200,7 @@ The switch is the product. Its three states must be readable without colour.
 
 Header (sticky, 116px): glyph, name 22/600, source line with a link, version pill, and the primary control — `On in 3 of 5 agents` with the switch at the right. `⋯` holds Rename, Pin, Reveal in file manager, Copy path, Archive.
 
-Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation.
+Segmented tabs directly under the header, underlined style, 13px: `Instructions`, `Agents`, `Linked`, `Files`, `Activity`, `Updates`, `Curation`. The tab set is stable across skills; empty tabs still render with an explanation.
 
 ### Instructions
 
@@ -222,6 +222,23 @@ Zed            ~/.agents/skills          same root as Codex  [ ◌ ]
 - Rows group by physical root; agents sharing a root are listed once with all their names (`Codex, Cline, Zed`).
 - Right-click a row for `Reveal`, `Repair placement`, `Convert to linked`.
 - Below the matrix, one line of explanation in 11px tertiary naming the mode the switch uses: `Turned off by renaming SKILL.md. The package stays where it is.`
+
+### Linked
+
+The knowledge this local skill absorbed from elsewhere. A linked list under the skill, one row per remote source, 48px:
+
+```
+mattpocock/skills · prose-review        upstream 4c81e0d      [ Ingest ]
+tracking: commit main · ingested 2 weeks ago · 3 new commits
+```
+
+- Columns: source and upstream skill path, the ref being tracked, last ingested (relative), and a right-aligned action.
+- Status chip: `Up to date`, `3 new commits`, `New release v1.3.2`, `Local edits`, `Error`. Attention uses the sienna token; up-to-date is neutral, not green.
+- The row expands in place to show what the last ingest contributed: rules added, conflicts, dropped, and a link into the run report. No modal for reading.
+- Header actions: `Add link` and `Ingest all` (disabled when every link is up to date, with the reason in its tooltip).
+- Under the list, one line in tertiary: how the ingest writes, for the mode of the selected link. `Distill merges rules into this skill. Local rules win on conflict.`
+- Empty state: `No linked sources. This skill is self-contained.` with `Add link`.
+- A composite skill shows a link glyph beside its name in the list, and `Linked 3` in the meta line. Pinned and composite are independent.
 
 ### Files
 
@@ -246,7 +263,9 @@ All sheets are centered, max 560px wide (720 for reports), 8px radius, 24px padd
 - **Add source** — segmented type (GitHub, Git repo, Folder), URL or path, branch, then a live check that shows what would be imported: N skills found, M new, K already present, with a scrollable list. Footer: `Add source`.
 - **Update review** — what changed per skill, the old and new hash, and a rendered diff for `SKILL.md`. Buttons: `Update 3 skills`, `Skip`, `Pin these`.
 - **Curation run** — a report sheet with four sections: Clusters found, Proposed merges, Proposed archives, Left alone. Each proposal is a row with the umbrella name, absorbed skills, and one-sentence reason. Footer states the token and cost estimate before applying and requires typing nothing; the confirm button reads `Apply 4 merges`.
-- **Settings** — sidebar inside the sheet: General, Agents, Sources, Providers, Curation, Advanced. Providers and Curation are described in their own documents.
+- **Ingest review** — the delta per link: commits since the last ingest, files read, proposed rules grouped as added, changed and conflicts, and the token and cost estimate before the run. Mode selector per link. Footer: `Ingest 3 sources`, with `Dry run` beside it.
+- **Archive** — destination picker listing every archive location with its free space and availability, the mode, and one line: `Restorable from E:\Skill archive`. Confirm reads `Archive skill`.
+- **Settings** — sidebar inside the sheet: General, Agents, Sources, Archives, Providers, Curation, Shortcuts, Advanced. Providers and Curation are described in their own documents. The Archives pane is a table: label, path, mode, default, availability dot, free space, and `Test`. Below it, a per-agent default dropdown and `Add location`. A path that is offline shows the OS error in place, not a toast.
 - **Registry** — the full 67-row agent table with detection state, paths, and an `Add custom root` action.
 
 ## Notifications
@@ -328,7 +347,13 @@ Voice: Apostol's operational profile. Short, factual, no encouragement, no perso
 | Repair sheet | Repair placement |
 | Local edits block | This skill changed on disk. Updating would overwrite your edits. |
 | Update confirm | Update 3 skills |
-| Archive confirm | Archive skill. It moves to your archive and can be restored. |
+| Archive confirm | Archive skill. It moves to E:\Skill archive and can be restored. |
+| Archive location offline | E:\Skill archive is offline. Reconnect the drive or pick another location. |
+| Linked, empty | No linked sources. This skill is self-contained. |
+| Linked, behind | 3 new commits since the last ingest. |
+| Ingest review | Ingest 3 sources |
+| Ingest conflict | Local rule kept. Upstream says: never rewrite a quoted passage. |
+| Ingest no-op | Nothing new upstream. No changes written. |
 | Scan failure row | 3 paths could not be read |
 | Curation dry run | Reading 380 skills. Nothing will change. |
 | Curation apply | Apply 4 merges |

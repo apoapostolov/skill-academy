@@ -38,6 +38,8 @@ Values below 1 are rejected and fall back to the default, because a zero-day thr
 Copied from `apply_automatic_transitions`, with the same guards:
 
 - `pinned` skills never move. `internal` skills never move.
+- A skill with linked sources is `composite`: the curator never archives or absorbs it automatically. It may propose a change in the report, but the pass leaves the package untouched. The same applies to a skill that is the target of another skill's link.
+- An ingested section carries provenance. The deterministic pass reports two links teaching the same rule as a merge candidate; it never edits either package.
 - A skill referenced by a suite, a collection, or another skill's `related` list is protected the way Hermes protects cron-referenced skills. The protection is computed at pass time, not stored.
 - A skill with no persisted record is **seeded** with a baseline timestamp of now and skipped for this pass. Its clock starts today, not at epoch.
 - A skill whose `last_activity_at` is unknown anchors on `created_at`, so a never-used skill does not self-archive.
@@ -89,7 +91,7 @@ The Hermes prompt is ported with these rules intact:
 - The target is **class-level** skills: an umbrella with labelled subsections, not one skill per incident, and not an umbrella that hoards one reference file per absorbed sibling.
 - Consolidation means distilling. A rule is imperative plus one clause of why. The same lesson twice becomes one rule. Incident narration, issue numbers, dates and quoted chatter are dropped.
 - A `SKILL.md` over roughly 24k characters is a consolidation target by itself; push topic depth into `references/`.
-- Hard rules: never touch pinned, internal or shadow skills; never delete; archive is the maximum destructive action; a skill with support files is either kept whole, fully re-homed with rewritten paths, or archived unchanged — never flattened.
+- Hard rules: never touch pinned, internal, shadow or composite skills; never delete; archive is the maximum destructive action; a skill with support files is either kept whole, fully re-homed with rewritten paths, or archived unchanged — never flattened.
 - "Each skill has a distinct trigger" is not a reason to keep. The bar is: would a maintainer write this as N skills or one skill with N sections.
 - Read before write is enforced by the tool layer, not by the prompt.
 
