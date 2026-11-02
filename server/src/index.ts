@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
-import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
+import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, REPO_ROOT } from './config'
 import {
   addJournal,
   copiesOfName,
@@ -484,6 +484,42 @@ function safeJson<T>(value: string, fallback: T): T {
     return fallback
   }
 }
+
+// One port for the product: the built interface is served by the same process that
+// answers the API, so there is no dev proxy to point at the wrong port.
+const UI_DIR = path.join(REPO_ROOT, 'web', 'dist')
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon'
+}
+
+app.setNotFoundHandler((request, reply) => {
+  const url = (request.raw.url ?? '/').split('?')[0]
+  if (url.startsWith('/api/')) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const relative = decodeURIComponent(url).replace(/^\/+/, '')
+  const candidate = path.join(UI_DIR, relative)
+  const inside = path.relative(UI_DIR, candidate)
+  const safe = inside !== '' && !inside.startsWith('..') && !path.isAbsolute(inside)
+  const chosen = safe && fs.existsSync(candidate) && fs.statSync(candidate).isFile()
+    ? candidate
+    : path.join(UI_DIR, 'index.html')
+  if (!fs.existsSync(chosen)) {
+    reply.code(503)
+    return { error: 'interface not built: npm run build' }
+  }
+  reply.type(MIME[path.extname(chosen)] ?? 'application/octet-stream')
+  return fs.readFileSync(chosen)
+})
 
 app
   .listen({ port: API_PORT, host: HOST })
