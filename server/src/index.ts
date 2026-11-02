@@ -11,7 +11,7 @@ import {
   listPlacements,
   querySkills,
   readRoots,
-  rebuildIndex,
+
   recentJournal,
   saveRoot,
   saveScan,
@@ -22,6 +22,7 @@ import {
   totals
 } from './db'
 import { place, unplace } from './placement'
+import { applyChange } from './apply'
 import { readPackage, readPackageFile } from './package'
 import { provenanceOf } from './provenance'
 import { loadRegistry } from './registry'
@@ -62,10 +63,8 @@ function broadcast(payload: Record<string, unknown>): void {
  * changed may be the placement itself, not the package.
  */
 function handleChange(change: Change): void {
-  const entry = scanOne(change.root)
-  const result = saveRoot(entry)
+  const result = applyChange(change.root, change.paths)
   if (result.added + result.changed + result.removed === 0) return
-  rebuildIndex()
   lastScanAt = new Date().toISOString()
   lastEventAt = lastScanAt
   lastEvent = { added: result.added, changed: result.changed, removed: result.removed, root: change.root.path }
@@ -79,6 +78,7 @@ function handleChange(change: Change): void {
   })
 }
 
+
 const watcher = new RootWatcher(handleChange)
 
 const TRASH_DIR = path.join(DATA_DIR, 'trash')
@@ -88,7 +88,6 @@ function rescanRoot(rootPath: string): void {
   const root = loadRegistry().roots.find((entry) => entry.path === rootPath)
   if (!root) return
   saveRoot(scanOne(root))
-  rebuildIndex()
   lastScanAt = new Date().toISOString()
   broadcast({ type: 'library', root: rootPath, added: 0, changed: 0, removed: 0, at: lastScanAt })
 }

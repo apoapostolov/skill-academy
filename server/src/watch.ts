@@ -6,7 +6,7 @@ export interface Change {
   paths: string[]
 }
 
-const DEBOUNCE_MS = 150
+const DEBOUNCE_MS = 60
 const IGNORED = /[\\/](\.git|node_modules|\.cache|\.skill-academy-tmp)([\\/]|$)/
 
 /**

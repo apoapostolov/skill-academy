@@ -207,7 +207,12 @@ function ScrollPane({
     }
 
     const vertical = measure(element.clientHeight, element.scrollHeight, element.scrollTop)
-    const horizontal = measure(element.clientWidth, element.scrollWidth, element.scrollLeft)
+    // A pane that clips horizontally cannot scroll sideways, so it must not advertise a bar.
+    const overflowX = window.getComputedStyle(element).overflowX
+    const horizontal =
+      overflowX === 'hidden' || overflowX === 'clip'
+        ? { offset: 0, size: 0 }
+        : measure(element.clientWidth, element.scrollWidth, element.scrollLeft)
     const scrollable = vertical.size > 0 || horizontal.size > 0
     if (!scrollable) {
       setThumb((current) => (current.visible ? { ...current, visible: false } : current))
@@ -891,7 +896,7 @@ export default function App() {
         />
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
-          <ScrollPane axis="both" className="detail-scroll">
+          <ScrollPane axis={wrap ? 'y' : 'both'} className="detail-scroll">
           {!detail && <div className="empty">Select a skill to read it.</div>}
           {detail && (
             <div className="detail-inner">

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { DB_PATH } from './config'
 import type { RootEntry, RootScan, ScanOutcome } from './scan'
@@ -46,7 +47,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 let database: DatabaseSync | undefined
 
@@ -120,7 +121,9 @@ function migrate(db: DatabaseSync): void {
     );
   `)
 
-  db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(name, description, tags, body, content='');`)
+  // contentless_delete lets one skill's row be removed without rebuilding the whole index,
+  // which is what makes an incremental scan cheap enough to answer in milliseconds.
+  db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(name, description, tags, body, content='', contentless_delete=1);`)
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
     String(SCHEMA_VERSION)
   )
@@ -129,6 +132,9 @@ function migrate(db: DatabaseSync): void {
 export function getDb(): DatabaseSync {
   if (!database) {
     database = new DatabaseSync(DB_PATH)
+    // WAL plus a relaxed sync is the difference between a scan that waits on fsync for
+    // every transaction and one that finishes in the time the parser needs.
+    database.exec('PRAGMA temp_store = MEMORY;')
     migrate(database)
   }
   return database
@@ -201,11 +207,12 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   )
 
   const idsByReal = new Map<string, number>()
+  const changedIds: number[] = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
     const row = existing.get(real) as { id: number; package_hash: string } | undefined
     if (!row) {
-      insert.run(
+      const inserted = insert.run(
         skill.path,
         real,
         skill.name,
@@ -222,17 +229,18 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         JSON.stringify(skill.health),
         at
       )
-      const created = db.prepare('SELECT id FROM skills WHERE real_path = ?').get(real) as { id: number } | undefined
-      if (created) {
-        idsByReal.set(real, created.id)
-        upsertBody.run(created.id, skill.text)
+      const createdId = Number(inserted.lastInsertRowid)
+      if (createdId > 0) {
+        idsByReal.set(real, createdId)
+        upsertBody.run(createdId, skill.text)
+        changedIds.push(createdId)
       }
       result.added += 1
       continue
     }
     idsByReal.set(real, row.id)
     if (row.package_hash === skill.packageHash) continue
-    update.run(
+    const updateResult = update.run(
       skill.path,
       skill.name,
       skill.description,
@@ -251,33 +259,65 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     )
     upsertBody.run(row.id, skill.text)
     result.changed += 1
+    changedIds.push(row.id)
   }
 
-  // Placements are what the scan just observed for this root; replace them wholesale.
-  db.prepare('DELETE FROM placements WHERE root_path = ?').run(entry.root.path)
-  const insertPlacement = db.prepare(`
-    INSERT INTO placements (skill_id, root_path, target_path, mode, seen_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(skill_id, root_path) DO UPDATE SET
-      target_path = excluded.target_path, mode = excluded.mode, seen_at = excluded.seen_at
-  `)
-  const placed = new Set<string>()
+  if (changedIds.length > 0) {
+    // A savepoint nests inside the scan-level transaction that saveScan already opened.
+    db.exec('SAVEPOINT index_changes')
+    try {
+      for (const id of changedIds) indexSkill(id)
+      db.exec('RELEASE index_changes')
+    } catch (error) {
+      db.exec('ROLLBACK TO index_changes')
+      throw error
+    }
+  }
+
+  // Placements are what the scan just observed for this root; replace them only when the
+  // observed set differs, so a rescan of unchanged disk performs no writes at all.
+  const observed: { id: number; target: string; mode: string }[] = []
   for (const placement of entry.placements) {
     const id = idsByReal.get(placement.realPath)
-    if (!id) continue
-    insertPlacement.run(id, entry.root.path, placement.targetPath, placement.mode, at)
-    placed.add(placement.realPath)
+    if (id === undefined) continue
+    observed.push({ id, target: placement.targetPath, mode: placement.mode })
+  }
+  const storedPlacements = db
+    .prepare('SELECT skill_id, target_path, mode FROM placements WHERE root_path = ?')
+    .all(entry.root.path) as { skill_id: number; target_path: string; mode: string }[]
+  const unchanged =
+    storedPlacements.length === observed.length &&
+    observed.every((next) =>
+      storedPlacements.some(
+        (old) => old.skill_id === next.id && old.target_path === next.target && old.mode === next.mode
+      )
+    )
+
+  if (!unchanged) {
+    db.prepare('DELETE FROM placements WHERE root_path = ?').run(entry.root.path)
+    const insertPlacement = db.prepare(`
+      INSERT INTO placements (skill_id, root_path, target_path, mode, seen_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(skill_id, root_path) DO UPDATE SET
+        target_path = excluded.target_path, mode = excluded.mode, seen_at = excluded.seen_at
+    `)
+    for (const placement of observed) insertPlacement.run(placement.id, entry.root.path, placement.target, placement.mode, at)
   }
 
   // A skill survives as long as any root can still see it, whatever path it is seen at.
   const stale = db
-    .prepare('SELECT id FROM skills WHERE id NOT IN (SELECT skill_id FROM placements)')
-    .all() as { id: number }[]
+    .prepare(`
+      SELECT s.id FROM skills s
+      WHERE s.id IN (SELECT skill_id FROM placements WHERE root_path = ?)
+        AND s.id NOT IN (SELECT skill_id FROM placements)
+    `)
+    .all(entry.root.path) as { id: number }[]
   if (stale.length > 0) {
     const remove = db.prepare('DELETE FROM skills WHERE id = ?')
     const removeBody = db.prepare('DELETE FROM skill_body WHERE skill_id = ?')
     for (const row of stale) {
       removeBody.run(row.id)
+      dropFromIndex(row.id)
       remove.run(row.id)
     }
     result.removed = stale.length
@@ -287,6 +327,40 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
 }
 
 /** Rebuild the search index once, after a batch of writes rather than per package. */
+let indexStatements: { select: StatementSyncLike; drop: StatementSyncLike; insert: StatementSyncLike } | null = null
+
+type StatementSyncLike = { run: (...args: unknown[]) => unknown; get: (...args: unknown[]) => unknown }
+
+function indexStatementsFor(): { select: StatementSyncLike; drop: StatementSyncLike; insert: StatementSyncLike } {
+  if (!indexStatements) {
+    const db = getDb()
+    indexStatements = {
+      select: db.prepare(`
+        SELECT s.id, s.name, s.description, s.tags, COALESCE(b.body, '') AS body
+        FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id WHERE s.id = ?
+      `) as unknown as StatementSyncLike,
+      drop: db.prepare('DELETE FROM skills_fts WHERE rowid = ?') as unknown as StatementSyncLike,
+      insert: db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)') as unknown as StatementSyncLike
+    }
+  }
+  return indexStatements
+}
+
+/** Writes one skill into the search index, replacing its previous row if any. */
+export function indexSkill(id: number): void {
+  const statement = indexStatementsFor()
+  const row = statement.select.get(id) as
+    | { id: number; name: string; description: string; tags: string; body: string }
+    | undefined
+  if (!row) return
+  statement.drop.run(id)
+  statement.insert.run(row.id, row.name, row.description, row.tags, row.body)
+}
+
+export function dropFromIndex(id: number): void {
+  getDb().prepare('DELETE FROM skills_fts WHERE rowid = ?').run(id)
+}
+
 export function rebuildIndex(): void {
   rebuildFts(getDb())
 }
@@ -302,7 +376,8 @@ export function saveScan(outcome: ScanOutcome): SaveResult {
       total.changed += result.changed
       total.removed += result.removed
     }
-    if (total.added + total.changed + total.removed > 0) rebuildFts(db)
+    // Rows were indexed incrementally as they were written; a full rebuild here would cost
+    // more than the scan itself and write every row again.
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')
@@ -432,7 +507,12 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
     result.changed = 1
   }
 
-  if (result.added + result.changed > 0) rebuildFts(db)
+  if (result.added + result.changed > 0) {
+    const id = (db.prepare('SELECT id FROM skills WHERE real_path = ?').get(skill.realPath ?? skill.path) as
+      | { id: number }
+      | undefined)?.id
+    if (id !== undefined) indexSkill(id)
+  }
   return result
 }
 
@@ -441,9 +521,20 @@ export function removeByPath(skillPath: string): number {
   const row = db.prepare('SELECT id FROM skills WHERE path = ?').get(skillPath) as { id: number } | undefined
   if (!row) return 0
   db.prepare('DELETE FROM skill_body WHERE skill_id = ?').run(row.id)
+  db.prepare('DELETE FROM placements WHERE skill_id = ?').run(row.id)
+  dropFromIndex(row.id)
   db.prepare('DELETE FROM skills WHERE id = ?').run(row.id)
-  rebuildFts(db)
   return 1
+}
+
+/** Deletes the packages behind these paths; returns how many rows went. */
+export function applyDeletion(paths: string[]): number {
+  let removed = 0
+  for (const candidate of paths) {
+    removed += removeByPath(candidate)
+    if (removed === 0) removed += removeByPath(path.dirname(candidate))
+  }
+  return removed
 }
 
 export function readRoots(): RootRow[] {
