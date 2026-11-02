@@ -80,7 +80,7 @@ export const RULES: Rule[] = [
     code: 'remote-pipe-execution',
     severity: 'high',
     prose: 'medium',
-    test: (line) => /\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|k|)sh\b/i.test(line)
+    test: (line) => COMMAND_START.test(line) && /\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|k|)sh\b/i.test(line)
   },
   {
     code: 'remote-code-evaluation',
