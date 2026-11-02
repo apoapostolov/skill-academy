@@ -111,6 +111,21 @@ interface ConsolidateMemberView {
   uniqueHeadings: string[]
 }
 
+interface FoldView {
+  key: string
+  survivor: string
+  model: string
+  ms: number
+  chars: number
+  keptRules: number
+  totalRules: number
+  droppedRules: string[]
+  inventedLines: string[]
+  status: 'clean' | 'lossy'
+  message?: string
+  text: string
+}
+
 interface ConsolidateGroupView {
   key: string
   mergeType: string
@@ -683,6 +698,10 @@ export default function App() {
   const [consolidateSummary, setConsolidateSummary] = useState<Record<string, number>>({})
   const [reviewBusy, setReviewBusy] = useState(false)
   const [reviewOpenKey, setReviewOpenKey] = useState('')
+  const [fold, setFold] = useState<FoldView | null>(null)
+  const [foldBusy, setFoldBusy] = useState('')
+  const [foldRead, setFoldRead] = useState(false)
+  const [foldApplied, setFoldApplied] = useState('')
   const [modelProvider, setModelProvider] = useState('')
   const [modelList, setModelList] = useState<string[]>([])
   const [modelAt, setModelAt] = useState<string | null>(null)
@@ -888,6 +907,50 @@ export default function App() {
     } finally {
       setReviewBusy(false)
     }
+  }
+
+  async function proposeFold(key: string) {
+    setFoldBusy(key)
+    setFold(null)
+    setFoldRead(false)
+    setFoldApplied('')
+    const response = await fetch('/api/consolidate/fold', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key, provider: 'opencode-go', model: 'deepseek-v4.1-flash' })
+    })
+    const payload = (await response.json()) as FoldView & { error?: string; detail?: unknown }
+    setFoldBusy('')
+    if (payload.error) {
+      setFoldApplied(`${payload.error}: ${JSON.stringify(payload.detail)}`)
+      return
+    }
+    setFold(payload)
+  }
+
+  async function writeFold() {
+    if (!fold) return
+    setFoldBusy(fold.key)
+    const response = await fetch('/api/consolidate/fold/apply', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        key: fold.key,
+        provider: 'opencode-go',
+        model: 'deepseek-v4.1-flash',
+        read: foldRead,
+        confirm: true,
+        dryRun: false
+      })
+    })
+    const payload = (await response.json()) as { applied?: boolean; archive?: string; error?: string; detail?: unknown }
+    setFoldBusy('')
+    setFoldApplied(
+      payload.error
+        ? `${payload.error}: ${JSON.stringify(payload.detail)}`
+        : `written · archived at ${payload.archive ?? 'unknown'}`
+    )
+    if (payload.applied) await openConsolidate()
   }
 
   async function saveProviderBase(id: string) {
@@ -1844,6 +1907,52 @@ export default function App() {
                           <div className="cgplan">
                             survivor <b>{group.plan.survivor}</b> · pointer {group.plan.pointerize.length} · router{' '}
                             {group.plan.routerize.length}
+                            <button
+                              className="ghost small foldbtn"
+                              onClick={() => void proposeFold(group.key)}
+                              disabled={foldBusy === group.key}
+                            >
+                              {foldBusy === group.key ? 'asking the model…' : 'Propose merge'}
+                            </button>
+                          </div>
+                        )}
+
+                        {fold?.key === group.key && (
+                          <div className="foldbox">
+                            <div className="foldaudit">
+                              <span className={`foldchip ${fold.status === 'clean' ? 'ok' : 'bad'}`}>{fold.status}</span>
+                              <span>
+                                kept {fold.keptRules}/{fold.totalRules} lines
+                              </span>
+                              <span>{fold.inventedLines.length} invented</span>
+                              <span>{fold.droppedRules.length} dropped</span>
+                              <span>
+                                {fold.model} · {(fold.ms / 1000).toFixed(1)} s · {fold.chars} chars
+                              </span>
+                            </div>
+                            <pre className="foldtext">{fold.text}</pre>
+                            {fold.droppedRules.length > 0 && (
+                              <div className="foldmissing">
+                                missing from the merge:
+                                {fold.droppedRules.slice(0, 5).map((line) => (
+                                  <code key={line}>{line.slice(0, 80)}</code>
+                                ))}
+                              </div>
+                            )}
+                            <div className="foldactions">
+                              <label className="foldread">
+                                <input type="checkbox" checked={foldRead} onChange={(event) => setFoldRead(event.target.checked)} />
+                                I read the merged body above
+                              </label>
+                              <button
+                                className="ghost small"
+                                disabled={!foldRead || fold.status !== 'clean' || foldBusy === fold.key}
+                                onClick={() => void writeFold()}
+                              >
+                                Write merged body
+                              </button>
+                            </div>
+                            {foldApplied && <div className="reviewnote">{foldApplied}</div>}
                           </div>
                         )}
                       </div>
