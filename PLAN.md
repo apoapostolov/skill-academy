@@ -84,6 +84,16 @@ Fringe cases are settled here so the code has one answer each, rather than a pro
 
 **Recovery.** Restoring a trashed copy whose name is taken offers replace or rename. Replace sends the current occupant to the trash first, so no copy is ever deleted outright. Trash entries record their origin (manual archive, or a source install with `repo@commit`), and a restore that would land with under three days left warns before it starts.
 
+### P3.5 — Versioning monitor (17 days)
+
+Every installed repository gets a monitor view, reachable from the top menu, that answers four questions per installation: is upstream ahead, what exactly changed, has my copy drifted, and what happens if I accept.
+
+Scope: one installation record per installed skill rather than per repository, a per-file baseline captured at install time so unchanged files cost no network, a check engine that fans one tree fetch across every installation in a repository, three levels of diff (ref to ref, package to package, file to file) plus the one that matters, local against remote, and an update path that reuses the install route with a gate, a policy and a rollback.
+
+Full specification, including the data model, the classification table, twenty power-user functions, nineteen edge cases with decided behaviour, and five open decisions: `docs/versioning-monitor.md`.
+
+Seventeen days added rather than absorbed, because a monitor that mostly works teaches the user to trust a blank screen.
+
 ### P3 — Sources and updates (11 days)
 
 Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
