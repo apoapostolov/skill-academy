@@ -36,6 +36,8 @@ browser  ──HTTP/SSE──  Fastify service  ──  SQLite (index + journal)
                             └── LLM layer (11 providers, ported)
 ```
 
+Per-feature inclusion decisions and milestone cuts are in [docs/triage.md](docs/triage.md).
+
 Detail in [architecture.md](docs/architecture.md). Provider port in [providers.md](docs/providers.md). Curator port in [curation.md](docs/curation.md).
 
 ## Phases
@@ -96,11 +98,11 @@ Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve th
 
 Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan.
 
-### P9 — Parity: CLI and MCP (6 days, after v1)
+### P9 — Parity: MCP, then CLI (6 days, after v1)
 
-A thin `ska` CLI over the local API — list, search, enable, disable, install, update, sync, scan, lock — then the same surface served over MCP so an agent can ask for a skill by name. Deferred because the service is the source of truth and the CLI adds no new capability, only reach.
+An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` first, because an agent asking for a skill is the likelier caller; then a thin `ska` CLI over the same local API for scripts and SSH. Deferred because the service is the source of truth and both add reach, not capability.
 
-Exit: enabling a skill from the CLI produces the same journal entry as the UI; `ska lock --check` exits non-zero on drift and is usable in CI; an MCP client can list and enable skills without the browser.
+Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
 Total: about 61 working days for v1. With the parity pass, 67. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 

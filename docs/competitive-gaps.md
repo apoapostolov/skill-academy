@@ -2,6 +2,8 @@
 
 2026-11-02. Fifteen skill-management tools read from their own documentation; star counts and languages pulled from the GitHub API the same day. Claims are marked as documented unless this audit verified them in source or a live run — SkillHub and the Vercel CLI are the two that were opened up.
 
+Inclusion decisions and milestone cuts live in [triage.md](triage.md); where the two disagree about sequencing, triage wins.
+
 The point of this document is not to copy features. It is to find the places where our narrow scope leaves a real hole, and to say which holes are worth filling.
 
 ## The field
