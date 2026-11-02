@@ -2144,3 +2144,17 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   align-items: center;
   min-width: 0;
 }
+
+.groupcount {
+  float: right;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav.more {
+  color: var(--text-3);
+  font-size: 11px;
+  padding-left: 12px;
+}
+
+.nav.more:hover { color: var(--text-2); }

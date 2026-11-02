@@ -465,6 +465,42 @@ function WrapGlyph({ wrapped }: { wrapped: boolean }) {
   )
 }
 
+/** Facet axes get their own group: a family or an env is a different question than a tag. */
+const TAG_AXES = ['family', 'env', 'tool', 'artifact', 'risk', 'locale', 'role', 'rev'] as const
+const AXIS_LABEL: Record<string, string> = {
+  family: 'Families',
+  env: 'Env',
+  tool: 'Tool',
+  artifact: 'Artifact',
+  risk: 'Risk',
+  locale: 'Locale',
+  role: 'Role',
+  rev: 'Rev'
+}
+
+function splitFacetTags(entries: Array<{ tag: string; count: number }>) {
+  const axes: Record<string, Array<{ tag: string; count: number }>> = {}
+  const plain: Array<{ tag: string; count: number }> = []
+  for (const entry of entries) {
+    const match = entry.tag.match(/^([a-z]+):/)
+    if (match && (TAG_AXES as readonly string[]).includes(match[1])) {
+      ;(axes[match[1]] ??= []).push(entry)
+    } else {
+      plain.push(entry)
+    }
+  }
+  for (const key of Object.keys(axes)) axes[key].sort((a, b) => b.count - a.count)
+  return { axes, plain }
+}
+
+function FacetRow({ entry, active, onPick }: { entry: { tag: string; count: number }; active: boolean; onPick: () => void }) {
+  return (
+    <button className={`nav ${active ? 'active' : ''}`} onClick={onPick}>
+      <TagLabel tag={entry.tag} /> <span>{entry.count.toLocaleString()}</span>
+    </button>
+  )
+}
+
 /** A tag written as `family:peer-review` reads better as the name plus a quiet pill. */
 // Facet axes that get a pill: env, tool, artifact, risk, locale, role. A family is a
 // workflow bundle and rev is a revision marker, both asked for earlier; they keep the
@@ -538,6 +574,7 @@ export default function App() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [axisOpen, setAxisOpen] = useState<Record<string, boolean>>({})
   const [scope, setScope] = useState<Scope>({ kind: 'all' })
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
@@ -1187,16 +1224,52 @@ export default function App() {
               {entry.category} <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
-          {facets && facets.tags.length > 0 && <div className="group">Tags</div>}
-          {facets?.tags.slice(0, 10).map((entry) => (
-            <button
-              key={entry.tag}
-              className={`nav ${scope.kind === 'tag' && scope.tag === entry.tag ? 'active' : ''}`}
-              onClick={() => setScope({ kind: 'tag', tag: entry.tag })}
-            >
-              <TagLabel tag={entry.tag} /> <span>{fmt.format(entry.count)}</span>
-            </button>
-          ))}
+          {facets &&
+            (() => {
+              const { axes, plain } = splitFacetTags(facets.tags)
+              const axisNames = TAG_AXES.filter((axis) => (axes[axis]?.length ?? 0) > 0)
+              return (
+                <>
+                  {axisNames.map((axis) => {
+                    const entries = axes[axis]
+                    const open = axisOpen[axis] === true
+                    const visible = open ? entries : entries.slice(0, 8)
+                    return (
+                      <div key={axis}>
+                        <div className="group">
+                          {AXIS_LABEL[axis]} <span className="groupcount">{entries.length}</span>
+                        </div>
+                        {visible.map((entry) => (
+                          <FacetRow
+                            key={entry.tag}
+                            entry={entry}
+                            active={scope.kind === 'tag' && scope.tag === entry.tag}
+                            onPick={() => setScope({ kind: 'tag', tag: entry.tag })}
+                          />
+                        ))}
+                        {entries.length > 8 && (
+                          <button
+                            className="nav more"
+                            onClick={() => setAxisOpen((previous) => ({ ...previous, [axis]: !open }))}
+                          >
+                            {open ? 'Show fewer' : `${entries.length - 8} more`}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {plain.length > 0 && <div className="group">Tags</div>}
+                  {plain.slice(0, 10).map((entry) => (
+                    <FacetRow
+                      key={entry.tag}
+                      entry={entry}
+                      active={scope.kind === 'tag' && scope.tag === entry.tag}
+                      onPick={() => setScope({ kind: 'tag', tag: entry.tag })}
+                    />
+                  ))}
+                </>
+              )
+            })()}
           {compareOpen && detail?.drift && (
             <div className="compare-panel" role="dialog" aria-label="Compare with latest">
               <div className="cp-head">
