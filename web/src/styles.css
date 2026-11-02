@@ -2156,3 +2156,23 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 }
 
 .nav.more:hover { color: var(--text-2); }
+
+/* One reading colour for every sidebar row — agents, folders, categories and tags alike —
+   bright enough to scan, with the active row still the brightest thing in the list. */
+.nav,
+.nav .tag-name,
+.nav .count,
+.nav span {
+  color: #c8cacf;
+}
+
+.nav:hover,
+.nav:hover span {
+  color: #dcdee3;
+}
+
+.nav.active,
+.nav.active span,
+.nav.active .tag-name {
+  color: #eceef1;
+}
