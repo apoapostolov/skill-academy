@@ -50,11 +50,11 @@ Node service, SQLite schema, registry loader from `registry/agents.json`, detect
 
 Exit: the app opens, detects at least 10 agent roots on this workstation, and lists skill counts per root without writing anything.
 
-### P1 — Scan and library (7 days)
+### P1 — Scan and library (9 days)
 
-Full walker, frontmatter parser, file hashing, duplicate folding, drift-free rescan. The library screen with sidebar, list, detail, and instant filter. Token accounting per skill and per agent set. Health view over the checks curation already computes.
+Full walker, frontmatter parser, file hashing, duplicate folding, drift-free rescan. A watcher per root pushes changes into the running app: a package that appears on disk is a row in under 500 ms, and a removal disappears as fast. The library screen with sidebar, list, detail, and instant filter. Token accounting per skill and per agent set. Health view over the checks curation already computes.
 
-Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
+Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; a skill created on disk appears in the running app in under 500 ms and its removal disappears in the same window; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
 ### P2 — Switches and archives (17 days)
 
@@ -104,7 +104,7 @@ An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` fir
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
-Total: about 71 working days for v1. With the parity pass, 77. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
+Total: about 73 working days for v1. With the parity pass, 79. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 
 ## Risks
 

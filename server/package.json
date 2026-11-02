@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

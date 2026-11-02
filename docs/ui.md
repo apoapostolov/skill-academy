@@ -168,7 +168,7 @@ Tracking: `-0.01em` on 15px and above, `0` below. Never below 11px except the mi
 Grouped lists with 26px rows, 8px group gaps, micro uppercase headers.
 
 1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Idle (count), Drafts (count), Archive, Trash (count).
-2. **Agents** — one row per detected agent with its count of placed skills and its token cost in tertiary, right-aligned: `612 · 48k`. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph.
+2. **Agents** — one row per agent, never a comma-joined owner list: agents that share a directory each get their own row with the same count and cost, because that is what they see. Count of placed skills and token cost in tertiary, right-aligned: `612 · 48k`. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph.
 3. **Presets** — one row per preset with its skill count and a play glyph on hover that applies it to the current agent scope; then "New preset…".
 4. **Projects** — one row per registered project with the number of skills it holds and a diverged count when non-zero; then "Add project…".
 5. **Sources** — one row per source with a state dot (`up to date`, `behind`, `error`), plus "Add source…".

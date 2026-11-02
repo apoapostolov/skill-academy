@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { DB_PATH } from './config'
+import type { RootEntry, RootScan, ScanOutcome } from './scan'
 import type { SkillRecord } from './skill'
-import type { RootScan } from './scan'
 
 export interface RootRow {
   path: string
@@ -40,46 +40,47 @@ export interface SkillQuery {
   offset?: number
 }
 
-/** Bump when the FTS or table shape changes; the index is rebuildable, so it is dropped. */
-const SCHEMA_VERSION = 2
+export interface SaveResult {
+  added: number
+  changed: number
+  removed: number
+}
+
+const SCHEMA_VERSION = 5
 
 let database: DatabaseSync | undefined
 
 function migrate(db: DatabaseSync): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS meta (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS roots (
-      path          TEXT PRIMARY KEY,
-      scope         TEXT NOT NULL,
-      owners        TEXT NOT NULL,
-      present       INTEGER NOT NULL,
-      skill_count   INTEGER NOT NULL DEFAULT 0,
-      truncated     INTEGER NOT NULL DEFAULT 0,
-      last_scan_at  TEXT,
-      error         TEXT
+      path TEXT PRIMARY KEY, scope TEXT NOT NULL, owners TEXT NOT NULL,
+      present INTEGER NOT NULL, skill_count INTEGER NOT NULL DEFAULT 0,
+      truncated INTEGER NOT NULL DEFAULT 0, last_scan_at TEXT, error TEXT
     );
     CREATE TABLE IF NOT EXISTS skills (
-      id            INTEGER PRIMARY KEY,
-      path          TEXT NOT NULL UNIQUE,
-      name          TEXT NOT NULL,
-      description   TEXT NOT NULL DEFAULT '',
-      root_path     TEXT NOT NULL,
-      scope         TEXT NOT NULL,
-      body_chars    INTEGER NOT NULL DEFAULT 0,
-      tokens        INTEGER NOT NULL DEFAULT 0,
-      tags          TEXT NOT NULL DEFAULT '[]',
-      package_hash  TEXT NOT NULL DEFAULT '',
-      mtime         TEXT NOT NULL DEFAULT '',
-      files         INTEGER NOT NULL DEFAULT 0,
-      bytes         INTEGER NOT NULL DEFAULT 0,
-      health        TEXT NOT NULL DEFAULT '[]',
-      seen_at       TEXT NOT NULL
+      id INTEGER PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      root_path TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      body_chars INTEGER NOT NULL DEFAULT 0,
+      tokens INTEGER NOT NULL DEFAULT 0,
+      tags TEXT NOT NULL DEFAULT '[]',
+      package_hash TEXT NOT NULL DEFAULT '',
+      mtime TEXT NOT NULL DEFAULT '',
+      files INTEGER NOT NULL DEFAULT 0,
+      bytes INTEGER NOT NULL DEFAULT 0,
+      health TEXT NOT NULL DEFAULT '[]',
+      seen_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS skills_root ON skills(root_path);
     CREATE INDEX IF NOT EXISTS skills_name ON skills(name COLLATE NOCASE);
+    CREATE TABLE IF NOT EXISTS skill_body (
+      skill_id INTEGER PRIMARY KEY,
+      body     TEXT NOT NULL
+    );
   `)
 
   const stored = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
@@ -87,6 +88,10 @@ function migrate(db: DatabaseSync): void {
     | undefined
   if (Number(stored?.value ?? 0) !== SCHEMA_VERSION) {
     db.exec('DROP TABLE IF EXISTS skills_fts;')
+    // The index is derived data: drop it and let the next scan re-parse every package,
+    // which is also how bodies get (re)indexed after a shape change.
+    db.exec('DELETE FROM skill_body;')
+    db.exec('DELETE FROM skills;')
   }
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(name, description, tags, body, content='');`)
   db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
@@ -102,50 +107,77 @@ export function getDb(): DatabaseSync {
   return database
 }
 
-export function saveScan(roots: RootScan[], skills: SkillRecord[]): string {
+function rebuildFts(db: DatabaseSync): void {
+  // A contentless FTS5 table has no row storage to delete from; `delete-all` is the
+  // only supported way to clear it before a rebuild.
+  db.exec("INSERT INTO skills_fts(skills_fts) VALUES('delete-all')")
+  db.exec(`
+    INSERT INTO skills_fts (rowid, name, description, tags, body)
+    SELECT s.id, s.name, s.description, s.tags, COALESCE(b.body, '')
+    FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id
+  `)
+}
+
+/**
+ * Writes only what changed. A rescan of an unchanged root touches nothing, which is
+ * what makes a five-minute safety sweep affordable and what the P1 exit asks for.
+ */
+export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResult {
   const db = getDb()
   const at = new Date().toISOString()
+  const result: SaveResult = { added: 0, changed: 0, removed: 0 }
 
-  const upsertRoot = db.prepare(`
-    INSERT INTO roots (path, scope, owners, present, skill_count, truncated, last_scan_at, error)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
-      scope = excluded.scope, owners = excluded.owners, present = excluded.present,
-      skill_count = excluded.skill_count, truncated = excluded.truncated,
-      last_scan_at = excluded.last_scan_at, error = excluded.error
-  `)
-  const upsertSkill = db.prepare(`
+  const rootRow = db.prepare('SELECT * FROM roots WHERE path = ?').get(entry.root.path) as RootRow | undefined
+  const nextCount = entry.root.count
+  const nextPresent = entry.root.exists ? 1 : 0
+  const nextTruncated = entry.root.truncated ? 1 : 0
+  const nextError = entry.root.error ?? null
+  if (
+    !rootRow ||
+    rootRow.skill_count !== nextCount ||
+    rootRow.present !== nextPresent ||
+    rootRow.truncated !== nextTruncated ||
+    rootRow.error !== nextError
+  ) {
+    db.prepare(`
+      INSERT INTO roots (path, scope, owners, present, skill_count, truncated, last_scan_at, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        scope = excluded.scope, owners = excluded.owners, present = excluded.present,
+        skill_count = excluded.skill_count, truncated = excluded.truncated,
+        last_scan_at = excluded.last_scan_at, error = excluded.error
+    `).run(
+      entry.root.path,
+      entry.root.scope,
+      JSON.stringify(entry.root.owners),
+      nextPresent,
+      nextCount,
+      nextTruncated,
+      at,
+      nextError
+    )
+  }
+
+  const existing = db.prepare('SELECT id, package_hash FROM skills WHERE path = ?')
+  const insert = db.prepare(`
     INSERT INTO skills (path, name, description, root_path, scope, body_chars, tokens, tags,
                         package_hash, mtime, files, bytes, health, seen_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
-      name = excluded.name, description = excluded.description, root_path = excluded.root_path,
-      scope = excluded.scope, body_chars = excluded.body_chars, tokens = excluded.tokens,
-      tags = excluded.tags, package_hash = excluded.package_hash, mtime = excluded.mtime,
-      files = excluded.files, bytes = excluded.bytes, health = excluded.health,
-      seen_at = excluded.seen_at
   `)
-  const selectId = db.prepare('SELECT id FROM skills WHERE path = ?')
-  const insertFts = db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)')
+  const update = db.prepare(`
+    UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
+      tags = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+    WHERE path = ?
+  `)
+  const upsertBody = db.prepare(
+    'INSERT INTO skill_body (skill_id, body) VALUES (?, ?) ON CONFLICT(skill_id) DO UPDATE SET body = excluded.body'
+  )
 
-  db.exec('BEGIN')
-  try {
-    for (const row of roots) {
-      upsertRoot.run(
-        row.path,
-        row.scope,
-        JSON.stringify(row.owners),
-        row.exists ? 1 : 0,
-        row.count,
-        row.truncated ? 1 : 0,
-        at,
-        row.error ?? null
-      )
-    }
-
-    const idByPath = new Map<string, number>()
-    for (const skill of skills) {
-      upsertSkill.run(
+  const keptIds: number[] = []
+  for (const skill of entry.skills) {
+    const row = existing.get(skill.path) as { id: number; package_hash: string } | undefined
+    if (!row) {
+      insert.run(
         skill.path,
         skill.name,
         skill.description,
@@ -161,31 +193,78 @@ export function saveScan(roots: RootScan[], skills: SkillRecord[]): string {
         JSON.stringify(skill.health),
         at
       )
-      const row = selectId.get(skill.path) as { id: number } | undefined
-      if (row) idByPath.set(skill.path, row.id)
+      result.added += 1
+      const created = db.prepare('SELECT id FROM skills WHERE path = ?').get(skill.path) as { id: number } | undefined
+      if (created) {
+        keptIds.push(created.id)
+        upsertBody.run(created.id, skill.text)
+      }
+      continue
     }
-
-    // Anything not seen in this pass is gone from disk or unreadable.
-    db.prepare('DELETE FROM skills WHERE seen_at <> ?').run(at)
-
-    db.exec('DELETE FROM skills_fts;')
-    for (const skill of skills) {
-      const id = idByPath.get(skill.path)
-      if (!id) continue
-      insertFts.run(id, skill.name, skill.description, skill.tags.join(' '), skill.text)
-    }
-
-    db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
-      'last_scan_at',
-      at
+    keptIds.push(row.id)
+    if (row.package_hash === skill.packageHash) continue
+    update.run(
+      skill.name,
+      skill.description,
+      skill.rootPath,
+      skill.scope,
+      skill.bodyChars,
+      skill.tokens,
+      JSON.stringify(skill.tags),
+      skill.packageHash,
+      skill.mtime,
+      skill.files,
+      skill.bytes,
+      JSON.stringify(skill.health),
+      at,
+      skill.path
     )
+    upsertBody.run(row.id, skill.text)
+    result.changed += 1
+  }
+
+  const stale = keptIds.length
+    ? db.prepare(`SELECT id FROM skills WHERE root_path = ? AND id NOT IN (${keptIds.map(() => '?').join(',')})`).all(
+        entry.root.path,
+        ...keptIds
+      )
+    : (db.prepare('SELECT id FROM skills WHERE root_path = ?').all(entry.root.path) as { id: number }[])
+  if (stale.length > 0) {
+    const remove = db.prepare('DELETE FROM skills WHERE id = ?')
+    const removeBody = db.prepare('DELETE FROM skill_body WHERE skill_id = ?')
+    for (const row of stale) {
+      removeBody.run(row.id)
+      remove.run(row.id)
+    }
+    result.removed = stale.length
+  }
+
+  return result
+}
+
+/** Rebuild the search index once, after a batch of writes rather than per package. */
+export function rebuildIndex(): void {
+  rebuildFts(getDb())
+}
+
+export function saveScan(outcome: ScanOutcome): SaveResult {
+  const db = getDb()
+  const total: SaveResult = { added: 0, changed: 0, removed: 0 }
+  db.exec('BEGIN')
+  try {
+    for (const entry of outcome.entries) {
+      const result = saveRoot(entry)
+      total.added += result.added
+      total.changed += result.changed
+      total.removed += result.removed
+    }
+    if (total.added + total.changed + total.removed > 0) rebuildFts(db)
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')
     throw error
   }
-
-  return at
+  return total
 }
 
 function buildMatch(q: string): string {
@@ -219,9 +298,7 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     filters.push('s.tags LIKE ?')
     params.push(`%"${query.tag}"%`)
   }
-  if (query.health) {
-    filters.push("s.health <> '[]'")
-  }
+  if (query.health) filters.push("s.health <> '[]'")
 
   if (match) {
     const from = 'FROM skills s JOIN skills_fts ON skills_fts.rowid = s.id'
@@ -245,6 +322,84 @@ export function getSkill(id: number): SkillRow | undefined {
   return getDb().prepare('SELECT * FROM skills WHERE id = ?').get(id) as unknown as SkillRow | undefined
 }
 
+/** One package, written only if its hash moved. Used by the watcher for sub-second updates. */
+export function saveOne(rootPath: string, scope: string, skill: SkillRecord): SaveResult {
+  const db = getDb()
+  const at = new Date().toISOString()
+  const result: SaveResult = { added: 0, changed: 0, removed: 0 }
+  const row = db.prepare('SELECT id, package_hash FROM skills WHERE path = ?').get(skill.path) as
+    | { id: number; package_hash: string }
+    | undefined
+
+  if (!row) {
+    db.prepare(`
+      INSERT INTO skills (path, name, description, root_path, scope, body_chars, tokens, tags,
+                          package_hash, mtime, files, bytes, health, seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      skill.path,
+      skill.name,
+      skill.description,
+      rootPath,
+      scope,
+      skill.bodyChars,
+      skill.tokens,
+      JSON.stringify(skill.tags),
+      skill.packageHash,
+      skill.mtime,
+      skill.files,
+      skill.bytes,
+      JSON.stringify(skill.health),
+      at
+    )
+    const created = db.prepare('SELECT id FROM skills WHERE path = ?').get(skill.path) as { id: number } | undefined
+    if (created) {
+      db.prepare(
+        'INSERT INTO skill_body (skill_id, body) VALUES (?, ?) ON CONFLICT(skill_id) DO UPDATE SET body = excluded.body'
+      ).run(created.id, skill.text)
+    }
+    result.added = 1
+  } else if (row.package_hash !== skill.packageHash) {
+    db.prepare(`
+      UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
+        tags = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?, seen_at = ?
+      WHERE path = ?
+    `).run(
+      skill.name,
+      skill.description,
+      rootPath,
+      scope,
+      skill.bodyChars,
+      skill.tokens,
+      JSON.stringify(skill.tags),
+      skill.packageHash,
+      skill.mtime,
+      skill.files,
+      skill.bytes,
+      JSON.stringify(skill.health),
+      at,
+      skill.path
+    )
+    db.prepare(
+      'INSERT INTO skill_body (skill_id, body) VALUES (?, ?) ON CONFLICT(skill_id) DO UPDATE SET body = excluded.body'
+    ).run(row.id, skill.text)
+    result.changed = 1
+  }
+
+  if (result.added + result.changed > 0) rebuildFts(db)
+  return result
+}
+
+export function removeByPath(skillPath: string): number {
+  const db = getDb()
+  const row = db.prepare('SELECT id FROM skills WHERE path = ?').get(skillPath) as { id: number } | undefined
+  if (!row) return 0
+  db.prepare('DELETE FROM skill_body WHERE skill_id = ?').run(row.id)
+  db.prepare('DELETE FROM skills WHERE id = ?').run(row.id)
+  rebuildFts(db)
+  return 1
+}
+
 export function readRoots(): RootRow[] {
   return getDb().prepare('SELECT * FROM roots ORDER BY path').all() as unknown as RootRow[]
 }
@@ -264,6 +419,15 @@ export function totals(): { skills: number; tokens: number; issues: number; root
   return { skills: row.skills, tokens: row.tokens, issues: row.issues ?? 0, roots: row.roots }
 }
 
+export function tokensByRoot(): Record<string, number> {
+  const rows = getDb()
+    .prepare('SELECT root_path, SUM(tokens) AS tokens, COUNT(*) AS count FROM skills GROUP BY root_path')
+    .all() as { root_path: string; tokens: number; count: number }[]
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.root_path] = row.tokens
+  return out
+}
+
 export function tagFacets(): { tag: string; count: number }[] {
   const rows = getDb().prepare('SELECT tags FROM skills').all() as { tags: string }[]
   const counts = new Map<string, number>()
@@ -281,3 +445,15 @@ export function tagFacets(): { tag: string; count: number }[] {
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
     .slice(0, 24)
 }
+
+export function countsByRoot(): Record<string, number> {
+  const rows = getDb().prepare('SELECT root_path, COUNT(*) AS n FROM skills GROUP BY root_path').all() as {
+    root_path: string
+    n: number
+  }[]
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.root_path] = row.n
+  return out
+}
+
+export type { RootScan }

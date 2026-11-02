@@ -5,7 +5,10 @@ interface State {
   uptimeMs: number
   registry: { roots: number; detected: number; codes: number }
   library: { skills: number; tokens: number; issues: number; roots: number }
+  watching: number
   lastScanAt: string | null
+  lastEventAt: string | null
+  lastEvent: { added: number; changed: number; removed: number; root: string } | null
 }
 
 interface Issue {
@@ -27,15 +30,25 @@ interface Skill {
 }
 
 interface Facets {
-  agents: { path: string; owners: string[]; origin: string; count: number }[]
+  agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
   tags: { tag: string; count: number }[]
   issues: number
 }
 
-type Scope = { kind: 'all' } | { kind: 'health' } | { kind: 'root'; path: string } | { kind: 'tag'; tag: string }
+type Scope =
+  | { kind: 'all' }
+  | { kind: 'health' }
+  | { kind: 'agent'; agent: string; path: string }
+  | { kind: 'tag'; tag: string }
 
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
+
+function compact(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`
+  return String(value)
+}
 
 function ago(iso: string | null): string {
   if (!iso) return 'never'
@@ -88,6 +101,8 @@ export default function App() {
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [widths, setWidths] = useState<{ sidebar: number; detail: number | null }>({ sidebar: 236, detail: null })
+  const [live, setLive] = useState(false)
+  const [pending, setPending] = useState(0)
 
   const dragRef = useRef<{ kind: 'sidebar' | 'detail'; x: number; value: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -143,7 +158,7 @@ export default function App() {
   function paramsFor(offset: number): string {
     const params = new URLSearchParams()
     if (debounced) params.set('q', debounced)
-    if (scope.kind === 'root') params.set('root', scope.path)
+    if (scope.kind === 'agent') params.set('root', scope.path)
     if (scope.kind === 'tag') params.set('tag', scope.tag)
     if (scope.kind === 'health') params.set('health', '1')
     params.set('limit', String(PAGE))
@@ -177,6 +192,34 @@ export default function App() {
       }
     }
   }
+
+  const fetchPageRef = useRef(fetchPage)
+  fetchPageRef.current = fetchPage
+
+  useEffect(() => {
+    const source = new EventSource('/api/events')
+    source.onopen = () => setLive(true)
+    source.onerror = () => setLive(false)
+    source.onmessage = (event) => {
+      setLive(true)
+      try {
+        const payload = JSON.parse(event.data)
+        if (payload?.type !== 'library') return
+      } catch {
+        return
+      }
+      loadState()
+      if ((listRef.current?.scrollTop ?? 0) < 120) {
+        fetchPageRef.current(0, true)
+        setPending(0)
+      } else {
+        setPending((value) => value + 1)
+      }
+    }
+    return () => source.close()
+    // The stream is opened once; it reads the current fetch through a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     setSelected(null)
@@ -231,8 +274,8 @@ export default function App() {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
     if (scope.kind === 'tag') return `#${scope.tag}`
-    const agent = facets?.agents.find((entry) => entry.path === scope.path)
-    return agent ? agent.owners.join(', ') : scope.path
+    if (scope.kind === 'agent') return scope.agent
+    return 'All skills'
   }, [scope, facets])
 
   return (
@@ -265,6 +308,21 @@ export default function App() {
       </div>
 
       {error && <div className="banner error">API error: {error}</div>}
+      {pending > 0 && (
+        <div className="banner">
+          {pending} {pending === 1 ? 'change' : 'changes'} while you were reading ·{' '}
+          <button
+            className="ghost"
+            onClick={() => {
+              setPending(0)
+              fetchPage(0, true)
+              if (listRef.current) listRef.current.scrollTop = 0
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="panes">
         <aside className="sidebar" style={{ width: widths.sidebar, flexBasis: widths.sidebar }}>
@@ -281,16 +339,20 @@ export default function App() {
           <div className="group">Agents</div>
           {facets?.agents.map((agent) => (
             <button
-              key={agent.path}
-              className={`nav root ${scope.kind === 'root' && scope.path === agent.path ? 'active' : ''}`}
-              onClick={() => setScope({ kind: 'root', path: agent.path })}
+              key={`${agent.agent}:${agent.path}`}
+              className={`nav root ${
+                scope.kind === 'agent' && scope.path === agent.path && scope.agent === agent.agent ? 'active' : ''
+              }`}
+              onClick={() => setScope({ kind: 'agent', agent: agent.agent, path: agent.path })}
               title={agent.path}
             >
               <span className="name">
-                {agent.owners.join(', ')}
+                {agent.agent}
                 {agent.origin === 'host' && <em className="badge">host</em>}
               </span>
-              <span>{fmt.format(agent.count)}</span>
+              <span>
+                {fmt.format(agent.count)} · {compact(agent.tokens)}
+              </span>
             </button>
           ))}
 
@@ -398,7 +460,10 @@ export default function App() {
       </div>
 
       <div className="statusbar">
-        <span>{state ? `${fmt.format(state.registry.detected)} roots · ${fmt.format(state.registry.roots)} known` : '…'}</span>
+        <span className="live">
+          <i className={live ? 'on' : ''} />
+          {state ? `watching ${state.watching} roots` : 'connecting…'}
+        </span>
         <span className="mid">
           {state ? `${fmt.format(state.library.tokens)} tokens across ${fmt.format(state.library.skills)} skills` : ''}
         </span>

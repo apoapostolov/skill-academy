@@ -64,6 +64,8 @@ Three placement modes, one archive. The mode is a property of the placement, cho
 
 - Source types: GitHub repository (public or token), local git repository, local folder, skills.sh entry, and a direct URL or zip of a skill package.
 - A source contributes skills by the same walk rules as an agent root. A skills.sh entry is searched and previewed through the same client and lands in the library like any other source. A URL or zip is fetched with the same limits the ecosystem uses: 10 MiB per response, 25 MiB extracted, 1,000 files, path-traversal guarded.
+- **Live.** A watcher per detected root, depth-capped to the same three levels the scan walks, coalescing bursts for 150 ms. A package that appears on disk is a row in the running app in under half a second, without a rescan of the whole machine: only the package that changed is parsed and written. A removal leaves the same way. The list updates over a push channel, and a change that arrives while the reader has scrolled away becomes a quiet "3 changes · Refresh" line instead of moving the list under them.
+- **Safety net.** A full sweep every five minutes catches anything the watcher missed (a network share, a suspended process, an editor that writes atomically). A sweep of unchanged disk writes nothing.
 - Custom roots: any directory can be registered as a read-only or managed root, so skills living outside the default agent paths are first-class instead of invisible.
 - Update detection is per skill, not per repo: the repo's new tree is walked, each skill's package hash is compared with the installed hash. A commit that touches one skill notifies once, not 200 times.
 - Event kinds: `release` (new tag), `commit` (new head), `skill-changed`, `skill-added`, `skill-removed`.

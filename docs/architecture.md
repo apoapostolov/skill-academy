@@ -379,6 +379,17 @@ Scheduler: a single timer with a 15-minute tick, reading due sources from the DB
 
 A direct URL is fetched with a 10 MiB response cap, extracted into a temp directory with a 25 MiB and 1,000-file cap, and rejected if any entry is absolute, contains `..`, or is a symlink. The extracted tree must contain at least one `SKILL.md`; anything else is a failed import with the reason, not a silent empty source. A zip is the same path without the fetch. Imported packages become library packages with `source: "url:<host>"` or `source: "zip:<filename>"` and are then tracked like any other skill.
 
+## Watching
+
+One watcher per detected root, never one watcher for the whole disk. The registry says which roots exist; `chokidar` watches each with `depth: 3`, `ignoreInitial`, `followSymlinks: false`, and `awaitWriteFinish` at 120 ms so a half-written `SKILL.md` is not parsed.
+
+- **Coalescing.** Events are bucketed per root and flushed 150 ms after the last one, so copying a directory with forty files is one update, not forty.
+- **Targeted writes.** A changed path is a package when its directory holds a `SKILL.md`. Up to 25 such packages are parsed individually and written through `saveOne`, which compares the package hash and writes nothing when it has not moved. Above that threshold the root is rescanned whole.
+- **Push.** The result goes out over `GET /api/events` (server-sent events, 25 s heartbeat). The client refetches the first page when it is at the top, and otherwise shows a count with a Refresh action, because a list that moves under the pointer is worse than a stale list.
+- **Safety net.** A full sweep every five minutes and one on boot. A sweep of unchanged disk writes nothing: rows are compared by hash, and the search index is rebuilt only when something actually changed.
+- **Self-writes.** Placement and archive operations write through the same journal; their paths are excluded from the change handler for the duration of the operation so the app does not react to its own edits.
+- **Failure.** A watcher error is logged with the root and the app keeps running with the five-minute sweep as the floor. Latency measured on this workstation: 311 ms from `mkdir` plus `SKILL.md` to a searchable row, 440 ms from removal to gone.
+
 ## Project workspaces
 
 A project is a git repository root plus the skill directories discovered inside it. Discovery runs the same walker with the project's own roots (`.claude/skills`, `.agents/skills`, `skills/`, and the rest of the registry's project patterns), depth-capped the same way.

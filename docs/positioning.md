@@ -103,10 +103,10 @@ Presets are the one addition worth paying for: with 2,140 skills, a named set to
 
 | Milestone | Phases | Days |
 |---|---|---|
-| M1 — Inventory and control | P0, P1, P2 | 27 |
-| M2 — Sources | P3 | 38 |
-| M3 — Intelligence | P4, P5, P6 | 60 |
-| M4 — Continuity | P7, P8 | 71 |
-| Parity (MCP, then CLI) | P9 | 77 |
+| M1 — Inventory and control | P0, P1, P2 | 29 |
+| M2 — Sources | P3 | 40 |
+| M3 — Intelligence | P4, P5, P6 | 62 |
+| M4 — Continuity | P7, P8 | 73 |
+| Parity (MCP, then CLI) | P9 | 79 |
 
-Nine days more than the plan before this audit: presets, project workspaces, archive imports, a second opinion on scans, row actions and a real trash. All of them are features a shipped peer has or a distribution channel requires, and all of them are priced.
+Eleven days more than the plan before this audit: presets, project workspaces, archive imports, a second opinion on scans, row actions, a real trash and live watching. All of them are features a shipped peer has or a distribution channel requires, and all of them are priced.

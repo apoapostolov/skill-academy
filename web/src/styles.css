@@ -719,3 +719,22 @@ h2 {
   font-size: 10.5px;
   text-align: center;
 }
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.live i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-3);
+  display: inline-block;
+}
+
+.live i.on {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px rgba(110, 158, 138, 0.18);
+}

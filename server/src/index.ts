@@ -1,11 +1,30 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
-import { getSkill, querySkills, readMeta, readRoots, saveScan, tagFacets, totals } from './db'
+import {
+  getSkill,
+  querySkills,
+  readRoots,
+  rebuildIndex,
+  removeByPath,
+  saveOne,
+  saveRoot,
+  saveScan,
+  tagFacets,
+  tokensByRoot,
+  totals
+} from './db'
 import { loadRegistry } from './registry'
-import { scanAll } from './scan'
-import { readSkillBody } from './skill'
+import { scanAll, scanOne } from './scan'
+import { parseSkill, readSkillBody } from './skill'
+import { RootWatcher, type Change } from './watch'
 
 const startedAt = new Date()
+let lastScanAt: string | null = null
+let lastEventAt: string | null = null
+let lastEvent: { added: number; changed: number; removed: number; root: string } | null = null
 
 interface RequestLine {
   at: string
@@ -16,6 +35,74 @@ interface RequestLine {
 }
 
 const requests: RequestLine[] = []
+const clients = new Set<ServerResponse>()
+
+function broadcast(payload: Record<string, unknown>): void {
+  const frame = `data: ${JSON.stringify(payload)}\n\n`
+  for (const client of clients) {
+    try {
+      client.write(frame)
+    } catch {
+      clients.delete(client)
+    }
+  }
+}
+
+/** A changed path is a package when its directory holds a SKILL.md. */
+function handleChange(change: Change): void {
+  const targets = new Set<string>()
+  for (const changed of change.paths) {
+    const dir = path.basename(changed) === 'SKILL.md' ? path.dirname(changed) : changed
+    if (fs.existsSync(path.join(dir, 'SKILL.md'))) targets.add(dir)
+  }
+
+  let added = 0
+  let changedCount = 0
+  let removed = 0
+
+  if (targets.size > 0 && targets.size <= 25) {
+    for (const dir of targets) {
+      const skill = parseSkill(dir, change.root.path, change.root.scope)
+      if (!skill) {
+        removed += removeByPath(dir)
+        continue
+      }
+      const result = saveOne(change.root.path, change.root.scope, skill)
+      added += result.added
+      changedCount += result.changed
+    }
+    // Paths that vanished: a removed directory has no SKILL.md, so it is caught here.
+    for (const gone of change.paths) {
+      if (fs.existsSync(gone)) continue
+      const dir = path.basename(gone) === 'SKILL.md' ? path.dirname(gone) : gone
+      removed += removeByPath(dir)
+    }
+  } else {
+    const entry = scanOne(change.root)
+    const result = saveRoot(entry)
+    added += result.added
+    changedCount += result.changed
+    removed += result.removed
+    if (added + changedCount + removed > 0) rebuildIndex()
+  }
+
+  if (added + changedCount + removed === 0) return
+  lastScanAt = new Date().toISOString()
+  lastEventAt = lastScanAt
+  lastEvent = { added, changed: changedCount, removed, root: change.root.path }
+  broadcast({ type: 'library', root: change.root.path, added, changed: changedCount, removed, at: lastScanAt })
+}
+
+const watcher = new RootWatcher(handleChange)
+
+function fullScan(): { added: number; changed: number; removed: number; ms: number; skills: number } {
+  const registry = loadRegistry()
+  watcher.sync(registry.roots)
+  const outcome = scanAll(registry.roots)
+  const result = saveScan(outcome)
+  lastScanAt = new Date().toISOString()
+  return { ...result, ms: outcome.ms, skills: outcome.skills }
+}
 
 const app = Fastify({ logger: false })
 
@@ -34,7 +121,6 @@ app.get('/api/health', async () => ({ ok: true, version: APP_VERSION }))
 
 app.get('/api/state', async () => {
   const registry = loadRegistry()
-  const detected = registry.roots.filter((root) => root.exists)
   return {
     version: APP_VERSION,
     startedAt: startedAt.toISOString(),
@@ -45,10 +131,13 @@ app.get('/api/state', async () => {
       rows: registry.rows,
       codes: registry.codes,
       roots: registry.roots.length,
-      detected: detected.length
+      detected: registry.roots.filter((root) => root.exists).length
     },
     library: totals(),
-    lastScanAt: readMeta('last_scan_at'),
+    watching: watcher.size,
+    lastScanAt,
+    lastEventAt,
+    lastEvent,
     requests: requests.length
   }
 })
@@ -74,23 +163,39 @@ app.get('/api/roots', async () => {
 })
 
 app.post('/api/scan', async () => {
-  const registry = loadRegistry()
-  const outcome = scanAll(registry.roots)
-  const finishedAt = saveScan(outcome.roots, outcome.skills)
-  const issues = outcome.skills.filter((skill) => skill.health.length > 0).length
+  const result = fullScan()
+  broadcast({ type: 'library', root: null, ...result, at: lastScanAt })
   return {
-    finishedAt,
-    ms: outcome.ms,
-    rootsScanned: outcome.roots.length,
-    rootsDetected: registry.roots.filter((root) => root.exists).length,
-    skills: outcome.skills.length,
-    tokens: outcome.skills.reduce((sum, skill) => sum + skill.tokens, 0),
-    issues,
-    slowest: [...outcome.roots]
-      .sort((a, b) => b.ms - a.ms)
-      .slice(0, 5)
-      .map((root) => ({ path: root.path, ms: root.ms }))
+    finishedAt: lastScanAt,
+    ms: result.ms,
+    skills: result.skills,
+    added: result.added,
+    changed: result.changed,
+    removed: result.removed,
+    watching: watcher.size
   }
+})
+
+app.get('/api/events', (request, reply) => {
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  })
+  reply.raw.write('retry: 2000\n\n')
+  clients.add(reply.raw)
+  const ping = setInterval(() => {
+    try {
+      reply.raw.write(': ping\n\n')
+    } catch {
+      clients.delete(reply.raw)
+    }
+  }, 25_000)
+  request.raw.on('close', () => {
+    clearInterval(ping)
+    clients.delete(reply.raw)
+  })
 })
 
 app.get('/api/skills', async (request) => {
@@ -105,11 +210,7 @@ app.get('/api/skills', async (request) => {
   })
   return {
     total: result.total,
-    rows: result.rows.map((row) => ({
-      ...row,
-      tags: safeJson(row.tags, []),
-      health: safeJson(row.health, [])
-    }))
+    rows: result.rows.map((row) => ({ ...row, tags: safeJson(row.tags, []), health: safeJson(row.health, []) }))
   }
 })
 
@@ -129,19 +230,29 @@ app.get('/api/skills/:id', async (request, reply) => {
 })
 
 app.get('/api/facets', async () => {
-  const roots = readRoots()
-  const stored = new Map(roots.map((row) => [row.path, row]))
+  const stored = new Map(readRoots().map((row) => [row.path, row]))
+  const tokens = tokensByRoot()
   const registry = loadRegistry()
 
-  return {
-    agents: registry.roots
-      .filter((root) => root.exists)
-      .map((root) => ({
+  // One row per agent, never one row per owner list: a shared root is several agents
+  // looking at the same directory, not a group with a name made of commas.
+  const agents = registry.roots
+    .filter((root) => root.exists)
+    .flatMap((root) =>
+      root.owners.map((agent) => ({
+        agent,
         path: root.path,
-        owners: root.owners,
         origin: root.origin,
-        count: stored.get(root.path)?.skill_count ?? 0
-      })),
+        count: stored.get(root.path)?.skill_count ?? 0,
+        tokens: tokens[root.path] ?? 0
+      }))
+    )
+    .sort((a, b) => a.agent.localeCompare(b.agent))
+
+  const uniqueAgents = [...new Map(agents.map((entry) => [entry.agent, entry])).values()]
+
+  return {
+    agents: uniqueAgents,
     tags: tagFacets(),
     issues: totals().issues
   }
@@ -161,9 +272,25 @@ app
   .listen({ port: API_PORT, host: HOST })
   .then(() => {
     console.log(`api listening on http://${HOST}:${API_PORT}`)
-    console.log(`data ${DATA_DIR}`)
+    const result = fullScan()
+    console.log(`initial scan ${result.ms}ms, ${result.skills} skills, watching ${watcher.size} roots`)
+    setInterval(() => {
+      const sweep = fullScan()
+      if (sweep.added + sweep.changed + sweep.removed > 0) {
+        broadcast({ type: 'library', root: null, ...sweep, at: lastScanAt })
+      }
+    }, 5 * 60_000).unref()
   })
   .catch((error) => {
     console.error('api failed to start:', error)
     process.exit(1)
   })
+
+async function shutdown(): Promise<void> {
+  await watcher.close()
+  await app.close()
+  process.exit(0)
+}
+
+process.on('SIGINT', () => void shutdown())
+process.on('SIGTERM', () => void shutdown())

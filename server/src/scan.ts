@@ -18,9 +18,14 @@ export interface RootScan {
   error?: string
 }
 
-export interface ScanOutcome {
-  roots: RootScan[]
+export interface RootEntry {
+  root: RootScan
   skills: SkillRecord[]
+}
+
+export interface ScanOutcome {
+  entries: RootEntry[]
+  skills: number
   ms: number
 }
 
@@ -43,35 +48,53 @@ function findPackages(dir: string, depth: number, out: string[]): void {
   }
 }
 
-export function scanAll(roots: AgentRoot[]): ScanOutcome {
+/** One root, parsed. Used by both the full sweep and the watcher. */
+export function scanOne(root: AgentRoot): RootEntry {
   const started = Date.now()
-  const results: RootScan[] = []
-  const skills: SkillRecord[] = []
-
-  for (const root of roots) {
-    if (!root.exists) continue
-    const rootStarted = Date.now()
-    const packages: string[] = []
-    findPackages(root.path, 0, packages)
-
-    let parsed = 0
-    for (const dir of packages) {
-      const record = parseSkill(dir, root.path, root.scope)
-      if (!record) continue
-      skills.push(record)
-      parsed += 1
+  if (!root.exists) {
+    return {
+      root: {
+        path: root.path,
+        scope: root.scope,
+        owners: root.owners,
+        exists: false,
+        count: 0,
+        truncated: false,
+        ms: 0,
+        error: root.error ?? 'MISSING'
+      },
+      skills: []
     }
+  }
 
-    results.push({
+  const packages: string[] = []
+  findPackages(root.path, 0, packages)
+  const skills: SkillRecord[] = []
+  for (const dir of packages) {
+    const record = parseSkill(dir, root.path, root.scope)
+    if (record) skills.push(record)
+  }
+
+  return {
+    root: {
       path: root.path,
       scope: root.scope,
       owners: root.owners,
       exists: true,
-      count: parsed,
+      count: skills.length,
       truncated: packages.length >= MAX_SKILLS_PER_ROOT,
-      ms: Date.now() - rootStarted
-    })
+      ms: Date.now() - started
+    },
+    skills
   }
+}
 
-  return { roots: results, skills, ms: Date.now() - started }
+export function scanAll(roots: AgentRoot[]): ScanOutcome {
+  const started = Date.now()
+  const entries = roots.filter((root) => root.exists).map(scanOne)
+  return {
+    entries,
+    skills: entries.reduce((sum, entry) => sum + entry.skills.length, 0),
+    ms: Date.now() - started
+  }
 }
