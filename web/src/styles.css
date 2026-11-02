@@ -1485,3 +1485,31 @@ h2 {
   border-color: rgba(110, 147, 184, 0.7);
   box-shadow: 0 0 0 3px rgba(110, 147, 184, 0.13);
 }
+
+/* Brand: a black-on-white mark, then the title in a sturdier face. */
+.menubar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.menubar .brand-name {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI Semibold', 'Inter Tight', Inter, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  white-space: nowrap;
+}

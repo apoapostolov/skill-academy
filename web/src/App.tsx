@@ -66,6 +66,17 @@ type Scope =
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
 
+function AcademyMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#000" strokeWidth="2.1" strokeLinecap="square" strokeLinejoin="miter">
+        <path d="M3 6.6 8 3.4l5 3.2" />
+        <path d="M3 10.8 8 14l5-3.2" />
+      </svg>
+    </span>
+  )
+}
+
 function GearGlyph() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
@@ -661,7 +672,10 @@ export default function App() {
     <div className="app">
       <div className="menubar">
         <div className="mb-left">
-          <b>Skill Academy</b>
+          <span className="brand">
+            <AcademyMark />
+            <span className="brand-name">Skill Academy</span>
+          </span>
           <span>File</span>
           <span>Edit</span>
           <span>View</span>
