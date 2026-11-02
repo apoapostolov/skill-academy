@@ -46,7 +46,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 10
 
 let database: DatabaseSync | undefined
 

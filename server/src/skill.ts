@@ -165,8 +165,22 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     health.push({ code: 'name-mismatch', detail: `Frontmatter says "${declaredName}", folder is "${folder}"` })
   }
 
+  // Only a path that starts at a boundary is a reference to this package. Without the
+  // left guard, `znamcenite/scripts/search.py` was read as `scripts/search.py` and every
+  // prose mention of another skill's folder became a false dangling reference.
   const referenced = new Set<string>()
-  for (const match of raw.matchAll(/(?:references|scripts|assets)\/([\w./-]+)/g)) referenced.add(match[0])
+  for (const match of raw.matchAll(/(?<![\w/.\\-])(?:references|scripts|assets)[\\/][\w.\\/-]+/g)) {
+    let candidate = match[0].replace(/\\/g, '/')
+    while (candidate.length > 1 && /[.,;:·]$/.test(candidate)) candidate = candidate.slice(0, -1)
+    const next = raw[(match.index ?? 0) + match[0].length] ?? ''
+    // `references/<topic>.md`, `references/topic-*.md` and `scripts/foo-` are shapes, not
+    // paths: the file cannot exist by that name, so they are not evidence of a break.
+    if (/[<*{[$]/.test(next)) continue
+    if (/[*{}<>$]/.test(candidate)) continue
+    if (/[-_]$/.test(candidate)) continue
+    if (candidate.endsWith('/')) continue
+    referenced.add(candidate)
+  }
   for (const relative of referenced) {
     if (!fs.existsSync(path.join(dir, relative))) {
       health.push({ code: 'dangling-reference', detail: `Missing ${relative}` })
