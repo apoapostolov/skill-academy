@@ -465,6 +465,21 @@ function WrapGlyph({ wrapped }: { wrapped: boolean }) {
   )
 }
 
+/** A tag written as `family:peer-review` reads better as the name plus a quiet pill. */
+const TAG_PREFIX = /^(family|env|rev):(.+)$/i
+
+function TagLabel({ tag }: { tag: string }) {
+  const match = tag.match(TAG_PREFIX)
+  if (!match) return <>#{tag}</>
+  const prefix = match[1].toLowerCase()
+  return (
+    <>
+      <span className="tag-name">{match[2]}</span>
+      <span className={`tag-prefix ${prefix}`}>{prefix}</span>
+    </>
+  )
+}
+
 /**
  * Rendered markdown, with the one behaviour a document needs from its tables: a horizontal
  * bar that stays hidden until the reader reaches the bottom edge or starts scrolling, then
@@ -1175,7 +1190,7 @@ export default function App() {
               className={`nav ${scope.kind === 'tag' && scope.tag === entry.tag ? 'active' : ''}`}
               onClick={() => setScope({ kind: 'tag', tag: entry.tag })}
             >
-              #{entry.tag} <span>{fmt.format(entry.count)}</span>
+              <TagLabel tag={entry.tag} /> <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
           {compareOpen && detail?.drift && (
@@ -1284,7 +1299,7 @@ export default function App() {
                 {detail.category ? <span className="chip category">{detail.category}</span> : null}
                 {detail.tags.map((tag) => (
                   <span className="chip" key={tag}>
-                    #{tag}
+                    <TagLabel tag={tag} />
                   </span>
                 ))}
                 <span className="chip">{fmt.format(detail.tokens)} tokens</span>
