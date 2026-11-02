@@ -537,6 +537,13 @@ export function applyDeletion(paths: string[]): number {
   return removed
 }
 
+/** Every indexed copy that shares this name, whatever root it lives in. */
+export function copiesOfName(name: string): { id: number; path: string; root_path: string; mtime: string }[] {
+  return getDb()
+    .prepare('SELECT id, path, root_path, mtime FROM skills WHERE lower(name) = lower(?) ORDER BY id')
+    .all(name) as { id: number; path: string; root_path: string; mtime: string }[]
+}
+
 export function readRoots(): RootRow[] {
   return getDb().prepare('SELECT * FROM roots ORDER BY path').all() as unknown as RootRow[]
 }

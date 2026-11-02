@@ -33,6 +33,13 @@ interface Skill {
   repo?: string
 }
 
+interface Drift {
+  thisVersion: string
+  latestVersion: string
+  latestId: number
+  latestRoot: string
+}
+
 interface Placement {
   agent: string
   root: string
@@ -347,9 +354,12 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [selected, setSelected] = useState<number | null>(null)
-  const [detail, setDetail] = useState<(Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> } }) | null>(null)
+  const [detail, setDetail] = useState<
+    (Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> }; drift?: Drift | null }) | null
+  >(null)
   const [openRef, setOpenRef] = useState<{ name: string; text: string } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
   const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>(() => {
     try {
       const stored = window.localStorage.getItem('skill-academy.collapsed-blocks')
@@ -837,6 +847,24 @@ export default function App() {
               #{entry.tag} <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
+          {compareOpen && detail?.drift && (
+            <div className="compare-panel" role="dialog" aria-label="Compare with latest">
+              <div className="cp-head">
+                <span>Compare with latest</span>
+                <button className="ghost iconbtn" onClick={() => setCompareOpen(false)} aria-label="Close">
+                  ×
+                </button>
+              </div>
+              <p>
+                This copy is <b>v{detail.drift.thisVersion}</b>. The newest copy is{' '}
+                <b>v{detail.drift.latestVersion}</b> in <code>{detail.drift.latestRoot}</code>.
+              </p>
+              <p className="cp-planned">
+                Planned: an AI pass reads both copies, reports anything only this copy knows, folds it into the newest
+                text, then replaces this copy with that result.
+              </p>
+            </div>
+          )}
           </ScrollPane>
         </aside>
 
@@ -922,6 +950,17 @@ export default function App() {
                 <span className="chip">{fmt.format(detail.tokens)} tokens</span>
                 <span className="chip">{fmt.format(detail.body_chars)} chars</span>
               </div>
+              {detail.drift && (
+                <div className="drift">
+                  <span className="drift-text">
+                    Behind: this copy is <b>v{detail.drift.thisVersion}</b>, and <b>v{detail.drift.latestVersion}</b> exists
+                    in another folder.
+                  </span>
+                  <button className="btn primary drift-action" onClick={() => setCompareOpen(true)}>
+                    Compare with latest
+                  </button>
+                </div>
+              )}
               {placements && (
                 <div className="placements">
                   <BlockHead

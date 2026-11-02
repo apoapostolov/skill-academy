@@ -1513,3 +1513,84 @@ h2 {
   color: var(--text);
   white-space: nowrap;
 }
+
+/* Version drift between copies: a warning line with its action on the right. */
+.drift {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(181, 139, 98, 0.45);
+  background: rgba(181, 139, 98, 0.1);
+  border-radius: 6px;
+}
+
+.drift .drift-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.drift .drift-text b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.drift .drift-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.compare-panel {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sep);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.compare-panel .cp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.compare-panel p {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.compare-panel .cp-planned {
+  color: var(--text-3);
+  border-left: 2px solid rgba(181, 139, 98, 0.5);
+  padding-left: 8px;
+}
+
+.drift .drift-action {
+  height: 24px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 650;
+  border-radius: 5px;
+}
+
+/* The action takes the warning's own colour, not the app accent. */
+.drift .drift-action,
+.drift .drift-action.btn.primary {
+  background: #b58b62;
+  color: #17130e;
+  border: 1px solid rgba(181, 139, 98, 0.9);
+}
+
+.drift .drift-action:hover,
+.drift .drift-action.btn.primary:hover {
+  background: #c69a6d;
+}

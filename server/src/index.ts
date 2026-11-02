@@ -6,12 +6,12 @@ import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
 import {
   addJournal,
+  copiesOfName,
   getSkill,
   listHiddenAgents,
   listPlacements,
   querySkills,
   readRoots,
-
   recentJournal,
   saveRoot,
   saveScan,
@@ -24,7 +24,7 @@ import {
 import { place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile } from './package'
-import { provenanceOf } from './provenance'
+import { compareVersions, provenanceOf } from './provenance'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import { readSkillBody } from './skill'
@@ -223,12 +223,22 @@ app.get('/api/skills/:id', async (request, reply) => {
     reply.code(404)
     return { error: 'not found' }
   }
+  const self = provenanceOf(row.path, String(row.mtime))
+  const copies = copiesOfName(row.name)
+    .map((copy) => ({ ...copy, ...provenanceOf(copy.path, copy.mtime) }))
+    .filter((copy) => copy.version)
+  const newest = copies.sort((a, b) => compareVersions(a.version, b.version)).at(-1)
+  const drift =
+    self.version && newest && newest.id !== row.id && compareVersions(self.version, newest.version) < 0
+      ? { thisVersion: self.version, latestVersion: newest.version, latestId: newest.id, latestRoot: newest.root_path }
+      : null
   return {
     ...row,
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
     body: readSkillBody(row.path),
-    package: readPackage(row.path)
+    package: readPackage(row.path),
+    drift
   }
 })
 

@@ -66,3 +66,15 @@ export function provenanceOf(skillPath: string, mtime: string): { version: strin
   entryCache.set(skillPath, { key: mtime, ...value })
   return value
 }
+
+/** Numeric-aware comparison: 1.10.0 is newer than 1.9.2, and 1.2 equals 1.2.0. */
+export function compareVersions(a: string, b: string): number {
+  const parse = (value: string) => (value.match(/\d+/g) ?? []).map(Number)
+  const left = parse(a)
+  const right = parse(b)
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const delta = (left[index] ?? 0) - (right[index] ?? 0)
+    if (delta !== 0) return delta
+  }
+  return a.localeCompare(b)
+}
