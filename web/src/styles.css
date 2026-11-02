@@ -2849,3 +2849,53 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   min-height: 40px;
   margin-top: 6px;
 }
+
+/* A skill reads as two lines: what it is, then what it does. */
+.imrow.impick {
+  height: auto;
+  min-height: 38px;
+  align-items: center;
+  padding: 3px 4px;
+}
+
+.imtext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.imline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.imrow.impick .imname {
+  flex: 0 1 auto;
+  color: #d3d6db;
+  font-size: 12px;
+}
+
+.imver {
+  flex: 0 0 auto;
+  color: #7d818a;
+  font-size: 10.5px;
+}
+
+/* One normalized line, the full text on hover over the row. */
+.imdesc {
+  color: #74787f;
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.imrow.impick .immeta {
+  flex: 0 0 auto;
+  padding-left: 8px;
+}

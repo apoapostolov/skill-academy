@@ -1389,8 +1389,8 @@ export default function App() {
           <a className="ghost btn-quiet" href="/dev">
             Dev panel
           </a>
-          <button className="ghost btn-quiet" onClick={() => setInstallOpen(true)}>
-            Install…
+          <button className="btn primary" onClick={() => setInstallOpen(true)}>
+            Install Skill
           </button>
                     <button className="btn primary" onClick={scan} disabled={scanning}>
             {scanning ? 'Scanning…' : 'Scan'}
@@ -1914,7 +1914,11 @@ export default function App() {
                         </div>
                         <div className="imlist">
                           {installFound.map((entry) => (
-                            <div className={`imrow ${installPicked.has(entry.path) ? '' : 'off'}`} key={entry.path}>
+                            <div
+                              className={`imrow impick ${installPicked.has(entry.path) ? '' : 'off'}`}
+                              key={entry.path}
+                              title={entry.description ?? undefined}
+                            >
                               <span
                                 className={`switch ${installPicked.has(entry.path) ? 'on' : ''}`}
                                 role="switch"
@@ -1929,7 +1933,17 @@ export default function App() {
                               >
                                 <span className="knob" />
                               </span>
-                              <span className="imname">{entry.name}</span>
+                              <span className="imtext">
+                                <span className="imline">
+                                  <span className="imname">{entry.name}</span>
+                                  {entry.version ? (
+                                    <span className="imver"> v{entry.version.replace(/^v/i, '')}</span>
+                                  ) : null}
+                                </span>
+                                <span className="imdesc">
+                                  {entry.description ? entry.description.replace(/\s+/g, ' ').trim() : 'No description'}
+                                </span>
+                              </span>
                               <span className="immeta">
                                 {entry.files} files · {Math.round(entry.bytes / 1024)} KB
                               </span>
