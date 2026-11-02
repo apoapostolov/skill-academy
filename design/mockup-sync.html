@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — sync</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#7A7C82;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;padding:0 14px;background:var(--surface);
+           border-bottom:1px solid var(--sep);font-size:13px;font-weight:600}
+  .toolbar span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .panes{flex:1;display:flex;min-height:0}
+  .navpane{width:212px;flex:0 0 212px;background:var(--sidebar);border-right:1px solid var(--sep);padding:8px}
+  .nav{display:flex;align-items:center;height:26px;padding:0 9px;border-radius:5px;font-size:12.5px;color:var(--text-2)}
+  .nav.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .main{flex:1;min-width:0;padding:18px 22px;overflow:hidden}
+  h2{font-size:15px;line-height:20px;font-weight:600;margin-bottom:3px}
+  .sub{font-size:11px;color:var(--text-3);margin-bottom:12px}
+  .btn{height:26px;padding:0 10px;border-radius:5px;border:1px solid var(--sep);background:var(--surface);color:var(--text);
+       font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.45}
+  .prof{border:1px solid var(--sep);border-radius:6px;background:var(--surface);overflow:hidden;margin-bottom:14px}
+  .ptop{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--sep)}
+  .ptop .n{font-size:13px;font-weight:600}
+  .ptop .u{font-family:var(--mono);font-size:10.5px;color:var(--text-3)}
+  .ptop .right{margin-left:auto;display:flex;gap:6px}
+  .grid{display:flex;gap:0}
+  .cell{flex:1;padding:9px 12px;border-right:1px solid var(--sep)}
+  .cell:last-child{border-right:none}
+  .cell .l{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
+  .cell .v{font-size:12px;margin-top:3px}
+  .cell .v.mono{font-family:var(--mono);font-size:11px}
+  .ok{color:var(--ok)} .att{color:var(--attention)}
+  .sect{display:flex;align-items:center;gap:9px;margin:4px 0 8px}
+  .sect .t{font-size:11px;color:var(--text-3)}
+  .sect .count{font-size:10px;border:1px solid rgba(181,139,98,.35);background:rgba(181,139,98,.1);color:var(--attention);
+               border-radius:3px;padding:1px 5px}
+  .sect .right{margin-left:auto;font-size:10.5px;color:var(--text-3)}
+  .conf{border:1px solid var(--sep);border-radius:6px;background:var(--surface);margin-bottom:8px;overflow:hidden}
+  .ch{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid var(--sep)}
+  .ch .path{font-family:var(--mono);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ch .state{font-size:10px;color:var(--attention);border:1px solid rgba(181,139,98,.35);background:rgba(181,139,98,.1);
+             border-radius:3px;padding:1px 5px}
+  .ch .right{display:flex;gap:4px}
+  .mini{height:22px;padding:0 7px;font-size:10.5px;border:1px solid var(--sep);border-radius:4px;background:var(--bg);
+        color:var(--text-2);display:inline-flex;align-items:center}
+  .mini.on{background:var(--accent-soft);border-color:rgba(127,163,199,.4);color:var(--accent);font-weight:600}
+  .diff{font-family:var(--mono);font-size:10.5px;line-height:16px;padding:6px 0}
+  .dl{padding:0 11px;white-space:pre}
+  .del{background:rgba(184,92,87,.12);color:#D9A5A1}
+  .add{background:rgba(110,158,138,.12);color:#A8C9BB}
+  .ctx{color:var(--text-3)}
+  .foot{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--sep);
+        font-size:10.5px;color:var(--text-3)}
+  .foot .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .statusbar .mid,.statusbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+  <div class="toolbar">Settings<span>Sync</span></div>
+
+  <div class="panes">
+    <nav class="navpane">
+      <div class="nav">General</div>
+      <div class="nav">Agents</div>
+      <div class="nav">Sources</div>
+      <div class="nav">Archives</div>
+      <div class="nav sel">Sync</div>
+      <div class="nav">Providers</div>
+      <div class="nav">Curation</div>
+      <div class="nav">Advanced</div>
+    </nav>
+
+    <div class="main">
+      <h2>Library backup</h2>
+      <div class="sub">Git, over a private repository. Keys never leave this machine.</div>
+
+      <div class="prof">
+        <div class="ptop">
+          <div>
+            <div class="n">Library backup</div>
+            <div class="u">git@github.com:apoapostolov/skill-academy-library.git · main</div>
+          </div>
+          <div class="right">
+            <button class="btn ghost">Test</button>
+            <button class="btn">Pull</button>
+            <button class="btn primary">Push</button>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="cell"><div class="l">Direction</div><div class="v">Two-way</div></div>
+          <div class="cell"><div class="l">Schedule</div><div class="v">On change · 5 min</div></div>
+          <div class="cell"><div class="l">Ahead</div><div class="v">3 commits</div></div>
+          <div class="cell"><div class="l">Behind</div><div class="v att">1 commit</div></div>
+          <div class="cell"><div class="l">Last push</div><div class="v">14:02</div></div>
+          <div class="cell"><div class="l">Secrets scan</div><div class="v ok">Passed</div></div>
+        </div>
+      </div>
+
+      <div class="sect"><span class="t">Conflicts from the last pull</span><span class="count">2</span>
+        <span class="right">Nothing is applied until every file is resolved</span></div>
+
+      <div class="conf">
+        <div class="ch">
+          <span class="path">library/mattpocock/skills/prose-review/SKILL.md</span>
+          <span class="state">Both changed</span>
+          <span class="right">
+            <span class="mini on">Keep local</span><span class="mini">Take remote</span><span class="mini">Keep both</span>
+          </span>
+        </div>
+        <div class="diff">
+          <div class="dl ctx">@@ ## Rules @@</div>
+          <div class="dl del">-Keep the inherited tone. Neutral is a default, not a rule.</div>
+          <div class="dl add">+Keep the inherited tone. Neutral is a default; the audience sets the register.</div>
+          <div class="dl ctx"> -Drop narration that exists only because a model produced it.</div>
+        </div>
+      </div>
+
+      <div class="conf">
+        <div class="ch">
+          <span class="path">library/anthropics/skills/humanizer/references/patterns.md</span>
+          <span class="state">Both changed</span>
+          <span class="right">
+            <span class="mini">Keep local</span><span class="mini">Take remote</span><span class="mini on">Keep both</span>
+          </span>
+        </div>
+        <div class="diff">
+          <div class="dl ctx">@@ -12,4 +12,6 @@</div>
+          <div class="dl add">+## Em dashes</div>
+          <div class="dl add">+A dash used as a pause is a tell. Replace it with a full stop.</div>
+          <div class="dl ctx"> Local list keeps its numbering.</div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>Snapshot taken before merge · 14:06</span>
+        <span class="right"><span>0 of 2 resolved</span><button class="btn primary" disabled>Finish merge</button></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar"><span>3 ahead · 1 behind · last sync 14:02</span><span class="mid">git 2.45</span><span class="right">library 2140 skills</span></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — themes</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#7A7C82;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;padding:0 14px;background:var(--surface);
+           border-bottom:1px solid var(--sep);font-size:13px;font-weight:600}
+  .toolbar span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .panes{flex:1;display:flex;min-height:0}
+  .navpane{width:212px;flex:0 0 212px;background:var(--sidebar);border-right:1px solid var(--sep);padding:8px}
+  .nav{display:flex;align-items:center;height:26px;padding:0 9px;border-radius:5px;font-size:12.5px;color:var(--text-2)}
+  .nav.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .main{flex:1;min-width:0;padding:16px 22px;overflow:hidden}
+  h2{font-size:15px;line-height:20px;font-weight:600}
+  .sub{font-size:11px;color:var(--text-3);margin:3px 0 12px}
+  .seg{display:inline-flex;border:1px solid var(--sep);border-radius:6px;overflow:hidden;margin-bottom:14px}
+  .seg span{padding:5px 12px;font-size:11.5px;color:var(--text-2);border-right:1px solid var(--sep)}
+  .seg span:last-child{border-right:none}
+  .seg span.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(4,148px);gap:14px 16px}
+  .theme{cursor:default}
+  .card{width:148px;height:96px;border-radius:6px;overflow:hidden;position:relative;
+        background:color-mix(in oklab, var(--a) 5%, #101113);
+        border:1px solid color-mix(in oklab, var(--a) 18%, rgba(255,255,255,.08))}
+  .card.sel{outline:2px solid var(--a);outline-offset:2px}
+  .bar{height:12px;background:color-mix(in oklab, var(--a) 9%, #141518);border-bottom:1px solid rgba(255,255,255,.07)}
+  .body{display:flex;height:84px}
+  .side{width:34px;background:color-mix(in oklab, var(--a) 8%, #141518);border-right:1px solid rgba(255,255,255,.07);
+        padding:6px 4px;display:flex;flex-direction:column;gap:4px}
+  .side i{display:block;height:3px;border-radius:2px;background:rgba(233,234,236,.28)}
+  .side i.s{width:70%;background:var(--a);opacity:.85}
+  .content{flex:1;padding:7px 8px;background:color-mix(in oklab, var(--a) 3%, #17181B)}
+  .r1{height:5px;width:66%;border-radius:2px;background:rgba(233,234,236,.75)}
+  .r2{height:4px;width:88%;border-radius:2px;background:rgba(233,234,236,.28);margin-top:4px}
+  .r3{height:4px;width:52%;border-radius:2px;background:rgba(233,234,236,.22);margin-top:3px}
+  .swrow{display:flex;align-items:center;gap:5px;margin-top:7px}
+  .sw{width:20px;height:11px;border-radius:999px;background:var(--a);position:relative}
+  .sw::after{content:"";position:absolute;top:1.5px;left:10px;width:8px;height:8px;border-radius:50%;background:#F4F5F7}
+  .tname{font-size:11px;color:var(--text-2);margin-top:5px;display:flex;gap:5px;align-items:center}
+  .tname b{font-weight:600;color:var(--text)}
+  .tname .cust{font-size:9px;color:var(--text-3);border:1px solid var(--sep);border-radius:3px;padding:0 3px}
+  .preview{margin-top:16px;border:1px solid var(--sep);border-radius:6px;background:var(--surface);overflow:hidden}
+  .ph{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid var(--sep);font-size:10.5px;
+      color:var(--text-3)}
+  .ph .right{margin-left:auto}
+  .prow{display:flex;align-items:center;gap:10px;height:44px;padding:0 11px;border-bottom:1px solid var(--sep)}
+  .prow:last-child{border-bottom:none}
+  .pico{width:15px;height:15px;border-radius:3px;background:#C08A72;color:#101113;font-size:8.5px;font-weight:700;
+        display:grid;place-items:center}
+  .pname{font-size:12.5px;font-weight:600}
+  .pmeta{font-size:10.5px;color:var(--text-3);margin-top:1px}
+  .states{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .st{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-2)}
+  .sw2{width:26px;height:15px;border-radius:999px;position:relative;background:var(--neutral)}
+  .sw2 i{position:absolute;top:1.5px;left:1.5px;width:12px;height:12px;border-radius:50%;background:#F4F5F7}
+  .sw2.on{background:var(--ok)} .sw2.on i{left:12px}
+  .sw2.mix{background:var(--ok)} .sw2.mix i{left:6px}
+  .sw2.mix i::after{content:"";position:absolute;left:2px;right:2px;top:5px;height:1.5px;background:var(--bg)}
+  .sig{display:flex;gap:6px;margin-left:auto}
+  .sg{font-size:9.5px;border-radius:3px;padding:1px 5px;border:1px solid var(--sep)}
+  .sg.ok{color:var(--ok);border-color:rgba(110,158,138,.35)}
+  .sg.at{color:var(--attention);border-color:rgba(181,139,98,.35)}
+  .sg.de{color:var(--destructive);border-color:rgba(184,92,87,.35)}
+  .note{font-size:10.5px;color:var(--text-3);margin-top:10px}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .statusbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+  <div class="toolbar">Settings<span>Appearance</span></div>
+
+  <div class="panes">
+    <nav class="navpane">
+      <div class="nav">General</div>
+      <div class="nav sel">Appearance</div>
+      <div class="nav">Agents</div>
+      <div class="nav">Sources</div>
+      <div class="nav">Archives</div>
+      <div class="nav">Sync</div>
+      <div class="nav">Providers</div>
+      <div class="nav">Curation</div>
+      <div class="nav">Advanced</div>
+    </nav>
+
+    <div class="main">
+      <h2>Appearance</h2>
+      <div class="sub">Twelve themes. The accent and the chrome tint change; the state colours do not.</div>
+
+      <div class="seg"><span>System</span><span class="on">Dark</span><span>Light</span></div>
+
+      <div class="grid">
+        <div class="theme"><div class="card sel" style="--a:#6E93B8"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Harbour</b><span>selected</span></div></div>
+
+        <div class="theme"><div class="card" style="--a:#7FA3C7"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Graphite</b><span>default</span></div></div>
+
+        <div class="theme"><div class="card" style="--a:#7E9AA8"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Fjord</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#5F8F8C"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Ink</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#6F9E72"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Fern</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#8FA37A"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Moss</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#9A8FB4"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Dusk</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#B08FA3"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Plum</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#B08A76"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Clay</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#B5A588"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Sand</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#9AA6AE"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Fog</b></div></div>
+
+        <div class="theme"><div class="card" style="--a:#B58A8A"><div class="bar"></div><div class="body">
+          <div class="side"><i class="s"></i><i></i><i></i><i></i></div>
+          <div class="content"><div class="r1"></div><div class="r2"></div><div class="r3"></div>
+            <div class="swrow"><div class="sw"></div></div></div></div></div>
+          <div class="tname"><b>Rose</b></div></div>
+      </div>
+
+      <div class="preview" style="--a:#6E93B8">
+        <div class="ph"><span>Preview · Harbour</span><span class="right">Signals are identical in every theme</span></div>
+        <div class="prow">
+          <div class="pico">P</div>
+          <div><div class="pname">prose-review</div><div class="pmeta">ApoMakesMods/prose-review · v2.1</div></div>
+          <div class="states">
+            <span class="st"><span class="sw2 on"><i></i></span>On</span>
+            <span class="st"><span class="sw2"><i></i></span>Off</span>
+            <span class="st"><span class="sw2 mix"><i></i></span>Mixed</span>
+            <span class="sig"><span class="sg ok">Enabled</span><span class="sg at">Drift</span><span class="sg de">Delete</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">Custom: one hue slider, chroma capped, same contrast gate. No hex field.</div>
+    </div>
+  </div>
+
+  <div class="statusbar"><span>Appearance: Dark · Harbour</span><span class="right">24 variants · contrast check passed</span></div>
+</div>
+</body>
+</html>

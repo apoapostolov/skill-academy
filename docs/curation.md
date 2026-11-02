@@ -39,6 +39,7 @@ Copied from `apply_automatic_transitions`, with the same guards:
 
 - `pinned` skills never move. `internal` skills never move.
 - A skill with linked sources is `composite`: the curator never archives or absorbs it automatically. It may propose a change in the report, but the pass leaves the package untouched. The same applies to a skill that is the target of another skill's link.
+- Drafts are outside the library, so the curator never sees one. Composition is not curation: ingest builds a skill from upstream repositories, the curator merges local skills into an umbrella. A composite that later needs consolidation goes through the same report and approval as anything else.
 - An ingested section carries provenance. The deterministic pass reports two links teaching the same rule as a merge candidate; it never edits either package.
 - A skill referenced by a suite, a collection, or another skill's `related` list is protected the way Hermes protects cron-referenced skills. The protection is computed at pass time, not stored.
 - A skill with no persisted record is **seeded** with a baseline timestamp of now and skipped for this pass. Its clock starts today, not at epoch.

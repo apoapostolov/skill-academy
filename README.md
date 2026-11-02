@@ -20,12 +20,13 @@ Skill Academy scans those directories, treats duplicates as one skill with many 
 | [docs/architecture.md](docs/architecture.md) | Runtime, data model, scan and update engines, API, security |
 | [docs/curation.md](docs/curation.md) | Hermes curator port, both passes |
 | [docs/providers.md](docs/providers.md) | String Theory provider port |
+| [docs/competitive-gaps.md](docs/competitive-gaps.md) | Audit of 15 peers, capability matrix, gap triage |
 | [registry/agents.json](registry/agents.json) | The 67-row agent registry parsed from skills.sh |
-| [design/README.md](design/README.md) | Six screen mockups: library, linked sources, updates, curation, onboarding, settings |
+| [design/README.md](design/README.md) | Ten screen mockups: library, linked sources, updates, curation, authoring, compose, sync, themes, onboarding, settings |
 
 ## Look
 
-Polished desktop software, dark by default, neutral grey chrome, colour only for state. The signal palette replaces system green, amber and red with verdigris, raw sienna, rosewood and a dusty blue. Measurements, states and copy rules are in [docs/ui.md](docs/ui.md).
+Polished desktop software, dark by default, neutral grey chrome, colour only for state. Twelve themes change the accent and the chrome tint; the state colours never move. The signal palette replaces system green, amber and red with verdigris, raw sienna, rosewood and a dusty blue. Measurements, states and copy rules are in [docs/ui.md](docs/ui.md).
 
 ## Status
 

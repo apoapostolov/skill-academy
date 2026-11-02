@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — authoring</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#7A7C82;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .ahead{height:52px;flex:0 0 52px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--surface);
+         border-bottom:1px solid var(--sep)}
+  .back{color:var(--text-2);font-size:12.5px;display:flex;align-items:center;gap:5px}
+  .name{font-size:15px;font-weight:600;letter-spacing:-.01em;margin-left:6px}
+  .tag{font-size:9.5px;border:1px solid rgba(127,163,199,.35);background:var(--accent-soft);color:var(--accent);
+       border-radius:3px;padding:1px 5px}
+  .saved{margin-left:auto;font-size:10.5px;color:var(--text-3)}
+  .btn{height:26px;padding:0 10px;border-radius:5px;border:1px solid var(--sep);background:var(--surface);color:var(--text);
+       font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .btn.ghost{background:transparent}
+  .fmt{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:4px;padding:0 12px;background:var(--sidebar);
+       border-bottom:1px solid var(--sep);color:var(--text-2);font-size:12px}
+  .fb{width:28px;height:24px;border-radius:4px;display:grid;place-items:center;font-size:11.5px}
+  .fb:hover{background:var(--hover);color:var(--text)}
+  .fb b{font-weight:700}
+  .fb i{font-style:italic}
+  .fsep{width:1px;height:16px;background:var(--sep);margin:0 6px}
+  .cols{flex:1;display:flex;min-height:0}
+  .outline{width:200px;flex:0 0 200px;background:var(--sidebar);border-right:1px solid var(--sep);padding:12px 8px}
+  .oh{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin:0 8px 6px}
+  .oi{font-size:11.5px;color:var(--text-2);padding:3px 8px;border-radius:4px;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis}
+  .oi.l2{padding-left:20px;font-size:11px;color:var(--text-3)}
+  .oi.cur{background:var(--accent-soft);color:var(--accent)}
+  .editor{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .code{flex:1;overflow:hidden;padding:10px 0;font-family:var(--mono);font-size:12.5px;line-height:20px}
+  .ln{display:flex}
+  .ln .no{width:44px;flex:0 0 44px;text-align:right;padding-right:12px;color:var(--text-3);font-size:11px;
+          user-select:none}
+  .ln .tx{white-space:pre;color:var(--text);padding-right:16px}
+  .ln.fm{background:rgba(127,163,199,.06)}
+  .ln.cur{background:rgba(255,255,255,.03)}
+  .k{color:#A8BFD4}.s{color:#A9C6A0}.c{color:var(--text-3)}.h{color:#D3B58A;font-weight:600}
+  .side{width:380px;flex:0 0 380px;border-left:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
+  .prev{flex:1;overflow:hidden;padding:14px 16px}
+  .ph{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+  .prev h1{font-size:17px;line-height:23px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  .prev h2{font-size:13.5px;line-height:20px;font-weight:600;margin:12px 0 4px}
+  .prev p{font-size:12.5px;line-height:19px;color:var(--text);margin-bottom:8px}
+  .prev li{font-size:12.5px;line-height:19px;margin-left:16px}
+  .val{border-top:1px solid var(--sep);background:var(--surface);padding:9px 14px 11px}
+  .vh{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);display:flex;align-items:center;gap:6px;
+      margin-bottom:6px}
+  .vh .right{margin-left:auto;font-size:10.5px;color:var(--ok);text-transform:none;letter-spacing:0}
+  .vf{display:flex;gap:7px;align-items:flex-start;font-size:11px;line-height:16px;padding:3px 0;color:var(--text-2)}
+  .vf .g{width:12px;flex:0 0 12px;margin-top:2px}
+  .g.ok{color:var(--ok)}.g.att{color:var(--attention)}.g.err{color:var(--destructive)}
+  .foot{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--sidebar);
+        border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .bar{width:40px;height:3px;border-radius:2px;background:var(--sep);overflow:hidden}
+  .bar i{display:block;height:3px;width:12%;background:var(--accent)}
+  .foot .mid{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+
+  <div class="ahead">
+    <span class="back">‹ Library</span>
+    <span class="name">prose-review</span>
+    <span class="tag">LLM draft</span>
+    <span class="saved">Saved 14:22</span>
+    <button class="btn ghost">Preview</button>
+    <button class="btn ghost">Validate</button>
+    <button class="btn primary">Save</button>
+  </div>
+
+  <div class="fmt">
+    <span class="fb"><b>H1</b></span><span class="fb"><b>H2</b></span>
+    <span class="fsep"></span>
+    <span class="fb"><b>B</b></span><span class="fb"><i>I</i></span><span class="fb">‹›</span><span class="fb">{ }</span>
+    <span class="fsep"></span>
+    <span class="fb">•</span><span class="fb">1.</span><span class="fb">❝</span>
+    <span class="fsep"></span>
+    <span class="fb">↗</span><span class="fb">▦</span><span class="fb">¶</span><span class="fb">⌗</span>
+  </div>
+
+  <div class="cols">
+    <nav class="outline">
+      <div class="oh">Outline</div>
+      <div class="oi cur">Rewrites prose…</div>
+      <div class="oi l2">When to use</div>
+      <div class="oi l2">Rules</div>
+      <div class="oi l2">Conflicts</div>
+      <div class="oi l2">References</div>
+    </nav>
+
+    <div class="editor">
+      <div class="code">
+        <div class="ln fm"><span class="no">1</span><span class="tx"><span class="c">---</span></span></div>
+        <div class="ln fm"><span class="no">2</span><span class="tx"><span class="k">name:</span> prose-review</span></div>
+        <div class="ln fm"><span class="no">3</span><span class="tx"><span class="k">description:</span> Rewrites prose without changing meaning. Keeps facts,</span></div>
+        <div class="ln fm"><span class="no">4</span><span class="tx">  attribution, uncertainty and conditions intact.</span></div>
+        <div class="ln fm"><span class="no">5</span><span class="tx"><span class="k">allowed-tools:</span> Read, Write, Edit</span></div>
+        <div class="ln fm"><span class="no">6</span><span class="tx"><span class="c">---</span></span></div>
+        <div class="ln"><span class="no">7</span><span class="tx"></span></div>
+        <div class="ln cur"><span class="no">8</span><span class="tx"><span class="h"># Rewrites prose without changing meaning</span></span></div>
+        <div class="ln"><span class="no">9</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">10</span><span class="tx">Keep facts, attribution, uncertainty and conditions exactly as written.</span></div>
+        <div class="ln"><span class="no">11</span><span class="tx">Decide whether the passage is chat, documentation or public prose</span></div>
+        <div class="ln"><span class="no">12</span><span class="tx">before editing a word.</span></div>
+        <div class="ln"><span class="no">13</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">14</span><span class="tx"><span class="h">## When to use</span></span></div>
+        <div class="ln"><span class="no">15</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">16</span><span class="tx">Load this when a draft reads like a model wrote it, or when a</span></div>
+        <div class="ln"><span class="no">17</span><span class="tx">document has to sound like its author without changing a claim.</span></div>
+        <div class="ln"><span class="no">18</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">19</span><span class="tx"><span class="h">## Rules</span></span></div>
+        <div class="ln"><span class="no">20</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">21</span><span class="tx">- One rule per sentence. If a sentence carries two rules, split it.</span></div>
+        <div class="ln"><span class="no">22</span><span class="tx">- Drop narration that exists only because a model produced it.</span></div>
+        <div class="ln"><span class="no">23</span><span class="tx">- Keep the inherited tone. Neutral is a default, not a rule.</span></div>
+        <div class="ln"><span class="no">24</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">25</span><span class="tx"><span class="h">## Conflicts</span></span></div>
+        <div class="ln"><span class="no">26</span><span class="tx"></span></div>
+        <div class="ln"><span class="no">27</span><span class="tx">Local rule kept: never rewrite a quoted passage. Upstream disagrees;</span></div>
+        <div class="ln"><span class="no">28</span><span class="tx">see <span class="s">references/ingested/mattpocock-prose-review.md</span>.</span></div>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="prev">
+        <div class="ph">Preview</div>
+        <h1>Rewrites prose without changing meaning</h1>
+        <p>Keep facts, attribution, uncertainty and conditions exactly as written. Decide whether the passage is chat, documentation or public prose before editing a word.</p>
+        <h2>When to use</h2>
+        <p>Load this when a draft reads like a model wrote it, or when a document has to sound like its author without changing a claim.</p>
+        <h2>Rules</h2>
+        <ul>
+          <li>One rule per sentence. If a sentence carries two rules, split it.</li>
+          <li>Drop narration that exists only because a model produced it.</li>
+          <li>Keep the inherited tone. Neutral is a default, not a rule.</li>
+        </ul>
+      </div>
+
+      <div class="val">
+        <div class="vh"><span>Validation</span><span class="right">Ready to save</span></div>
+        <div class="vf"><span class="g ok">✓</span><span>Frontmatter has name and description</span></div>
+        <div class="vf"><span class="g ok">✓</span><span>No reference points at a missing file</span></div>
+        <div class="vf"><span class="g att">!</span><span>Description is 142 characters. The retrieval window shows the first 60.</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="foot">
+    <span>412 words</span>
+    <span>2,818 / 24,000 chars</span>
+    <span class="bar"><i></i></span>
+    <span class="mid">line 8, col 1</span>
+    <span>anthropic · claude-sonnet-4-5</span>
+  </div>
+</div>
+</body>
+</html>

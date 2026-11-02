@@ -33,6 +33,41 @@ The default signal palette is replaced. System green, amber and red read as cons
 
 Every signal colour stays under 45% saturation and is checked at 4.5:1 against `--surface` for text use and 3:1 for a 2px indicator. Destructive colour appears only inside a destructive confirmation. Enabled colour is never decoration.
 
+### Themes
+
+Twelve themes, each with a dark and a light variant, plus one restrained custom accent. A theme changes two things: the accent and the tint of the grey ladder. It never changes state colours. Verdigris, raw sienna and rosewood stay identical in every theme, because a state that changes meaning with a skin is not a state.
+
+| Theme | Dark accent | Light accent | Character |
+|---|---|---|---|
+| Graphite | `#7FA3C7` | `#3D6B93` | Neutral default, cool grey |
+| Harbour | `#6E93B8` | `#37628C` | Deeper blue |
+| Fjord | `#7E9AA8` | `#3F6673` | Blue-grey, lowest chroma |
+| Ink | `#5F8F8C` | `#2F6663` | Deep teal, near-black chrome |
+| Fern | `#6F9E72` | `#4A7350` | Green, 31° clear of the enabled hue |
+| Moss | `#8FA37A` | `#556B45` | Olive, warm green |
+| Dusk | `#9A8FB4` | `#5B527A` | Muted violet |
+| Plum | `#B08FA3` | `#7A5266` | Mauve |
+| Clay | `#B08A76` | `#7A5341` | Terracotta |
+| Sand | `#B5A588` | `#736449` | Warm neutral |
+| Fog | `#9AA6AE` | `#55636B` | Cool grey, no colour pull |
+| Rose | `#B58A8A` | `#7A5050` | Dusty rose |
+
+Rules:
+
+- The accent hue stays at least 20° away from the enabled hue (`#6E9E8A`, roughly 155°), so no theme can make the whole interface read as "on".
+- Surface tint comes from the theme at 6% chroma or less. `--bg`, `--surface` and `--sidebar` shift a few points of hue; never enough to fight the content or the cropped screenshots.
+- Light variants darken the accent for contrast. The accent never carries body text.
+- A theme ships only when every pair in the token table passes the same contrast check as the default. The check runs across 24 variants in CI; a failing theme is not released.
+- Custom takes one hue slider and a chroma ceiling of 45%, then passes the same gate. No arbitrary hex field: a hand-picked hex is how a tool ends up with an unreadable accent.
+
+### Settings › Appearance
+
+Above the grid, a segmented control: `System`, `Dark`, `Light`. System follows the OS and switches live.
+
+Below it, the theme grid: three columns, 148×96 cards, each a live miniature of the window — sidebar strip, one list row, one switch — rendered in that theme's tokens, with the name beneath in 11px. The selected card carries a 2px accent ring. Clicking applies immediately, no confirmation, and the whole window including open sheets re-renders.
+
+A `Preview` strip under the grid shows one row at the current theme with the three states (on, off, mixed) side by side, so the signal colours can be judged before committing. Themes are stored per machine in settings, not synced.
+
 ## Window
 
 A three-pane layout filling the viewport, no page scroll. Only the list and the detail body scroll.
@@ -132,7 +167,7 @@ Tracking: `-0.01em` on 15px and above, `0` below. Never below 11px except the mi
 
 Grouped lists with 26px rows, 8px group gaps, micro uppercase headers.
 
-1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Archive.
+1. **Smart lists** — All skills (count), Updates (count, blue dot when > 0), Mixed (count), Drift (count, warn dot), Drafts (count), Archive.
 2. **Agents** — one row per detected agent with its own count of placed skills. Undetected agents are hidden behind "Show all agents" at the group foot, which opens the registry sheet. Rows carry a 16px agent glyph from the icon set.
 3. **Sources** — one row per source with a state dot (`up to date`, `behind`, `error`), plus "Add source…".
 4. **Tags** — top eight tags by count, then "All tags…".
@@ -256,6 +291,70 @@ Current version, source head, last checked, and a list of changes: release entri
 
 Only for skills the curator can touch. Shows state (active/stale/archived), last decided, usage signal (`unknown` is a first-class value with an explanation), and any proposed merge with a link into the run report.
 
+## Authoring
+
+A full-window surface, not a sheet. The menu bar and toolbar stay; the three panes are replaced.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ‹ Library   prose-review  [LLM draft]          Saved 14:22   Preview  Save  │ 52px
+├──────────────────────────────────────────────────────────────────────────────┤
+│ H1 H2  B  I  ‹›  {}  •  1.  ❝  ↗  ▦  ¶  ⌗                                   │ 36px
+├───────────────┬──────────────────────────────────┬───────────────────────────┤
+│ OUTLINE       │  1  ---                          │ PREVIEW                   │
+│ Rewrites…     │  2  name: prose-review           │ # Rewrites prose…         │
+│ When to use   │  3  description: Rewrites…       │                           │
+│ Rules         │  4  ---                          │ Keep facts, attribution…  │
+│ Conflicts     │  5                                │                           │
+│               │  6  ## When to use               │ ─────────────────────     │
+│               │  7  Read the audience first…     │ VALIDATION                │
+│               │                                  │ ✓ Frontmatter complete    │
+│               │                                  │ ⚠ Description 142 chars   │
+├───────────────┴──────────────────────────────────┴───────────────────────────┤
+│ 412 words · 2,818 / 24,000 chars ▓▓░░░░░░░░        line 7, col 24 · anthropic│ 24px
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header.** Back chevron returns to the library and asks before discarding unsaved changes. Name is inline-editable and becomes the slug on first save. Origin badge reads `New`, `LLM draft` or `Editing`. Save state: `Saved 14:22`, `Saving…`, `Unsaved changes`. Right: `Preview` toggle, `Validate`, `Save`.
+- **Format toolbar.** 28px buttons, 4px radius, 8px gaps, grouped by a 1px separator: H1, H2, bold, italic, inline code, code block, bullet list, ordered list, quote, link, table, frontmatter block. Each has a tooltip with its shortcut. Buttons act on the selection and keep focus in the editor.
+- **Outline.** 200px, one row per heading, 22px, indented by level, click scrolls to the heading, current heading highlighted. Empty state: `No headings yet.`
+- **Editor.** CodeMirror, mono 12.5/20, soft wrap, current-line highlight, markdown syntax colouring, line numbers on by default (toggle in the header menu). The frontmatter block gets a subtle tinted background so the boundary is obvious.
+- **Right rail.** 380px, two tabs: `Preview` and `Sources`. Preview is sanitized render at 13/20, capped at 640px of text width, updating on a 120ms debounce and never scroll-jumping.
+- **Validation.** Docked at the bottom of the rail regardless of tab: a one-line summary (`2 errors, 1 warning` or `Ready to save`) that expands into findings, 24px rows, error glyph in rosewood, warning in sienna. Clicking a finding moves the caret to its line. The save button is disabled while any error stands, and its tooltip names the first one.
+- **Footer.** Words, characters against the 24,000 cap as a 40px hairline, caret position, and the provider plus model when the draft came from or is being improved by a model.
+
+### New skill
+
+`⌘N` opens a 560px sheet with two entry rows, each a 72px card:
+
+- **Generate from a prompt.** Opens the generate form below.
+- **Start empty.** Asks for a name and a description, then opens the editor with a scaffold (`When to use`, `Rules`, `References`) and the Sources tab selected. Nothing is written to an agent directory.
+
+### Generate a draft
+
+A 560px sheet over the editor surface, 8px radius.
+
+- A 4-row prompt field, placeholder `What should this skill do, and when should it be used?`
+- **Source material** as chips: `Attach skill`, `Attach file`, `Paste text`. Each chip opens a picker; attachments are listed with a remove control. Nothing is pulled implicitly.
+- **Model** row: provider, model, and `about $0.04` estimate, updating with the prompt length.
+- Footer: `Generate draft`. On completion the editor opens the draft with the origin badge and a one-line summary of what the model produced. A failed schema is reported as a failed run with the reason, never a partial draft.
+
+### Build from sources
+
+The Sources tab is the same link list as the detail pane, scoped to this draft.
+
+- Empty state: `No sources yet. Add a skill to ingest, or write the first rule.` with `Add source`.
+- Each row: source and upstream skill path, tracked ref, mode (`Distill` / `Attach` / `Summarize`), and `Ingest`. A footer button reads `Ingest all`, disabled when nothing is behind.
+- First ingest on a link is a bootstrap. The run sheet shows, per link, how many rules it contributed, how many were dropped as duplicates of another link, and any conflict. The merged body appears in the editor diff, not applied blind.
+- After the run the header badge reads `Composite draft`, the outline takes the generated headings, and the Sources tab shows `2 sources · 7 rules · 1 conflict`.
+- The body cap still applies: when the merged material would pass 24,000 characters, the overflow lands in `references/ingested/` and the body keeps one pointer per source.
+- A soft cap of 8 links per skill warns at 6. Past 8, `Add source` asks for confirmation and names the context cost.
+- Saving places the composite like any other skill: the Linked count follows it into the library.
+
+### Edit an existing skill
+
+Opening `Instructions` and pressing `Edit`, or the row menu's `Edit`, opens the same surface with the package loaded and `Editing` in the header. `Rewrite for clarity` and `Extract rules from notes` sit in the header menu and open a diff sheet: the current body on the left, the proposal on the right, per-hunk accept. Applying writes through the save path.
+
 ## Sheets
 
 All sheets are centered, max 560px wide (720 for reports), 8px radius, 24px padding, hairline border, 200ms scale from .98 with fade. Escape closes; the primary button is focused on open only if the sheet is a confirmation.
@@ -265,7 +364,8 @@ All sheets are centered, max 560px wide (720 for reports), 8px radius, 24px padd
 - **Curation run** — a report sheet with four sections: Clusters found, Proposed merges, Proposed archives, Left alone. Each proposal is a row with the umbrella name, absorbed skills, and one-sentence reason. Footer states the token and cost estimate before applying and requires typing nothing; the confirm button reads `Apply 4 merges`.
 - **Ingest review** — the delta per link: commits since the last ingest, files read, proposed rules grouped as added, changed and conflicts, and the token and cost estimate before the run. Mode selector per link. Footer: `Ingest 3 sources`, with `Dry run` beside it.
 - **Archive** — destination picker listing every archive location with its free space and availability, the mode, and one line: `Restorable from E:\Skill archive`. Confirm reads `Archive skill`.
-- **Settings** — sidebar inside the sheet: General, Agents, Sources, Archives, Providers, Curation, Shortcuts, Advanced. Providers and Curation are described in their own documents. The Archives pane is a table: label, path, mode, default, availability dot, free space, and `Test`. Below it, a per-agent default dropdown and `Add location`. A path that is offline shows the OS error in place, not a toast.
+- **Settings** — sidebar inside the sheet: General, Agents, Sources, Archives, Sync, Providers, Curation, Shortcuts, Advanced. Providers and Curation are described in their own documents. The Archives pane is a table: label, path, mode, default, availability dot, free space, and `Test`. Below it, a per-agent default dropdown and `Add location`. A path that is offline shows the OS error in place, not a toast. The Sync pane is a profile table: label, remote, direction, schedule, ahead/behind, last run, and `Run now`.
+- **Sync conflict** — one row per conflicted path with its state, a two-column diff, and a choice of `Keep local`, `Take remote`, or `Keep both`. The footer's `Finish merge` stays disabled until every row is resolved, and names how many remain.
 - **Registry** — the full 67-row agent table with detection state, paths, and an `Add custom root` action.
 
 ## Notifications
@@ -318,7 +418,12 @@ Error copy always states what failed, on which path, and the exact OS or HTTP me
 | `⌘,` | Settings |
 | `⌘Z` | Undo last reversible action |
 | `⌘⇧U` | Updates view |
-| `⌘1..6` | Detail tabs |
+| `⌘N` | New skill |
+| `⌘S` | Save the draft |
+| `⌘B` / `⌘I` / `⌘K` | Bold / italic / link in the editor |
+| `⌘⇧P` | Toggle preview |
+| `⌘⏎` | Validate |
+| `⌘1..7` | Detail tabs |
 | `esc` | Clear query, then deselect, then close sheet |
 
 Shortcuts are shown in tooltips and in Settings › General › Keyboard.
@@ -354,6 +459,22 @@ Voice: Apostol's operational profile. Short, factual, no encouragement, no perso
 | Ingest review | Ingest 3 sources |
 | Ingest conflict | Local rule kept. Upstream says: never rewrite a quoted passage. |
 | Ingest no-op | Nothing new upstream. No changes written. |
+| New skill | New skill |
+| Draft autosave | Saved 14:22 |
+| Validation clean | Ready to save |
+| Validation blocked | 2 errors block saving |
+| Generate prompt | What should this skill do, and when should it be used? |
+| Generate estimate | about $0.04 |
+| Draft source badge | LLM draft |
+| Start empty | Start empty |
+| Empty body | No rules yet. Ingest sources or write the first rule. |
+| Composite draft | Composite draft |
+| Sources summary | 2 sources · 7 rules · 1 conflict |
+| Link cap warning | 6 sources. Each one adds context to every load. |
+| Sync ahead | 3 commits ahead of origin |
+| Sync conflict | Both sides changed this file. Pick one. |
+| Sync blocked | Blocked: 1 key-shaped string in references/api.md |
+| Sync never run | No sync yet. |
 | Scan failure row | 3 paths could not be read |
 | Curation dry run | Reading 380 skills. Nothing will change. |
 | Curation apply | Apply 4 merges |

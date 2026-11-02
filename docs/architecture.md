@@ -22,6 +22,8 @@ Data directory: `~/.skill-academy/`
 ├── library/            # canonical packages for linked placements
 ├── archive/            # default archive location; any drive path can be configured instead
 ├── snapshots/          # pre-update and pre-merge copies
+├── drafts/             # authoring drafts, outside every agent root
+├── sync/               # per-profile git worktree used by the sync engine
 ├── reports/            # curation run reports
 ├── logs/               # rotating service log
 └── config.json         # user settings that must survive a DB rebuild
@@ -143,9 +145,10 @@ CREATE TABLE archived_skills (
   state       TEXT NOT NULL DEFAULT 'archived'  -- archived | restored | missing
 );
 
-CREATE TABLE skill_links (       -- a local composite skill absorbing a remote skill
+CREATE TABLE skill_links (       -- a composite target absorbing a remote skill
   id            INTEGER PRIMARY KEY,
-  skill_id      INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+  skill_id      INTEGER REFERENCES skills(id) ON DELETE CASCADE,
+  draft_id      INTEGER REFERENCES drafts(id) ON DELETE CASCADE,
   source_id     INTEGER NOT NULL REFERENCES sources(id),
   source_path   TEXT NOT NULL,
   source_name   TEXT NOT NULL,
@@ -154,21 +157,64 @@ CREATE TABLE skill_links (       -- a local composite skill absorbing a remote s
   mode          TEXT NOT NULL DEFAULT 'distill', -- distill | attach | summarize
   last_ingest_sha TEXT,
   last_ingest_ref TEXT,                  -- tag name for release tracking
-  last_ingest_hash TEXT,                 -- hash of the local skill after ingest
+  last_ingest_hash TEXT,                 -- hash of the target after ingest
   state         TEXT NOT NULL DEFAULT 'ok',      -- ok | behind | error | paused
   last_checked_at TEXT,
-  UNIQUE(skill_id, source_id, source_path)
+  CHECK ((skill_id IS NOT NULL) + (draft_id IS NOT NULL) = 1),
+  UNIQUE(skill_id, draft_id, source_id, source_path)
 );
 
 CREATE TABLE ingest_runs (
   id           INTEGER PRIMARY KEY,
-  skill_id     INTEGER NOT NULL REFERENCES skills(id),
+  skill_id     INTEGER REFERENCES skills(id),
+  draft_id     INTEGER REFERENCES drafts(id),
   link_id      INTEGER REFERENCES skill_links(id),
+  kind         TEXT NOT NULL DEFAULT 'delta',  -- bootstrap | delta
   from_sha     TEXT, to_sha TEXT,
   provider     TEXT, model TEXT,
   tokens_in    INTEGER, tokens_out INTEGER, cost_usd REAL,
   status       TEXT NOT NULL,            -- queued|running|dry|applied|failed|partial
   added        INTEGER, changed INTEGER, conflicts INTEGER, dropped INTEGER,
+  snapshot_path TEXT, report_path TEXT, error TEXT,
+  started_at   TEXT, finished_at TEXT,
+  CHECK ((skill_id IS NOT NULL) + (draft_id IS NOT NULL) = 1)
+);
+
+CREATE TABLE drafts (
+  id          INTEGER PRIMARY KEY,
+  skill_id    INTEGER REFERENCES skills(id),   -- NULL for a new skill
+  name        TEXT,
+  path        TEXT NOT NULL,                   -- ~/.skill-academy/drafts/<id>/
+  status      TEXT NOT NULL DEFAULT 'draft',   -- draft | validating | ready | discarded
+  origin      TEXT NOT NULL,                   -- 'user' | 'llm'
+  base_hash   TEXT,                            -- package hash when opened, for diffing
+  llm_run_id  INTEGER REFERENCES llm_runs(id),
+  created_at  TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+
+CREATE TABLE sync_profiles (
+  id          INTEGER PRIMARY KEY,
+  label       TEXT NOT NULL,
+  remote      TEXT NOT NULL,
+  branch      TEXT NOT NULL DEFAULT 'main',
+  path_prefix TEXT,
+  direction   TEXT NOT NULL DEFAULT 'backup',  -- backup | two_way
+  include     TEXT,                            -- JSON: {sources:[], agents:[]} or null for all
+  schedule    TEXT NOT NULL DEFAULT 'manual',  -- manual | on_change | hourly | daily
+  last_commit TEXT,
+  last_push_at TEXT, last_pull_at TEXT,
+  state       TEXT NOT NULL DEFAULT 'idle',    -- idle|syncing|conflict|error|diverged
+  error       TEXT,
+  secrets_scan INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE sync_runs (
+  id           INTEGER PRIMARY KEY,
+  profile_id   INTEGER NOT NULL REFERENCES sync_profiles(id),
+  direction    TEXT NOT NULL,                  -- push | pull
+  status       TEXT NOT NULL,                  -- queued|running|ok|conflict|failed
+  from_commit  TEXT, to_commit TEXT,
+  files_changed INTEGER, conflicts INTEGER,
   snapshot_path TEXT, report_path TEXT, error TEXT,
   started_at   TEXT, finished_at TEXT
 );
@@ -184,7 +230,7 @@ CREATE TABLE llm_runs (
 );
 ```
 
-Notes:
+Notes: tables are grouped by domain, not dependency order. SQLite accepts a forward reference in a `CREATE TABLE`, and every table exists before the first write, which is when these constraints are actually checked.
 
 - `placements.path` is the package directory, not `SKILL.md`. Two placements of the same skill under different agents are two rows and one `skills` row.
 - `installed_hash` is what lets an update refuse to overwrite local edits. It is written on every install, update and repair.
@@ -294,6 +340,10 @@ last_ingest_sha ──► compare API ──► changed files ──► knowledg
 - Local git: `git diff --name-status base..head`, then read the changed files at `head`.
 - A link with no `last_ingest_sha` ingests the whole skill at its current ref; that is the first run, and the report says so.
 
+**Bootstrap and composition.** A link without `last_ingest_sha` runs as `kind: bootstrap`: the whole upstream skill is read, not a delta. Composing an empty skill is a sequence of bootstraps plus one merge pass — each link contributes rules, the merge deduplicates across links, and the target body is written once. The report records which link contributed which rule, so a composite is auditable back to two repos.
+
+The target may be a skill or a draft. A draft target is written in place under `drafts/<id>/` and reaches an agent directory only when saved; the ingest does not care which it is writing to, because both go through the same snapshot and hash guard.
+
 Knowledge files: `SKILL.md`, `references/**/*.md`, `templates/**/*.{md,txt}`, and any `.md` inside the package. Excluded by default: scripts, binaries, anything over 256 KB, and anything outside the linked skill's directory. A `include_code` toggle adds scripts as text, off by default because code is not knowledge a model should paraphrase.
 
 ### Prompt contract
@@ -318,6 +368,60 @@ Conflicts are first class. When the upstream rule contradicts a local rule, the 
 - An ingest that would produce zero new rules marks the link `up to date` and writes no files.
 - If the same delta fails twice, the link goes to `error` with the provider message and does not retry automatically.
 - Budget: per-run token cap with a clean stop and a partial report, same as curation.
+
+
+
+## Authoring
+
+Drafts are files on disk plus a row, and they are outside every agent root by construction.
+
+```
+~/.skill-academy/drafts/<id>/
+├── SKILL.md
+├── references/…            # when the draft needs depth
+└── draft.json              # frontmatter, origin, base hash
+```
+
+- **Editor state.** CodeMirror holds the buffer; the client PUTs the whole file on a 2-second debounce and on blur. The server writes atomically and never touches a skill directory.
+- **Validation** is one function shared by the editor and the save path: required frontmatter, slug shape, description length, body size against 24,000 characters, dangling `references/` and `templates/` links, package hash collision against the library, and duplicate name with a different hash. The client renders the same result the server returns, so a green panel means the save will not be refused.
+- **Generation** is an LLM job with a schema, not free text: `{name, description, body, references:[{path, content}], notes}`. The prompt carries the house rules — description that survives a 60-character retrieval window, imperative rules with one clause of why, no incident narration, depth in `references/`, no invented tool or command names. Output is validated before it becomes a draft; a failed schema is a failed run, never a half-draft.
+- **Improve** runs the same job against an existing package and returns a diff, not a new file. The editor opens the diff; applying is explicit.
+- **Save** goes through the placement engine, so it obeys the same modes, snapshots and journal as every other write. A native-mode skill saves in place; a linked-mode skill saves to the library and re-links. Saving without edits must produce an identical package hash, which is a test.
+
+Source material for generation is explicit: a linked skill, a file path inside a registered root, or pasted text. The app never feeds the whole library into a prompt by default.
+
+## Sync engine
+
+Git is the transport. A profile maps the library onto a repository and the app does the three things a person would otherwise do by hand: commit, push, merge.
+
+Prerequisite: `git` on `PATH` (2.40 or newer), checked at startup with a clear message. `isomorphic-git` is used for reading local sources, not for merging; a real merge with conflict markers is worth the dependency on the binary.
+
+### Push
+
+```
+snapshot → secrets scan → stage selected paths → commit → push
+```
+
+- Paths: with no prefix, the repo root is `library/<source-slug>/<skill>/…` plus `manifest.json`. With a prefix, everything nests under it.
+- The manifest records, per skill: package hash, source, placements as intent (`claude-code:user`, not `C:\Users\…`), and the archive location label if any.
+- Commit message names the changes by skill and action (`update prose-review`, `archive 3 skills`, `add 2 skills`), so `git log` is readable without the app.
+- Secrets scan runs on the staged content: key shapes, PEM blocks, `.env` files, and a high-entropy check on long strings. A hit blocks the commit, names file and line, and offers `Review` and `Exclude file`. It is not a linter the user can wave through.
+
+### Pull and merge
+
+```
+fetch → compute base = last_commit → three-way merge → conflicts → resolve → apply
+```
+
+- No local changes: fast-forward.
+- Local changes only: replay the remote commits, then re-apply local packages by hash; a package that changed on both sides is a conflict.
+- Both sides changed the same file: `git merge` leaves markers; the app lists each path with `local`, `remote`, `both` and a diff, and refuses to finish until every path is resolved.
+- Apply is transactional from the user's point of view: snapshot first, write through the placement engine, journal one event per changed skill. A failure rolls back to the snapshot.
+- Deleting `index.db` and pulling is a supported flow: the manifest reconstructs skills and placements, and a placement whose root does not exist on this machine is recorded as `unplaced` instead of being invented.
+
+### What never enters the repository
+
+Keys, tokens, session state, archive contents, snapshots, logs, reports. The profile's include list can narrow what is pushed but cannot widen it past this rule.
 
 
 
@@ -377,6 +481,28 @@ POST   /api/links/:id/ingest         {dry:true, budget_usd}
 GET    /api/ingest/runs
 POST   /api/ingest/runs/:id/apply
 
+GET    /api/drafts
+POST   /api/drafts                   {name?, skill_id?, origin}
+PUT    /api/drafts/:id/file          {path, content} autosave
+POST   /api/drafts/:id/validate
+POST   /api/drafts/:id/save          through the placement engine
+DELETE /api/drafts/:id
+GET    /api/drafts/:id/links
+POST   /api/drafts/:id/links         {source_id, source_path, track, ref, mode}
+DELETE /api/drafts/:id/links/:linkId
+POST   /api/drafts/:id/ingest        {all:true, dry:true, budget_usd}
+POST   /api/authoring/generate       {prompt, sources, provider, model, budget_usd}
+POST   /api/authoring/improve        {skill_id, instruction}
+
+GET    /api/sync/profiles
+POST   /api/sync/profiles            {label, remote, branch, direction, include, schedule}
+PATCH  /api/sync/profiles/:id
+POST   /api/sync/profiles/:id/run    {direction:'push'|'pull', dry:true}
+GET    /api/sync/runs
+GET    /api/sync/runs/:id/conflicts
+POST   /api/sync/runs/:id/conflicts/:path  {take:'local'|'remote'|'both'}
+POST   /api/sync/runs/:id/finish
+
 GET    /api/events?cursor=            journal and activity
 POST   /api/events/:id/undo
 
@@ -404,9 +530,31 @@ Conventions: JSON in, JSON out; errors are `{error:{message, code, detail}}` wit
 - **Ingest writes.** Upstream text is untrusted data in the prompt, fenced and labelled. The model may only return JSON matching the schema; the app validates it before writing. Writes are confined to the composite skill's own directory plus its `references/ingested/`, snapshotted first, and a hash guard refuses if the local skill changed under the run.
 - **Untrusted content.** Markdown is rendered with a sanitizer that allows no scripts, no iframes, no event handlers, and no `javascript:` URLs. Remote images are blocked by default and load only after an explicit per-source opt-in.
 - **Prompt injection.** Skill text entering a model prompt is fenced as data, the system prompt says so, and the tool surface is an allowlist that cannot run shell commands or open network connections. Curation is dry-run by default.
+- **Sync credentials.** A repository token comes from the OS keychain or the git credential helper. It is never stored in `sync_profiles`, never logged, and never echoed in a run report. The secrets scan blocks a commit that contains key-shaped material and cannot be dismissed.
+- **Drafts.** Drafts live under the data directory, are never scanned as skills, and reach an agent directory only through the save path, which uses the placement engine and its journal.
 - **Secrets.** OS keychain (`@napi-rs/keyring`) with a DPAPI-encrypted fallback file; never in SQLite, never in `config.json`, never in a log, never in an SSE payload.
 - **Write safety.** Atomic renames, `fsync` on the journal, and a startup sweep for temp siblings.
 - **No telemetry.** The app makes no outbound call except the ones the user configures: source checks and model providers.
+
+## Theming
+
+One token contract, many palettes. Themes live in `themes.json`, shipped with the app, not fetched.
+
+```json
+{
+  "id": "harbour",
+  "name": "Harbour",
+  "tint": 215,
+  "accent": { "dark": "#6E93B8", "light": "#37628C" },
+  "signal": "fixed"
+}
+```
+
+- The client builds the CSS custom properties from `tint` plus the shared neutral ladder and the accent pair. Components reference tokens only, so no component knows a theme exists.
+- `signal: "fixed"` is the whole file today: state colours are not part of a theme. The schema allows it so a future theme cannot quietly change them without a decision.
+- Settings store `{ themeId, appearance: "system" | "dark" | "light" }`. Applying is a class on the root plus a variable rewrite; no reload, no flash.
+- `scripts/check-contrast.mjs` walks every theme and both appearances, asserts body ≥ 7:1, secondary ≥ 4.5:1, indicators ≥ 3:1, and fails CI on the first pair that misses. It is the gate that makes twelve themes affordable.
+- Theme tokens are never persisted in the database per skill, per source or per archive. Appearance is a machine preference, like window size.
 
 ## Performance budgets
 
