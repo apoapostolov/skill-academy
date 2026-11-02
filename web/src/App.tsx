@@ -220,6 +220,56 @@ function buildPackageTree(entries: PackageEntry[]): PkgNode[] {
   return root.children
 }
 
+function PreviewGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <path d="M3 2.5h7.5L13 5v8.5H3z" strokeLinejoin="round" />
+      <path d="M5 6.5h6M5 9h6M5 11.5h3.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function RawGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function MarkdownModeSwitch({
+  mode,
+  onChange
+}: {
+  mode: 'preview' | 'raw'
+  onChange: (next: 'preview' | 'raw') => void
+}) {
+  return (
+    <div className="seg" role="group" aria-label="Markdown view">
+      <button
+        type="button"
+        className={mode === 'preview' ? 'on' : ''}
+        aria-pressed={mode === 'preview'}
+        aria-label="Markdown preview"
+        title="Preview"
+        onClick={() => onChange('preview')}
+      >
+        <PreviewGlyph />
+      </button>
+      <button
+        type="button"
+        className={mode === 'raw' ? 'on' : ''}
+        aria-pressed={mode === 'raw'}
+        aria-label="Raw markdown"
+        title="Raw"
+        onClick={() => onChange('raw')}
+      >
+        <RawGlyph />
+      </button>
+    </div>
+  )
+}
+
 function ScrollPane({
   className = '',
   axis = 'y',
@@ -403,6 +453,10 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
   const [closedFolders, setClosedFolders] = useState<Record<string, boolean>>({})
+  // Remembers whether markdown reads as prose or as source, across sessions.
+  const [mdMode, setMdMode] = useState<'preview' | 'raw'>(() =>
+    localStorage.getItem('skill-academy:md-mode') === 'raw' ? 'raw' : 'preview'
+  )
   const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>(() => {
     try {
       const stored = window.localStorage.getItem('skill-academy.collapsed-blocks')
@@ -1030,6 +1084,7 @@ export default function App() {
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>
+                <MarkdownModeSwitch mode={mdMode} onChange={setMdMode} />
                 <button
                   className="ghost wrapbtn"
                   onClick={toggleWrap}
@@ -1149,11 +1204,14 @@ export default function App() {
               )}
             </div>
           )}
-          {detail && !openRef && (
+          {detail && !openRef && mdMode === 'preview' && (
             <div
               className={`md body${wrap ? ' wrapped' : ''}`}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.body || '_Empty body._') }}
             />
+          )}
+          {detail && !openRef && mdMode === 'raw' && (
+            <pre className={`body raw${wrap ? ' wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
           )}
           {detail && openRef && (
             <div className="refview">
@@ -1161,14 +1219,21 @@ export default function App() {
                 <button className="ghost tiny" onClick={() => setOpenRef(null)}>
                   ← {detail.name}
                 </button>
-                <span>{openRef.name}</span>
+                <span className="refbar-name">{openRef.name}</span>
+                {(extensionOf(openRef.rel) === '.md' || extensionOf(openRef.rel) === '.markdown') && (
+                  <MarkdownModeSwitch mode={mdMode} onChange={setMdMode} />
+                )}
               </div>
               {openRef.image ? (
                 <div className="refimg-wrap">
                   <img className="refimg" src={openRef.image} alt={openRef.name} />
                 </div>
               ) : extensionOf(openRef.rel) === '.md' || extensionOf(openRef.rel) === '.markdown' ? (
-                <div className="md body" dangerouslySetInnerHTML={{ __html: renderMarkdown(openRef.text) }} />
+                mdMode === 'preview' ? (
+                  <div className="md body" dangerouslySetInnerHTML={{ __html: renderMarkdown(openRef.text) }} />
+                ) : (
+                  <pre className="body raw">{openRef.text}</pre>
+                )
               ) : (
                 <pre className="body code">
                   {highlight(openRef.text, extensionOf(openRef.rel)).map((token, position) =>

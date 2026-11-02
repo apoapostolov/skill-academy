@@ -1828,3 +1828,69 @@ pre.code .tok-key { color: #9db3a0; }
 .md .md-code pre { padding: 6px 8px; }
 .md table { margin: 0 0 2px; }
 .md hr { margin: 4px 0; }
+
+/* Segmented view switch: preview or raw source, right side of the header. */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  margin-left: auto;
+}
+
+.seg button {
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.seg button:hover { color: var(--text-2); }
+
+.seg button.on {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
+.refbar .seg { margin-left: auto; }
+.refbar .refbar-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+pre.body.raw {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x: hidden; }
+
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  min-width: 24px;
+}
+
+.seg button svg { display: block; }
+.detailhead .wrapbtn { margin-left: 6px; }
+.detailhead .seg { margin-left: auto; }
+
+/* Fourth pass: tighter again, list rhythm included. */
+.md { line-height: 1.24; }
+.md p { margin: 0; }
+.md ul, .md ol { margin: 0; }
+.md li { line-height: 1.22; margin: 0; }
+.md li + li { margin-top: 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 2px 0 0; }
+.md h1 + p, .md h2 + p, .md h3 + p, .md h4 + p { margin-top: 0; }
+.md p + h1, .md p + h2, .md p + h3, .md p + h4 { margin-top: 4px; }
+.md blockquote { margin: 1px 0; }
+.md .md-code { margin: 0 0 1px; }
+.md table { margin: 0 0 1px; }
