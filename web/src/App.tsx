@@ -1865,89 +1865,94 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="imfield">
-                  <input
-                    className="iminput"
-                    placeholder="owner/repo or a GitHub URL"
-                    value={installRepo}
-                    onChange={(event) => setInstallRepo(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') void testInstall()
-                    }}
-                    spellCheck={false}
-                  />
-                  <button className="btn" onClick={() => void testInstall()} disabled={installTesting || !installRepo.trim()}>
-                    {installTesting ? 'Testing…' : 'Test'}
-                  </button>
-                </div>
-                {installNote && <div className="imnote">{installNote}</div>}
-
-                {installFound.length > 0 && (
-                  <>
-                    <div className="imsection">
-                      <span>Skills</span>
-                      <button
-                        className="linkbtn"
-                        onClick={() =>
-                          setInstallPicked(
-                            installPicked.size === installFound.length ? new Set() : new Set(installFound.map((entry) => entry.path))
-                          )
-                        }
-                      >
-                        {installPicked.size === installFound.length ? 'None' : 'All'}
+                <div className="imbody">
+                  <div className="imleft">
+                    <div className="imfield">
+                      <input
+                        className="iminput"
+                        placeholder="owner/repo or a GitHub URL"
+                        value={installRepo}
+                        onChange={(event) => setInstallRepo(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') void testInstall()
+                        }}
+                        spellCheck={false}
+                      />
+                      <button className="imcheck" onClick={() => void testInstall()} disabled={installTesting || !installRepo.trim()}>
+                        {installTesting ? 'Checking…' : 'Check'}
                       </button>
                     </div>
-                    <div className="imlist">
-                      {installFound.map((entry) => (
-                        <div className="imrow" key={entry.path}>
+                    {installNote && <div className="imnote">{installNote}</div>}
+
+                    {installFound.length > 0 && (
+                      <>
+                        <div className="imsection">
+                          <span>Skills</span>
+                          <button
+                            className="linkbtn"
+                            onClick={() =>
+                              setInstallPicked(
+                                installPicked.size === installFound.length ? new Set() : new Set(installFound.map((entry) => entry.path))
+                              )
+                            }
+                          >
+                            {installPicked.size === installFound.length ? 'None' : 'All'}
+                          </button>
+                        </div>
+                        <div className="imlist">
+                          {installFound.map((entry) => (
+                            <div className="imrow" key={entry.path}>
+                              <span
+                                className={`switch ${installPicked.has(entry.path) ? 'on' : ''}`}
+                                role="switch"
+                                aria-checked={installPicked.has(entry.path)}
+                                tabIndex={0}
+                                onClick={() => {
+                                  const next = new Set(installPicked)
+                                  if (next.has(entry.path)) next.delete(entry.path)
+                                  else next.add(entry.path)
+                                  setInstallPicked(next)
+                                }}
+                              >
+                                <span className="knob" />
+                              </span>
+                              <span className="imname">{entry.name}</span>
+                              <span className="immeta">
+                                {entry.files} files · {Math.round(entry.bytes / 1024)} KB
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="imright">
+                    <div className="imsection">
+                      <span>Agents</span>
+                    </div>
+                    <div className="imlist imagents">
+                      {(facets?.agents ?? []).map((agent) => (
+                        <div className="imrow" key={`${agent.agent}:${agent.path}`}>
                           <span
-                            className={`switch ${installPicked.has(entry.path) ? 'on' : ''}`}
+                            className={`switch ${installAgents.has(agent.agent) ? 'on' : ''}`}
                             role="switch"
-                            aria-checked={installPicked.has(entry.path)}
+                            aria-checked={installAgents.has(agent.agent)}
                             tabIndex={0}
                             onClick={() => {
-                              const next = new Set(installPicked)
-                              if (next.has(entry.path)) next.delete(entry.path)
-                              else next.add(entry.path)
-                              setInstallPicked(next)
+                              const next = new Set(installAgents)
+                              if (next.has(agent.agent)) next.delete(agent.agent)
+                              else next.add(agent.agent)
+                              setInstallAgents(next)
                             }}
                           >
                             <span className="knob" />
                           </span>
-                          <span className="imname">{entry.name}</span>
-                          <span className="immeta">
-                            {entry.files} files · {Math.round(entry.bytes / 1024)} KB
-                          </span>
+                          <span className="imname">{agent.agent}</span>
                         </div>
                       ))}
                     </div>
-                  </>
-                )}
-
-                <div className="imsection">
-                  <span>Agents</span>
-                </div>
-                <div className="imlist imagents">
-                  {(facets?.agents ?? []).map((agent) => (
-                    <div className="imrow" key={`${agent.agent}:${agent.path}`}>
-                      <span
-                        className={`switch ${installAgents.has(agent.agent) ? 'on' : ''}`}
-                        role="switch"
-                        aria-checked={installAgents.has(agent.agent)}
-                        tabIndex={0}
-                        onClick={() => {
-                          const next = new Set(installAgents)
-                          if (next.has(agent.agent)) next.delete(agent.agent)
-                          else next.add(agent.agent)
-                          setInstallAgents(next)
-                        }}
-                      >
-                        <span className="knob" />
-                      </span>
-                      <span className="imname">{agent.agent}</span>
-                      <span className="immeta">{agent.origin}</span>
-                    </div>
-                  ))}
+                  </div>
                 </div>
 
                 <div className="imfoot">

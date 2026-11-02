@@ -629,7 +629,7 @@ app.post('/api/install/apply', async (request, reply) => {
     }
 
     const treeResponse = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+      headers: githubHeaders()
     })
     if (!treeResponse.ok) {
       results.push({ path: skillPath, installed: false, error: `github ${treeResponse.status}` })
@@ -749,6 +749,13 @@ app.post('/api/install/test', async (request, reply) => {
   }
 })
 
+function githubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (token) headers.authorization = `Bearer ${token}`
+  return headers
+}
+
 async function fetchRaw(repo: string, ref: string, filePath: string): Promise<{ ok: boolean; text: string; status: number }> {
   const url = `https://raw.githubusercontent.com/${repo}/${ref}/${filePath.replace(/^\/+/, '')}`
   const response = await fetch(url, { headers: { 'user-agent': 'skill-academy' } })
@@ -791,6 +798,18 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
   if (mapped.length) {
     const ref = fresh.commit ?? fresh.release ?? 'HEAD'
     for (const filePath of mapped) {
+      // A mapping is either a file or a whole skill directory, and a directory answers 404 to a
+      // raw file request: ask the tree instead of reporting a misleading status.
+      if (!/\.[A-Za-z0-9]+$/.test(filePath)) {
+        const treeUrl = `https://api.github.com/repos/${source.repo}/git/trees/${ref}?recursive=1`
+        const treeResponse = await fetch(treeUrl, { headers: githubHeaders() })
+        const tree = treeResponse.ok
+          ? ((await treeResponse.json()) as { tree?: Array<{ path: string; type: string }> }).tree ?? []
+          : []
+        const inside = tree.filter((entry) => entry.type === 'blob' && entry.path.startsWith(filePath + '/'))
+        files.push({ path: filePath, status: treeResponse.ok ? 200 : treeResponse.status, hash: null, bytes: inside.length })
+        continue
+      }
       const raw = await fetchRaw(source.repo, ref, filePath)
       files.push({
         path: filePath,
@@ -825,7 +844,7 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
 
 app.post('/api/sources/:id/apply-update', async (request, reply) => {
   const { id } = request.params as { id: string }
-  const body = (request.body ?? {}) as { planId?: string; confirm?: boolean }
+  const body = (request.body ?? {}) as { planId?: string; confirm?: boolean; replace?: boolean }
   const plan = body.planId ? updatePlans.get(body.planId) : undefined
   if (!plan || plan.sourceId !== Number(id)) {
     reply.code(404)
@@ -840,6 +859,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
   const source = listSources().find((row) => row.id === Number(id))
   const mapped = source ? sourceSkills(source.id) : []
   const staged: string[] = []
+  const replaced: Array<{ name: string; path: string; files: number }> = []
   if (source && mapped.length) {
     const ref = plan.commit ?? plan.release ?? 'HEAD'
     const root = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'staging', `${source.id}-${ref.slice(0, 12)}`)
@@ -852,6 +872,35 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
       staged.push(target)
     }
     addJournal('source-fetch', { repo: source.repo, ref, staged })
+
+    // Replace takes the same road an install does: the package is rebuilt in the library and any
+    // previous copy is moved to the trash first. Placement links point at the library folder, so
+    // they keep working after the bytes underneath them change.
+    if (body.replace === true) {
+      const libraryRoot = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'library')
+      for (const skillPath of mapped) {
+        if (!skillPath.includes('/')) continue
+        const name = path.basename(skillPath.replace(/\/+$/, ''))
+        const target = path.join(libraryRoot, name)
+        const treeResponse = await fetch(`https://api.github.com/repos/${source.repo}/git/trees/${ref}?recursive=1`, {
+          headers: githubHeaders()
+        })
+        if (!treeResponse.ok) continue
+        const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string }> }
+        const files = (tree.tree ?? []).filter((entry) => entry.type === 'blob' && entry.path.startsWith(skillPath + '/'))
+        if (existsSync(target)) unplace(target, TRASH_DIR)
+        for (const file of files) {
+          const relative = file.path.slice(skillPath.length + 1)
+          const destination = path.join(target, relative)
+          const raw = await fetchRaw(source.repo, ref, file.path)
+          if (!raw.ok) continue
+          mkdirSync(path.dirname(destination), { recursive: true })
+          writeFileSync(destination, raw.text)
+        }
+        replaced.push({ name, path: target, files: files.length })
+      }
+      addJournal('source-replace', { repo: source.repo, ref, replaced })
+    }
   }
 
   const acknowledged = listSourceEvents().filter((event) => event.repo === listSources().find((row) => row.id === Number(id))?.repo)
@@ -865,6 +914,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
     release: plan.release,
     acknowledged: acknowledged.length,
     staged,
+    replaced,
     note: staged.length
       ? 'Files are staged. Installing them into the library is a separate, reversible step.'
       : 'No mapped files to fetch.'

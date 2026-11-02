@@ -2703,3 +2703,100 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   padding: 0;
   cursor: default;
 }
+
+/* Two columns: the repository and its skills on the left, the agents on the right. */
+.installmodal {
+  width: 720px;
+}
+
+.imbody {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 240px;
+}
+
+.imleft,
+.imright {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.imright {
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.imfield {
+  align-items: stretch;
+}
+
+.iminput {
+  height: 30px;
+}
+
+/* The Check button is exactly as tall as the field beside it. */
+.imcheck {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dcdee3;
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+
+.imcheck:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.imcheck:disabled {
+  color: #6f737b;
+}
+
+.imlist.imagents {
+  max-height: 300px;
+}
+
+/* The primary action carries the signature colour. */
+.imfoot .btn.primary {
+  background: #6e9e8a;
+  border-color: #6e9e8a;
+  color: #10171a;
+  font-weight: 500;
+  padding: 0 16px;
+  height: 30px;
+}
+
+.imfoot .btn.primary:hover:not(:disabled) {
+  background: #7cab97;
+  border-color: #7cab97;
+}
+
+.imfoot .btn.primary:disabled {
+  background: rgba(110, 158, 138, 0.35);
+  border-color: transparent;
+  color: rgba(16, 23, 26, 0.6);
+}
+
+/* Footer: the mode selector sits hard left, the action hard right. */
+.imfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.imfoot .immode {
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+  margin: 0;
+  flex: 0 0 auto;
+}
