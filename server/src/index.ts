@@ -575,7 +575,9 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
     dryRun: !!body.dryRun
   })
   const error = typeof result.error === 'string' ? result.error : null
-  if (error) reply.code(error === 'group-not-found' ? 404 : error === 'lossy-merge' ? 409 : 428)
+  if (error) {
+    reply.code(error === 'group-not-found' ? 404 : error === 'protected-root' ? 403 : error === 'lossy-merge' ? 409 : 428)
+  }
   return result
 })
 
@@ -612,7 +614,7 @@ app.post('/api/consolidate/apply', async (request, reply) => {
   }
   const result = applyConsolidation(body.key)
   if ('error' in result) {
-    reply.code(result.error === 'group-not-found' ? 404 : 409)
+    reply.code(result.error === 'group-not-found' ? 404 : result.error === 'protected-root' ? 403 : 409)
     return result
   }
   return result
