@@ -532,25 +532,53 @@ function MarkdownBody({ text, className }: { text: string; className: string }) 
     const element = host.current
     if (!element) return
     const cleanups: Array<() => void> = []
+
     for (const scroller of element.querySelectorAll<HTMLDivElement>('.md-table')) {
+      // A bar drawn by us rather than by the platform: it overlays the table instead of
+      // reserving a lane, follows the scroll position, and fades when the reader stops.
+      const thumb = document.createElement('span')
+      thumb.className = 'md-thumb'
+      thumb.setAttribute('aria-hidden', 'true')
+      scroller.appendChild(thumb)
+
       let timer: number | undefined
+      const paint = () => {
+        const track = scroller.clientWidth
+        const total = scroller.scrollWidth
+        if (total <= track + 1) {
+          thumb.style.width = '0px'
+          return
+        }
+        const width = Math.max(28, (track / total) * track)
+        const maxLeft = track - width
+        const ratio = total - track > 0 ? scroller.scrollLeft / (total - track) : 0
+        thumb.style.width = `${Math.round(width)}px`
+        thumb.style.transform = `translateX(${Math.round(maxLeft * ratio)}px)`
+      }
       const reveal = () => {
         scroller.classList.add('is-active')
+        thumb.classList.add('is-visible')
         window.clearTimeout(timer)
+        paint()
       }
       const settle = (delay: number) => {
         window.clearTimeout(timer)
-        timer = window.setTimeout(() => scroller.classList.remove('is-active'), delay)
+        timer = window.setTimeout(() => {
+          scroller.classList.remove('is-active')
+          thumb.classList.remove('is-visible')
+        }, delay)
       }
       const onPointerMove = (event: PointerEvent) => {
         const box = scroller.getBoundingClientRect()
-        if (event.clientY >= box.bottom - 14) reveal()
+        if (event.clientY >= box.bottom - 16) reveal()
       }
       const onScroll = () => {
         reveal()
-        settle(650)
+        settle(700)
       }
-      const onLeave = () => settle(240)
+      const onLeave = () => settle(260)
+
+      paint()
       scroller.addEventListener('pointermove', onPointerMove)
       scroller.addEventListener('scroll', onScroll, { passive: true })
       scroller.addEventListener('pointerleave', onLeave)
@@ -559,8 +587,10 @@ function MarkdownBody({ text, className }: { text: string; className: string }) 
         scroller.removeEventListener('pointermove', onPointerMove)
         scroller.removeEventListener('scroll', onScroll)
         scroller.removeEventListener('pointerleave', onLeave)
+        thumb.remove()
       })
     }
+
     return () => cleanups.forEach((run) => run())
   }, [text])
 
