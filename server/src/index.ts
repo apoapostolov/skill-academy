@@ -570,6 +570,92 @@ app.get('/api/sources/status', async () => ({
 
 app.post('/api/sources/poll', async () => pollSources())
 
+function frontmatterField(text: string, key: string): string | null {
+  const head = text.slice(0, 3000)
+  const match = new RegExp(`^${key}:\s*(.*)$`, 'm').exec(head)
+  if (!match) return null
+  const value = match[1].trim().replace(/^["']|["']$/g, '')
+  // A folded or literal block puts the words on the following indented lines.
+  if (value === '>' || value === '|' || value === '>-' || value === '|-') {
+    const rest = head.slice(match.index + match[0].length).split(/\r?\n/).slice(1)
+    const lines: string[] = []
+    for (const line of rest) {
+      if (!line.trim()) {
+        if (lines.length) break
+        continue
+      }
+      if (!/^\s+/.test(line)) break
+      lines.push(line.trim())
+    }
+    return lines.length ? lines.join(' ') : null
+  }
+  return value || null
+}
+
+app.post('/api/install/test', async (request, reply) => {
+  // Test is read-only on purpose: it says what the repository would install, before anything
+  // is downloaded into the library or placed anywhere.
+  const body = (request.body ?? {}) as { repo?: string; ref?: string }
+  const repo = (body.repo ?? '')
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, '')
+    .replace(/\.git$/, '')
+    .replace(/\/tree\/.*$/, '')
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    reply.code(400)
+    return { error: 'repo must look like owner/name' }
+  }
+  const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (token) headers.authorization = `Bearer ${token}`
+
+  const ref = body.ref ?? 'HEAD'
+  const treeResponse = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers })
+  if (!treeResponse.ok) {
+    reply.code(502)
+    return { error: `github ${treeResponse.status}`, repo }
+  }
+  const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string; size?: number }> }
+  const skillFiles = (tree.tree ?? []).filter(
+    (entry) => entry.type === 'blob' && /(^|\/)SKILL\.md$/i.test(entry.path)
+  )
+  if (!skillFiles.length) {
+    return { repo, ref, found: 0, skills: [], note: 'No SKILL.md files in this repository.' }
+  }
+
+  const skills = []
+  for (const entry of skillFiles.slice(0, 60)) {
+    const dir = entry.path.replace(/\/SKILL\.md$/i, '')
+    const name = dir.split('/').pop() ?? dir
+    const siblings = (tree.tree ?? []).filter(
+      (other) => other.type === 'blob' && dir && other.path.startsWith(dir + '/')
+    )
+    let description: string | null = null
+    let version: string | null = null
+    const raw = await fetchRaw(repo, ref === 'HEAD' ? 'HEAD' : ref, entry.path)
+    if (raw.ok) {
+      description = frontmatterField(raw.text, 'description')
+      version = frontmatterField(raw.text, 'version')
+    }
+    skills.push({
+      path: dir,
+      name,
+      version,
+      description,
+      files: siblings.length,
+      bytes: siblings.reduce((total, file) => total + (file.size ?? 0), 0)
+    })
+  }
+
+  return {
+    repo,
+    ref,
+    found: skills.length,
+    skills,
+    note: 'Selection is what would install. Nothing has been downloaded yet.'
+  }
+})
+
 async function fetchRaw(repo: string, ref: string, filePath: string): Promise<{ ok: boolean; text: string; status: number }> {
   const url = `https://raw.githubusercontent.com/${repo}/${ref}/${filePath.replace(/^\/+/, '')}`
   const response = await fetch(url, { headers: { 'user-agent': 'skill-academy' } })
