@@ -2438,3 +2438,13 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   background: rgba(184, 92, 87, 0.28);
   color: #f0c4c0;
 }
+
+/* The bar sits under the header, never over it: the select-all box must stay reachable. */
+.listhead {
+  z-index: 3;
+}
+
+.bulkbar {
+  top: 30px;
+  z-index: 2;
+}

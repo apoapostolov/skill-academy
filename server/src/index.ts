@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -41,7 +41,7 @@ import {
   undoJournal,
   writeSettings
 } from './lifecycle'
-import { copyDrift, place, unplace } from './placement'
+import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
 import { compareVersions, provenanceOf } from './provenance'
@@ -449,6 +449,44 @@ app.delete('/api/workspaces/:id', async (request, reply) => {
     return { error: 'not found' }
   }
   return { removed }
+})
+
+app.post('/api/workspaces/:id/import', async (request, reply) => {
+  // Bringing a skill into a workspace is a copy with provenance, so the workspace can be
+  // compared again later and the file it came from is named in the manifest.
+  const { id } = request.params as { id: string }
+  const workspace = listWorkspaces().find((row) => row.id === Number(id))
+  if (!workspace) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const body = request.body as { skillId?: number } | undefined
+  const skill = body?.skillId ? getSkill(body.skillId) : undefined
+  if (!skill) {
+    reply.code(400)
+    return { error: 'skillId is required' }
+  }
+
+  const skillsDir = path.join(workspace.path, 'skills')
+  const target = path.join(skillsDir, path.basename(skill.path))
+  if (existsSync(target)) {
+    reply.code(409)
+    return { error: 'already-in-workspace', target }
+  }
+
+  try {
+    mkdirSync(skillsDir, { recursive: true })
+    cpSync(skill.path, target, { recursive: true })
+    writeFileSync(
+      path.join(target, MANIFEST),
+      JSON.stringify({ source: skill.path, importedAt: new Date().toISOString(), from: 'library' }, null, 2)
+    )
+    addJournal('workspace-import', { skillId: skill.id, workspace: workspace.name, target })
+    return { ok: true, target }
+  } catch (error) {
+    reply.code(500)
+    return { error: (error as Error).message }
+  }
 })
 
 app.get('/api/workspaces/:id/compare', async (request, reply) => {
