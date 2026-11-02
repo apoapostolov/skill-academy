@@ -20,7 +20,8 @@
     "build": "npm -w @skill-academy/web run build",
     "typecheck": "npm -w @skill-academy/server run typecheck",
     "seed": "node scripts/seed.mjs",
-    "bench:p1": "npx tsx scripts/bench-p1.ts"
+    "bench:p1": "npx tsx scripts/bench-p1.ts",
+    "fixtures": "bash scripts/fixture-check.sh"
   },
   "engines": {
     "node": ">=22.5"

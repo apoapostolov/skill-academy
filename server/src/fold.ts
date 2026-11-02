@@ -4,6 +4,7 @@ import { bodyOf, consolidateDryRun } from './consolidate'
 import type { Body } from './consolidate'
 import { chat, providerById } from './providers'
 import { sweepReferences } from './sweep'
+import { insideProtected } from './safety'
 
 /**
  * The fold pass: a model reads both bodies and writes one, and then the result is audited against
@@ -185,6 +186,10 @@ export async function applyFold(input: {
   if (!survivorBody) return { error: 'survivor-missing' }
 
   const file = path.join(survivorBody.dir, 'SKILL.md')
+  const guarded = insideProtected([file, ...group.members.map((member) => member.path)])
+  if (guarded && !input.dryRun) {
+    return { error: 'protected-root', detail: { path: guarded, hint: 'run scripts/fixture-check.sh, or set SKILL_ACADEMY_ALLOW_REAL=1 for a deliberate real merge' } }
+  }
   const source = readFileSync(file, 'utf8')
   const fm = frontmatterBlock(source)
   const merged = `${fm}\n\n${proposal.text}\n`

@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 export type Risk = 'clean' | 'low' | 'medium' | 'high'
@@ -202,4 +203,30 @@ export function scanPackage(dir: string): { risk: Risk; findings: Finding[] } {
   }
   walk(dir, 0)
   return { risk: riskOf(findings), findings: findings.slice(0, MAX_FINDINGS) }
+}
+
+/**
+ * The live agent library is not a test bed. Consolidation and curation both write through the same
+ * functions the tests use, so a real root is refused unless a run explicitly opts in — the fixture
+ * harness (scripts/fixture-check.sh) is the supported way to exercise these paths.
+ */
+export function protectedRoots(): string[] {
+  const home = os.homedir()
+  const roots = [path.join(home, '.hermes', 'skills')]
+  const hermesHome = process.env.HERMES_HOME
+  if (hermesHome) roots.push(path.join(hermesHome, 'skills'))
+  if (process.platform === 'win32') roots.push(path.join(home, 'AppData', 'Local', 'hermes', 'skills'))
+  return roots.map((root) => path.resolve(root))
+}
+
+export function insideProtected(paths: string[]): string | null {
+  if (process.env.SKILL_ACADEMY_ALLOW_REAL === '1') return null
+  const roots = protectedRoots()
+  for (const candidate of paths) {
+    const resolved = path.resolve(candidate)
+    for (const root of roots) {
+      if (resolved === root || resolved.startsWith(root + path.sep)) return resolved
+    }
+  }
+  return null
 }

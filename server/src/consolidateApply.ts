@@ -5,6 +5,7 @@ import { getDb } from './db'
 import type { Body, ConsolidateGroup } from './consolidate'
 import { bodyOf, consolidateDryRun } from './consolidate'
 import { sweepReferences } from './sweep'
+import { insideProtected } from './safety'
 
 /**
  * Applying a consolidation. The gate is the point: a group is only written when the caller says
@@ -133,6 +134,15 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
   if (!group) return { error: 'group-not-found', detail: { key } }
   if (!group.plan) return { error: 'not-applicable', detail: { reason: group.blocked ?? 'this group has no plan' } }
   if (group.mergeType === 'intentional-family') return { error: 'not-applicable', detail: { reason: 'router family' } }
+
+  // The live agent library is not a test bed: a real root needs an explicit opt-in.
+  const guarded = insideProtected(group.members.map((member) => member.path))
+  if (guarded) {
+    return {
+      error: 'protected-root',
+      detail: { path: guarded, hint: 'run scripts/fixture-check.sh, or set SKILL_ACADEMY_ALLOW_REAL=1 for a deliberate real merge' }
+    }
+  }
 
   const bodies = new Map<string, Body>()
   for (const member of group.members) {

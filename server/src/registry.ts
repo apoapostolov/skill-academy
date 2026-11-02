@@ -96,6 +96,17 @@ export function loadRegistry(): RegistrySummary {
 
   addHostRoots(byPath)
 
+  // A test run can point the whole index at fixtures instead of the live agent roots, which is how
+  // consolidation and curation are exercised without touching a real skill library.
+  const only = process.env.SKILL_ACADEMY_ONLY_ROOTS
+  if (only) {
+    byPath.clear()
+    for (const entry of only.split(',').map((value) => value.trim()).filter(Boolean)) {
+      const target = path.resolve(entry)
+      byPath.set(keyFor(target), { path: target, scope: 'global', owners: ['fixture'], exists: false, origin: 'host' })
+    }
+  }
+
   const roots = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path))
   for (const root of roots) {
     try {
