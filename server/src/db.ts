@@ -47,7 +47,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 11
+const SCHEMA_VERSION = 12
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
 const HEALTH_VERSION = 2
@@ -222,7 +222,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   )
 
   const idsByReal = new Map<string, number>()
-  const changedIds: (string | number | bigint)[] = []
+  const changedPaths: string[] = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
     const row = existing.get(real) as { id: number; package_hash: string } | undefined
@@ -254,7 +254,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       if (created) {
         idsByReal.set(real, Number(created.id))
         upsertBody.run(created.id as never, skill.text)
-        changedIds.push(created.id)
+        changedPaths.push(skill.path)
       }
       result.added += 1
       continue
@@ -280,12 +280,13 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     )
     upsertBody.run(row.id, skill.text)
     result.changed += 1
-    changedIds.push(row.id)
+    changedPaths.push(skill.path)
   }
 
-  // A running app beats a fast one: the incremental path trips a node:sqlite binding
-  // defect on rowids, so a changed root rebuilds the index instead.
-  if (changedIds.length > 0) rebuildFts(db)
+  // Contentless FTS5 cannot store the lookup column that incremental writes would need,
+  // so a changed root rebuilds the index. Correct beats fast until the index table moves
+  // to external content with a real document row per package.
+  if (changedPaths.length > 0) rebuildFts(db)
 
   // Placements are what the scan just observed for this root; replace them only when the
   // observed set differs, so a rescan of unchanged disk performs no writes at all.
@@ -320,17 +321,17 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   // A skill survives as long as any root can still see it, whatever path it is seen at.
   const stale = db
     .prepare(`
-      SELECT s.id FROM skills s
+      SELECT s.id, s.path FROM skills s
       WHERE s.id IN (SELECT skill_id FROM placements WHERE root_path = ?)
         AND s.id NOT IN (SELECT skill_id FROM placements)
     `)
-    .all(entry.root.path) as { id: number }[]
+    .all(entry.root.path) as { id: number; path: string }[]
   if (stale.length > 0) {
     const remove = db.prepare('DELETE FROM skills WHERE id = ?')
     const removeBody = db.prepare('DELETE FROM skill_body WHERE skill_id = ?')
     for (const row of stale) {
       removeBody.run(row.id)
-      dropFromIndex(row.id)
+      dropFromIndex(row.path)
       remove.run(row.id)
     }
     result.removed = stale.length
@@ -340,6 +341,16 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
 }
 
 /** Rebuild the search index once, after a batch of writes rather than per package. */
+/** A stable 31-bit rowid per package path: we never read an id back, so no bigint can leak. */
+function ftsRowId(key: string): number {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return (hash & 0x7fffffff) || 1
+}
+
 let indexStatements: { select: StatementSyncLike; drop: StatementSyncLike; insert: StatementSyncLike } | null = null
 
 type StatementSyncLike = { run: (...args: unknown[]) => unknown; get: (...args: unknown[]) => unknown }
@@ -349,8 +360,8 @@ function indexStatementsFor(): { select: StatementSyncLike; drop: StatementSyncL
     const db = getDb()
     indexStatements = {
       select: db.prepare(`
-        SELECT s.id, s.name, s.description, s.tags, COALESCE(b.body, '') AS body
-        FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id WHERE s.id = ?
+        SELECT s.name, s.description, s.tags, COALESCE(b.body, '') AS body
+        FROM skills s LEFT JOIN skill_body b ON b.skill_id = s.id WHERE s.path = ?
       `) as unknown as StatementSyncLike,
       drop: db.prepare('DELETE FROM skills_fts WHERE rowid = ?') as unknown as StatementSyncLike,
       insert: db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)') as unknown as StatementSyncLike
@@ -359,19 +370,23 @@ function indexStatementsFor(): { select: StatementSyncLike; drop: StatementSyncL
   return indexStatements
 }
 
-/** Writes one skill into the search index, replacing its previous row if any. */
-export function indexSkill(id: string | number | bigint): void {
+/** Writes one package into the search index, replacing its previous row. */
+export function indexSkill(realPath: string): void {
   const statement = indexStatementsFor()
-  const row = statement.select.get(id) as
-    | { id: number; name: string; description: string; tags: string; body: string }
+  const row = statement.select.get(realPath) as
+    | { name: string; description: string; tags: string; body: string }
     | undefined
-  if (!row) return
-  statement.drop.run(id)
-  statement.insert.run(row.id, row.name, row.description, row.tags, row.body)
+  const rowid = ftsRowId(realPath)
+  if (!row) {
+    statement.drop.run(rowid)
+    return
+  }
+  statement.drop.run(rowid)
+  statement.insert.run(rowid, row.name, row.description, row.tags, row.body)
 }
 
-export function dropFromIndex(id: string | number | bigint): void {
-  getDb().prepare('DELETE FROM skills_fts WHERE rowid = ?').run(id)
+export function dropFromIndex(realPath: string): void {
+  getDb().prepare('DELETE FROM skills_fts WHERE rowid = ?').run(ftsRowId(realPath))
 }
 
 export function rebuildIndex(): void {
@@ -526,11 +541,13 @@ export function saveOne(rootPath: string, scope: string, skill: SkillRecord): Sa
 
 export function removeByPath(skillPath: string): number {
   const db = getDb()
-  const row = db.prepare('SELECT id FROM skills WHERE path = ?').get(skillPath) as { id: number } | undefined
+  const row = db.prepare('SELECT id, path FROM skills WHERE path = ?').get(skillPath) as
+    | { id: number; path: string }
+    | undefined
   if (!row) return 0
   db.prepare('DELETE FROM skill_body WHERE skill_id = ?').run(row.id)
   db.prepare('DELETE FROM placements WHERE skill_id = ?').run(row.id)
-  dropFromIndex(row.id)
+  dropFromIndex(row.path)
   db.prepare('DELETE FROM skills WHERE id = ?').run(row.id)
   return 1
 }

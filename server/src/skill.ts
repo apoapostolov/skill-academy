@@ -4,7 +4,14 @@ import path from 'node:path'
 import { countTokens } from 'gpt-tokenizer'
 
 export interface SkillIssue {
-  code: 'no-frontmatter' | 'no-description' | 'long-body' | 'dangling-reference' | 'name-mismatch' | 'unreadable'
+  code:
+    | 'no-frontmatter'
+    | 'no-description'
+    | 'long-body'
+    | 'dangling-reference'
+    | 'external-reference'
+    | 'name-mismatch'
+    | 'unreadable'
   detail: string
 }
 
@@ -174,7 +181,10 @@ function resolvesElsewhere(relative: string): boolean {
 export function applyReferenceIndex(records: SkillRecord[]): void {
   for (const record of records) {
     for (const relative of record.missingRefs ?? []) {
-      if (resolvesElsewhere(relative)) continue
+      if (resolvesElsewhere(relative)) {
+        record.health.push({ code: 'external-reference', detail: `Resolves in another package: ${relative}` })
+        continue
+      }
       if (record.health.length > 12) break
       record.health.push({ code: 'dangling-reference', detail: `Missing ${relative}` })
     }

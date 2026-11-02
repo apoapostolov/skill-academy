@@ -1815,3 +1815,16 @@ pre.code .tok-key { color: #9db3a0; }
 .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 6px 0 2px; }
 .md blockquote, .md .md-code, .md table { margin-bottom: 4px; }
 .md hr { margin: 6px 0; }
+
+/* Third pass: another 40% off. The pane should look like tight documentation. */
+.md { line-height: 1.32; }
+.md p { margin: 0 0 1px; }
+.md ul, .md ol { margin: 0 0 1px; padding-left: 14px; }
+.md li { margin: 0; }
+.md li > p { margin: 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 3px 0 1px; }
+.md blockquote { margin: 0 0 2px; padding-left: 8px; }
+.md .md-code { margin: 0 0 2px; }
+.md .md-code pre { padding: 6px 8px; }
+.md table { margin: 0 0 2px; }
+.md hr { margin: 4px 0; }
