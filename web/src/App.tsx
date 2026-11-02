@@ -722,6 +722,21 @@ export default function App() {
   }
 
   const [confirmArchive, setConfirmArchive] = useState(false)
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; skill: Skill } | null>(null)
+
+  useEffect(() => {
+    if (!rowMenu) return
+    const close = () => setRowMenu(null)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [rowMenu])
 
   useEffect(() => {
     setConfirmArchive(false)
@@ -737,6 +752,19 @@ export default function App() {
     }
     setConfirmArchive(false)
     void archiveCurrent()
+  }
+
+  async function archiveSkillRow(skill: Skill) {
+    try {
+      const response = await fetch(`/api/skills/${skill.id}/archive`, { method: 'POST' })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `archive ${response.status}`)
+      setSkills((current) => current.filter((row) => row.id !== skill.id))
+      if (selected === skill.id) setSelected(null)
+      void loadTrash()
+    } catch (error) {
+      setError((error as Error).message)
+    }
   }
 
   async function archiveCurrent() {
@@ -1387,6 +1415,10 @@ export default function App() {
               key={skill.id}
               className={`row ${selected === skill.id ? 'selected' : ''}`}
               onClick={() => setSelected(skill.id)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setRowMenu({ x: event.clientX, y: event.clientY, skill })
+              }}
             >
               <span
                 className={`dot ${skill.health.length ? 'warn' : ''} ${skill.risk === 'high' ? 'risk' : ''}`}
@@ -1409,6 +1441,42 @@ export default function App() {
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
           </ScrollPane>
+          {rowMenu && (
+            <div
+              className="rowmenu"
+              style={{ left: rowMenu.x, top: rowMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                className="rowmenu-item"
+                onClick={() => {
+                  void navigator.clipboard.writeText(rowMenu.skill.path)
+                  setRowMenu(null)
+                }}
+              >
+                Copy path
+              </button>
+              <button
+                className="rowmenu-item"
+                onClick={() => {
+                  void navigator.clipboard.writeText(rowMenu.skill.name)
+                  setRowMenu(null)
+                }}
+              >
+                Copy name
+              </button>
+              <button
+                className="rowmenu-item danger"
+                onClick={() => {
+                  const target = rowMenu.skill
+                  setRowMenu(null)
+                  void archiveSkillRow(target)
+                }}
+              >
+                Archive
+              </button>
+            </div>
+          )}
         </section>
 
         <div
