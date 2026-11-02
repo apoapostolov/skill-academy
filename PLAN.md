@@ -127,3 +127,5 @@ Total: about 37 working days. P0-P3 is a usable product; linking and curation ar
 4. **LAN access.** Local-only by default. Do you want a token-gated LAN mode for the Bedroom machine?
 5. **Auto-update default.** I plan `notify` for every source, with auto-update opt-in per source. Confirm.
 6. **Curation model budget.** One consolidation run on your library is roughly 60k-150k input tokens depending on cluster count. Cap per run?
+7. **Default archive location.** `~/.skill-academy/archive` is the fallback. Do you want a drive path as the default (for example `E:\Skill archive`), and one per agent?
+8. **Ingest defaults.** Distill for every link, or `attach` first so you can read the upstream before any model rewrites your skill?
