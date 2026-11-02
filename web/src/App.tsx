@@ -651,7 +651,7 @@ export default function App() {
                 <button
                   className="ghost wrapbtn"
                   onClick={() => setWrap((value) => !value)}
-                  title={wrap ? 'Unwrap lines (80 columns)' : 'Wrap lines'}
+                  title={wrap ? 'Unwrap lines' : 'Wrap lines'}
                   aria-label={wrap ? 'Unwrap lines' : 'Wrap lines'}
                   aria-pressed={wrap}
                 >

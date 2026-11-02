@@ -704,6 +704,11 @@ h2 {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: hidden;
+  /* `max-content` on the unwrapped body would keep the longest line as the width,
+     so wrapped mode has to give that up or nothing ever wraps. */
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .detail .empty,
