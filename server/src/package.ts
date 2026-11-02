@@ -61,6 +61,23 @@ export function scriptDescription(text: string): string | undefined {
   return description.length > 240 ? `${description.slice(0, 237)}…` : description
 }
 
+const STANDARD_FOLDERS: Record<string, PackageKind> = {
+  references: 'reference',
+  reference: 'reference',
+  docs: 'reference',
+  scripts: 'script',
+  assets: 'asset',
+  images: 'asset',
+  media: 'asset'
+}
+
+/** A folder is typed by what it holds: markdown first, then scripts, else assets. */
+function folderKind(files: PackageEntry[]): PackageKind {
+  if (files.some((file) => /\.(md|markdown)$/i.test(file.name))) return 'reference'
+  if (files.some((file) => SCRIPT_EXT.has(file.ext.toLowerCase()))) return 'script'
+  return 'asset'
+}
+
 function classify(relPath: string): PackageKind {
   const lower = relPath.toLowerCase()
   const ext = path.extname(lower)
@@ -118,6 +135,31 @@ export function readPackage(skillPath: string): PackageTree {
   }
 
   walk(root, 0)
+
+  // A folder is a unit: `notes/`, `playbooks/` or `research/` is a reference folder when it
+  // holds markdown, a script folder when it holds code, an asset folder otherwise. Standard
+  // names keep their meaning, so a README inside `scripts/` cannot re-type the folder.
+  const byFolder = new Map<string, PackageEntry[]>()
+  for (const entry of entries) {
+    const parts = entry.relPath.split(/[\\/]/)
+    if (parts.length < 2) continue
+    const list = byFolder.get(parts[0]) ?? []
+    list.push(entry)
+    byFolder.set(parts[0], list)
+  }
+  for (const [folder, files] of byFolder) {
+    const kind = STANDARD_FOLDERS[folder.toLowerCase()] ?? folderKind(files)
+    for (const file of files) file.kind = kind
+  }
+  for (const entry of entries) {
+    if (entry.kind !== 'script' || entry.description || entry.size > 256_000) continue
+    try {
+      entry.description = scriptDescription(fs.readFileSync(path.join(root, entry.relPath), 'utf8'))
+    } catch {
+      entry.description = undefined
+    }
+  }
+
   entries.sort((a, b) => a.kind.localeCompare(b.kind) || a.relPath.localeCompare(b.relPath))
 
   const counts: Record<PackageKind, number> = { reference: 0, script: 0, asset: 0 }
