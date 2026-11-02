@@ -153,6 +153,12 @@ CREATE TABLE project_skills (
   PRIMARY KEY (project_id, path)
 );
 
+CREATE TABLE IF NOT EXISTS agent_prefs (
+  agent      TEXT PRIMARY KEY,
+  hidden     INTEGER NOT NULL DEFAULT 0,   -- display only; never disables a skill
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE trash (
   id            INTEGER PRIMARY KEY,
   name          TEXT NOT NULL,

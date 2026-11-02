@@ -81,6 +81,11 @@ function migrate(db: DatabaseSync): void {
       skill_id INTEGER PRIMARY KEY,
       body     TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS agent_prefs (
+      agent      TEXT PRIMARY KEY,
+      hidden     INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
   `)
 
   const stored = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as
@@ -454,6 +459,21 @@ export function countsByRoot(): Record<string, number> {
   const out: Record<string, number> = {}
   for (const row of rows) out[row.root_path] = row.n
   return out
+}
+
+/** Agents the user has taken out of the sidebar. Display only: nothing is unmounted or disabled. */
+export function listHiddenAgents(): string[] {
+  const rows = getDb().prepare('SELECT agent FROM agent_prefs WHERE hidden = 1').all() as { agent: string }[]
+  return rows.map((row) => row.agent)
+}
+
+export function setAgentHidden(agent: string, hidden: boolean): void {
+  getDb()
+    .prepare(`
+      INSERT INTO agent_prefs (agent, hidden, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(agent) DO UPDATE SET hidden = excluded.hidden, updated_at = excluded.updated_at
+    `)
+    .run(agent, hidden ? 1 : 0, new Date().toISOString())
 }
 
 export type { RootScan }

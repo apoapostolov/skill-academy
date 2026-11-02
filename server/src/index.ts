@@ -5,6 +5,7 @@ import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
 import {
   getSkill,
+  listHiddenAgents,
   querySkills,
   readRoots,
   rebuildIndex,
@@ -12,6 +13,7 @@ import {
   saveOne,
   saveRoot,
   saveScan,
+  setAgentHidden,
   tagFacets,
   tokensByRoot,
   totals
@@ -253,9 +255,21 @@ app.get('/api/facets', async () => {
 
   return {
     agents: uniqueAgents,
+    hidden: listHiddenAgents(),
     tags: tagFacets(),
     issues: totals().issues
   }
+})
+
+app.post('/api/agents/:agent/visibility', async (request, reply) => {
+  const { agent } = request.params as { agent: string }
+  const body = request.body as { hidden?: boolean } | undefined
+  if (typeof body?.hidden !== 'boolean') {
+    reply.code(400)
+    return { error: 'hidden must be a boolean' }
+  }
+  setAgentHidden(agent, body.hidden)
+  return { agent, hidden: body.hidden, hiddenAgents: listHiddenAgents() }
 })
 
 app.get('/api/dev/requests', async () => ({ requests }))

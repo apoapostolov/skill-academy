@@ -738,3 +738,34 @@ h2 {
   background: var(--ok);
   box-shadow: 0 0 0 2px rgba(110, 158, 138, 0.18);
 }
+
+.sidebar .group.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 0;
+}
+
+.ghost.tiny {
+  font-size: 10px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--sep);
+  border-radius: 4px;
+  color: var(--text-3);
+}
+
+.ghost.tiny:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.nav .eye {
+  margin-right: 6px;
+  vertical-align: -1px;
+  opacity: 0.8;
+}
+
+.nav.is-hidden {
+  opacity: 0.45;
+}

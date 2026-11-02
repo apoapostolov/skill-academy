@@ -31,6 +31,7 @@ interface Skill {
 
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
+  hidden: string[]
   tags: { tag: string; count: number }[]
   issues: number
 }
@@ -43,6 +44,27 @@ type Scope =
 
 const fmt = new Intl.NumberFormat()
 const PAGE = 120
+
+function EyeGlyph({ hidden }: { hidden: boolean }) {
+  return (
+    <svg
+      className="eye"
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4S1.5 8 1.5 8Z" />
+      <circle cx="8" cy="8" r="1.8" />
+      {hidden && <path d="M2.5 2.5 13.5 13.5" />}
+    </svg>
+  )
+}
 
 function compact(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -103,6 +125,8 @@ export default function App() {
   const [widths, setWidths] = useState<{ sidebar: number; detail: number | null }>({ sidebar: 236, detail: null })
   const [live, setLive] = useState(false)
   const [pending, setPending] = useState(0)
+  const [editingAgents, setEditingAgents] = useState(false)
+  const [hiddenAgents, setHiddenAgents] = useState<string[]>([])
 
   const dragRef = useRef<{ kind: 'sidebar' | 'detail'; x: number; value: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -144,7 +168,9 @@ export default function App() {
       const [stateRes, facetsRes] = await Promise.all([fetch('/api/state'), fetch('/api/facets')])
       if (!stateRes.ok || !facetsRes.ok) throw new Error(`API ${stateRes.status}/${facetsRes.status}`)
       setState(await stateRes.json())
-      setFacets(await facetsRes.json())
+      const facetsPayload = await facetsRes.json()
+      setFacets(facetsPayload)
+      setHiddenAgents(facetsPayload.hidden ?? [])
       setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -270,6 +296,26 @@ export default function App() {
     }
   }
 
+  async function toggleAgent(agent: string) {
+    const shouldHide = !hiddenAgents.includes(agent)
+    const previous = hiddenAgents
+    setHiddenAgents(shouldHide ? [...hiddenAgents, agent] : hiddenAgents.filter((name) => name !== agent))
+    if (shouldHide && scope.kind === 'agent' && scope.agent === agent) setScope({ kind: 'all' })
+    try {
+      const response = await fetch(`/api/agents/${encodeURIComponent(agent)}/visibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hidden: shouldHide })
+      })
+      if (!response.ok) throw new Error(`visibility ${response.status}`)
+      const payload = await response.json()
+      setHiddenAgents(payload.hiddenAgents)
+    } catch (cause) {
+      setHiddenAgents(previous)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   const scopeLabel = useMemo(() => {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
@@ -336,25 +382,42 @@ export default function App() {
             Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
           </button>
 
-          <div className="group">Agents</div>
-          {facets?.agents.map((agent) => (
-            <button
-              key={`${agent.agent}:${agent.path}`}
-              className={`nav root ${
-                scope.kind === 'agent' && scope.path === agent.path && scope.agent === agent.agent ? 'active' : ''
-              }`}
-              onClick={() => setScope({ kind: 'agent', agent: agent.agent, path: agent.path })}
-              title={agent.path}
-            >
-              <span className="name">
-                {agent.agent}
-                {agent.origin === 'host' && <em className="badge">host</em>}
-              </span>
-              <span>
-                {fmt.format(agent.count)} · {compact(agent.tokens)}
-              </span>
+          <div className="group row">
+            <span>Agents</span>
+            <button className="ghost tiny" onClick={() => setEditingAgents((value) => !value)}>
+              {editingAgents ? 'Done' : 'Edit'}
             </button>
-          ))}
+          </div>
+          {facets?.agents
+            .filter((agent) => editingAgents || !hiddenAgents.includes(agent.agent))
+            .map((agent) => {
+              const isHidden = hiddenAgents.includes(agent.agent)
+              const active =
+                scope.kind === 'agent' && scope.path === agent.path && scope.agent === agent.agent && !editingAgents
+              return (
+                <button
+                  key={`${agent.agent}:${agent.path}`}
+                  className={`nav root ${active ? 'active' : ''} ${isHidden ? 'is-hidden' : ''}`}
+                  onClick={() => (editingAgents ? void toggleAgent(agent.agent) : setScope({ kind: 'agent', agent: agent.agent, path: agent.path }))}
+                  title={editingAgents ? `${agent.agent} — ${isHidden ? 'hidden' : 'shown'}` : agent.path}
+                >
+                  <span className="name">
+                    {editingAgents && <EyeGlyph hidden={isHidden} />}
+                    {agent.agent}
+                    {agent.origin === 'host' && <em className="badge">host</em>}
+                  </span>
+                  <span>
+                    {editingAgents ? (
+                      isHidden ? 'hidden' : 'shown'
+                    ) : (
+                      <>
+                        {fmt.format(agent.count)} · {compact(agent.tokens)}
+                      </>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
 
           {facets && facets.tags.length > 0 && <div className="group">Tags</div>}
           {facets?.tags.slice(0, 10).map((entry) => (
