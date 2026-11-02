@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
 import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST } from './config'
@@ -20,6 +21,7 @@ import {
   totals
 } from './db'
 import { place, unplace } from './placement'
+import { readPackage, readPackageFile } from './package'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import { readSkillBody } from './skill'
@@ -219,7 +221,46 @@ app.get('/api/skills/:id', async (request, reply) => {
     ...row,
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
-    body: readSkillBody(row.path)
+    body: readSkillBody(row.path),
+    package: readPackage(row.path)
+  }
+})
+
+app.get('/api/skills/:id/file', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const { rel } = request.query as { rel?: string }
+  const row = getSkill(Number(id))
+  if (!row || !rel) {
+    reply.code(400)
+    return { error: 'id and rel are required' }
+  }
+  const file = readPackageFile(row.path, rel)
+  if (!file.ok) {
+    reply.code(file.reason === 'outside-package' ? 403 : 404)
+    return { error: file.reason }
+  }
+  return { name: file.name, rel, text: file.text }
+})
+
+app.post('/api/reveal', async (request, reply) => {
+  const body = request.body as { path?: string } | undefined
+  if (!body?.path) {
+    reply.code(400)
+    return { error: 'path is required' }
+  }
+  const target = path.resolve(body.path)
+  const roots = loadRegistry().roots.filter((root) => root.exists).map((root) => path.resolve(root.path).toLowerCase())
+  const inside = roots.some((root) => target.toLowerCase().startsWith(`${root}${path.sep}`))
+  if (!inside) {
+    reply.code(403)
+    return { error: 'outside a known skill root' }
+  }
+  try {
+    spawn('explorer.exe', [`/select,${target}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+    return { ok: true }
+  } catch (error) {
+    reply.code(500)
+    return { error: (error as Error).message }
   }
 })
 

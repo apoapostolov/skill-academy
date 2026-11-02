@@ -37,6 +37,15 @@ interface Placement {
   mode: string | null
 }
 
+interface PackageEntry {
+  kind: 'reference' | 'script' | 'asset'
+  name: string
+  relPath: string
+  size: number
+  ext: string
+  description?: string
+}
+
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; tokens: number }[]
   hidden: string[]
@@ -246,7 +255,8 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [selected, setSelected] = useState<number | null>(null)
-  const [detail, setDetail] = useState<(Skill & { body: string }) | null>(null)
+  const [detail, setDetail] = useState<(Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> } }) | null>(null)
+  const [openRef, setOpenRef] = useState<{ name: string; text: string } | null>(null)
   const [wrap, setWrap] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -406,6 +416,7 @@ export default function App() {
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((payload) => alive && setDetail(payload))
       .catch(() => alive && setDetail(null))
+    setOpenRef(null)
     fetch(`/api/placements?skillId=${selected}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((payload) => alive && setPlacements(payload.placements))
@@ -437,6 +448,33 @@ export default function App() {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setPlacementBusy(null)
+    }
+  }
+
+  async function openReference(entry: PackageEntry) {
+    if (!detail) return
+    try {
+      const response = await fetch(`/api/skills/${detail.id}/file?rel=${encodeURIComponent(entry.relPath)}`)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? `file ${response.status}`)
+      setOpenRef({ name: entry.name, text: payload.text })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  async function reveal(entry: PackageEntry) {
+    if (!detail) return
+    const absolute = `${detail.path.replace(/[\\/]+$/, '')}\\${entry.relPath.replace(/\//g, '\\')}`
+    try {
+      const response = await fetch('/api/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: absolute })
+      })
+      if (!response.ok) throw new Error((await response.json()).error ?? `reveal ${response.status}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
@@ -486,7 +524,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <ScrollPane className="app-scroll" bodyRef={pageRef} onScroll={onPageScroll}>
       <div className="menubar">
         <b>Skill Academy</b>
         <span>File</span>
@@ -532,8 +569,8 @@ export default function App() {
       )}
 
       <div className="panes">
-          <div className="main-row">
         <aside className="sidebar" style={{ width: widths.sidebar, flexBasis: widths.sidebar }}>
+          <ScrollPane className="sidebar-scroll">
           <button className={`nav ${scope.kind === 'all' ? 'active' : ''}`} onClick={() => setScope({ kind: 'all' })}>
             All skills <span>{state ? fmt.format(state.library.skills) : ''}</span>
           </button>
@@ -589,6 +626,7 @@ export default function App() {
               #{entry.tag} <span>{fmt.format(entry.count)}</span>
             </button>
           ))}
+          </ScrollPane>
         </aside>
 
         <div
@@ -602,6 +640,7 @@ export default function App() {
         />
 
         <section className="list">
+          <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
           <div className="listhead">
             <span className="scope">{scopeLabel}</span>
             <span className="count">
@@ -628,8 +667,8 @@ export default function App() {
           {skills.length === 0 && !loadingMore && (
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
+          </ScrollPane>
         </section>
-          </div>
 
         <div
           className="splitter"
@@ -642,6 +681,7 @@ export default function App() {
         />
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
+          <ScrollPane axis="both" className="detail-scroll">
           {!detail && <div className="empty">Select a skill to read it.</div>}
           {detail && (
             <div className="detail-inner">
@@ -713,6 +753,45 @@ export default function App() {
                   )}
                 </div>
               )}
+              {detail.package && detail.package.entries.length > 0 && (
+                <div className="pkg">
+                  {(
+                    [
+                      ['reference', 'References'],
+                      ['script', 'Scripts'],
+                      ['asset', 'Assets']
+                    ] as const
+                  ).map(([kind, label]) => {
+                    const rows = detail.package!.entries.filter((entry) => entry.kind === kind)
+                    if (rows.length === 0) return null
+                    return (
+                      <div className="pkg-group" key={kind}>
+                        <div className="pkg-head">
+                          <span>{label}</span>
+                          <span>{rows.length}</span>
+                        </div>
+                        {rows.slice(0, 12).map((entry) => (
+                          <button
+                            className="pkg-row"
+                            key={entry.relPath}
+                            title={`${entry.relPath}${entry.description ? ` — ${entry.description}` : ''}`}
+                            onClick={() =>
+                              kind === 'asset'
+                                ? void reveal(entry)
+                                : void openReference(entry)
+                            }
+                          >
+                            <span className="pkg-name">{entry.name}</span>
+                            <span className="pkg-meta">
+                              {kind === 'asset' ? 'reveal' : entry.description ? entry.description.slice(0, 70) : entry.relPath}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {detail.health.length > 0 && (
                 <div className="issues">
                   {detail.health.map((issue, index) => (
@@ -725,12 +804,23 @@ export default function App() {
               )}
             </div>
           )}
-          {detail && (
+          {detail && !openRef && (
             <pre className={`body ${wrap ? 'wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
           )}
+          {detail && openRef && (
+            <div className="refview">
+              <div className="refbar">
+                <button className="ghost tiny" onClick={() => setOpenRef(null)}>
+                  ← {detail.name}
+                </button>
+                <span>{openRef.name}</span>
+              </div>
+              <pre className="body">{openRef.text}</pre>
+            </div>
+          )}
+          </ScrollPane>
         </aside>
       </div>
-      </ScrollPane>
 
       <div className="statusbar">
         <span className="live">
