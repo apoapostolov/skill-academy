@@ -55,7 +55,9 @@ marked.use({
 })
 
 export function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false }) as string
+  const html = marked.parse(text, { async: false }) as string
+  // A wide table scrolls on its own instead of stretching the reading measure.
+  return html.replace(/<table>/g, '<div class="md-table"><table>').replace(/<\/table>/g, '</table></div>')
 }
 
 export type MarkdownToken = Token

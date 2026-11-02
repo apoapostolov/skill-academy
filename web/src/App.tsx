@@ -465,6 +465,53 @@ function WrapGlyph({ wrapped }: { wrapped: boolean }) {
   )
 }
 
+/**
+ * Rendered markdown, with the one behaviour a document needs from its tables: a horizontal
+ * bar that stays hidden until the reader reaches the bottom edge or starts scrolling, then
+ * fades once the scrolling settles.
+ */
+function MarkdownBody({ text, className }: { text: string; className: string }) {
+  const host = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const element = host.current
+    if (!element) return
+    const cleanups: Array<() => void> = []
+    for (const scroller of element.querySelectorAll<HTMLDivElement>('.md-table')) {
+      let timer: number | undefined
+      const reveal = () => {
+        scroller.classList.add('is-active')
+        window.clearTimeout(timer)
+      }
+      const settle = (delay: number) => {
+        window.clearTimeout(timer)
+        timer = window.setTimeout(() => scroller.classList.remove('is-active'), delay)
+      }
+      const onPointerMove = (event: PointerEvent) => {
+        const box = scroller.getBoundingClientRect()
+        if (event.clientY >= box.bottom - 14) reveal()
+      }
+      const onScroll = () => {
+        reveal()
+        settle(650)
+      }
+      const onLeave = () => settle(240)
+      scroller.addEventListener('pointermove', onPointerMove)
+      scroller.addEventListener('scroll', onScroll, { passive: true })
+      scroller.addEventListener('pointerleave', onLeave)
+      cleanups.push(() => {
+        window.clearTimeout(timer)
+        scroller.removeEventListener('pointermove', onPointerMove)
+        scroller.removeEventListener('scroll', onScroll)
+        scroller.removeEventListener('pointerleave', onLeave)
+      })
+    }
+    return () => cleanups.forEach((run) => run())
+  }, [text])
+
+  return <div ref={host} className={className} dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+}
+
 export default function App() {
   const [state, setState] = useState<State | null>(null)
   const [facets, setFacets] = useState<Facets | null>(null)
@@ -1370,10 +1417,7 @@ export default function App() {
             </div>
           )}
           {detail && !openRef && mdMode === 'preview' && (
-            <div
-              className={`md body${wrap ? ' wrapped' : ''}`}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.body || '_Empty body._') }}
-            />
+            <MarkdownBody text={detail.body || '_Empty body._'} className={`md body${wrap ? ' wrapped' : ''}`} />
           )}
           {detail && !openRef && mdMode === 'raw' && (
             <pre className={`body raw${wrap ? ' wrapped' : ''}`}>{detail.body || 'Empty body.'}</pre>
@@ -1395,7 +1439,7 @@ export default function App() {
                 </div>
               ) : extensionOf(openRef.rel) === '.md' || extensionOf(openRef.rel) === '.markdown' ? (
                 mdMode === 'preview' ? (
-                  <div className="md body" dangerouslySetInnerHTML={{ __html: renderMarkdown(openRef.text) }} />
+                  <MarkdownBody text={openRef.text} className="md body" />
                 ) : (
                   <pre className="body raw">{openRef.text}</pre>
                 )
