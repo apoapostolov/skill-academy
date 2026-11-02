@@ -20,6 +20,9 @@ export interface TrashRow {
 export interface Settings {
   archiveDir: string
   trashDays: number
+  /** Which model the merge pass asks. Stored here so a repair on another machine matches. */
+  mergeProvider: string
+  mergeModel: string
 }
 
 const DEFAULT_TRASH_DAYS = 30
@@ -27,14 +30,18 @@ const DEFAULT_TRASH_DAYS = 30
 /** Settings live in meta so a second machine can share them without a config file. */
 export function readSettings(): Settings {
   const db = getDb()
-  const rows = db.prepare("SELECT key, value FROM meta WHERE key IN ('archive_dir', 'trash_days')").all() as {
+  const rows = db
+    .prepare("SELECT key, value FROM meta WHERE key IN ('archive_dir', 'trash_days', 'merge_provider', 'merge_model')")
+    .all() as {
     key: string
     value: string
   }[]
   const found = new Map(rows.map((row) => [row.key, row.value]))
   return {
     archiveDir: found.get('archive_dir') ?? path.join(DATA_DIR, 'archive'),
-    trashDays: Number(found.get('trash_days') ?? DEFAULT_TRASH_DAYS)
+    trashDays: Number(found.get('trash_days') ?? DEFAULT_TRASH_DAYS),
+    mergeProvider: found.get('merge_provider') ?? 'opencode-go',
+    mergeModel: found.get('merge_model') ?? 'deepseek-v4.1-flash'
   }
 }
 
@@ -46,6 +53,8 @@ export function writeSettings(patch: Partial<Settings>): Settings {
       .run(key, value)
   if (patch.archiveDir !== undefined) write('archive_dir', patch.archiveDir)
   if (patch.trashDays !== undefined) write('trash_days', String(patch.trashDays))
+  if (patch.mergeProvider !== undefined) write('merge_provider', patch.mergeProvider)
+  if (patch.mergeModel !== undefined) write('merge_model', patch.mergeModel)
   return readSettings()
 }
 

@@ -565,10 +565,11 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
     reply.code(400)
     return { error: 'key is required' }
   }
+  const settings = readSettings()
   const result = await applyFold({
     key: body.key,
-    provider: body.provider ?? 'opencode-go',
-    model: body.model ?? 'deepseek-v4.1-flash',
+    provider: body.provider ?? settings.mergeProvider,
+    model: body.model ?? settings.mergeModel,
     read: !!body.read,
     confirm: !!body.confirm,
     dryRun: !!body.dryRun
@@ -584,7 +585,8 @@ app.post('/api/consolidate/fold', async (request, reply) => {
     reply.code(400)
     return { error: 'key is required' }
   }
-  const result = await foldGroup(body.key, body.provider ?? 'opencode-go', body.model ?? 'deepseek-v4.1-flash')
+  const settings = readSettings()
+  const result = await foldGroup(body.key, body.provider ?? settings.mergeProvider, body.model ?? settings.mergeModel)
   if ('error' in result) {
     reply.code(result.error === 'group-not-found' ? 404 : 409)
     return result
@@ -1884,7 +1886,12 @@ app.post('/api/journal/:id/undo', async (request, reply) => {
 app.get('/api/settings', async () => ({ settings: readSettings() }))
 
 app.post('/api/settings', async (request) => {
-  const body = (request.body ?? {}) as { archiveDir?: string; trashDays?: number }
+  const body = (request.body ?? {}) as {
+    archiveDir?: string
+    trashDays?: number
+    mergeProvider?: string
+    mergeModel?: string
+  }
   return { settings: writeSettings(body) }
 })
 

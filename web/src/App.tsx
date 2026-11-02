@@ -942,7 +942,7 @@ export default function App() {
     const response = await fetch('/api/consolidate/fold', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key, provider: 'opencode-go', model: 'deepseek-v4.1-flash' })
+      body: JSON.stringify({ key })
     })
     const payload = (await response.json()) as FoldView & { error?: string; detail?: unknown }
     setFoldBusy('')
@@ -961,8 +961,6 @@ export default function App() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         key: fold.key,
-        provider: 'opencode-go',
-        model: 'deepseek-v4.1-flash',
         read: foldRead,
         confirm: true,
         dryRun: false
@@ -1759,11 +1757,6 @@ export default function App() {
             <AcademyMark />
             <span className="brand-name">Skill Academy</span>
           </span>
-          <span>File</span>
-          <span>Edit</span>
-          <span>View</span>
-          <span>Skills</span>
-          <span>Sources</span>
           <button className="mb-item" onClick={openImprove}>
             Improve
           </button>
@@ -1773,7 +1766,6 @@ export default function App() {
           <button className="mb-item" onClick={openProviders}>
             Providers
           </button>
-          <span>Help</span>
         </div>
         <div className="searchwrap">
           <input
@@ -2211,7 +2203,16 @@ export default function App() {
                     onChange={(event) => {
                       const chosen = event.target.value
                       setModelChoice(chosen)
-                      if (modelProvider) window.localStorage.setItem(`skill-academy.model-choice.${modelProvider}`, chosen)
+                      if (!modelProvider) return
+                      window.localStorage.setItem(`skill-academy.model-choice.${modelProvider}`, chosen)
+                      // The merge pass asks this model, so the choice is saved where the server reads it.
+                      if (chosen) {
+                        void fetch('/api/settings', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json' },
+                          body: JSON.stringify({ mergeProvider: modelProvider, mergeModel: chosen })
+                        })
+                      }
                     }}
                     disabled={!modelList.length}
                   >

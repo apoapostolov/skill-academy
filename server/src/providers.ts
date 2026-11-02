@@ -261,7 +261,10 @@ function authHeaders(provider: Provider, key: string | null): Record<string, str
 }
 
 export async function chat(provider: Provider, request: ChatRequest): Promise<ChatResult | ProviderFailure> {
-  const key = provider.needsKey ? getKey(provider.id) : null
+  // A signed-in provider authenticates with its session; only a provider without one falls back to
+  // a saved API key. Reading the key alone reported every signed-in provider as unconfigured.
+  const session = OAUTH_PROVIDERS[provider.id] ? oauthAccessToken(provider.id) : null
+  const key = session ?? (provider.needsKey ? getKey(provider.id) : null)
   if (provider.needsKey && !key) return { kind: 'no-key', provider: provider.id }
 
   const started = Date.now()
@@ -272,7 +275,7 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
     if (provider.kind === 'anthropic') {
       const response = await fetch(`${provider.base}/messages`, {
         method: 'POST',
-        headers: authHeaders(provider, key),
+        headers: session ? { ...authHeaders(provider, key), authorization: `Bearer ${session}`, 'anthropic-beta': 'oauth-2025-04-20' } : authHeaders(provider, key),
         signal: controller.signal,
         body: JSON.stringify({
           model: request.model,

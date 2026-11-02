@@ -17,6 +17,8 @@ import { sweepReferences } from './sweep'
 
 export interface FoldProposal {
   key: string
+  /** `merge` folds two copies into one body; `router` rewrites one body to point at the canonical. */
+  mode: 'merge' | 'router'
   survivor: string
   model: string
   ms: number
@@ -84,7 +86,19 @@ export async function foldGroup(
   const survivorText = bodyText(survivor.dir)
   const otherTexts = sourceBodies.map((entry) => bodyText(entry.body!.dir))
 
-  const system = [
+  const routerMode = group.plan.routerize.length > 0
+  const routerTarget = group.plan.routerize[0]?.name ?? others[0]?.name ?? 'this skill'
+
+  const system = routerMode
+    ? [
+        'You rewrite one skill body as a router. Output only the finished markdown body, with no frontmatter and no commentary.',
+        'The canonical skill is ' + survivor.name + '; the router body belongs to ' + routerTarget + '.',
+        'Open with a line telling the reader to load the canonical skill first.',
+        'Keep every rule, caveat and exact token this body carries. Never invent a rule, a path, a command or a number.',
+        'Keep each unique section under its own heading.',
+        'Prefer short, plain sentences. Do not add praise, motivation or filler.'
+      ].join(' ')
+    : [
     'You merge skill documents. Output only the finished markdown body, with no frontmatter and no commentary.',
     'Keep every rule, caveat and exact token from both inputs. Never invent a rule, a path, a command or a number.',
     'When two rules say the same thing, keep the more specific wording once.',
@@ -92,7 +106,11 @@ export async function foldGroup(
     'Prefer short, plain sentences. Do not add praise, motivation or filler.'
   ].join(' ')
 
-  const user = [
+  // A router is audited against the body it replaces, never against the canonical skill.
+  const routerSource = routerMode ? otherTexts[0] ?? '' : ''
+  const user = routerMode
+    ? ['Body to turn into a router (' + routerTarget + '):', '', routerSource].join('\n')
+    : [
     `Canonical body (${survivor.name}):`,
     '',
     survivorText,
@@ -110,7 +128,7 @@ export async function foldGroup(
   if (!text) return { error: 'empty-answer', detail: { model } }
 
   // Audit: nothing from either source may vanish, and anything new is named.
-  const sources = [survivorText, ...otherTexts].flatMap(substantive)
+  const sources = (routerMode ? [routerSource] : [survivorText, ...otherTexts]).flatMap(substantive)
   const output = substantive(text)
   const outputSet = new Set(output)
   const dropped = [...new Set(sources)].filter((line) => !outputSet.has(line))
@@ -119,6 +137,7 @@ export async function foldGroup(
 
   const proposal: FoldProposal = {
     key,
+    mode: routerMode ? 'router' : 'merge',
     survivor: survivor.name,
     model: result.model,
     ms: result.ms,
