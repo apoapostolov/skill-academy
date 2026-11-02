@@ -654,7 +654,6 @@ export default function App() {
   const [modelList, setModelList] = useState<string[]>([])
   const [modelAt, setModelAt] = useState<string | null>(null)
   const [modelCached, setModelCached] = useState(false)
-  const [modelNote, setModelNote] = useState('')
   const [githubToken, setGithubToken] = useState('')
   const [githubNote, setGithubNote] = useState('')
 
@@ -824,24 +823,13 @@ export default function App() {
     if (!id) {
       setModelList([])
       setModelAt(null)
-      setModelNote('')
       return
     }
-    setModelNote(refresh ? 'refreshing…' : 'loading…')
     const response = await fetch(`/api/providers/${id}/models${refresh ? '?refresh=1' : ''}`)
     const payload = (await response.json()) as { models?: string[]; at?: string | null; cached?: boolean; error?: string }
     setModelList(payload.models ?? [])
     setModelAt(payload.at ?? null)
     setModelCached(!!payload.cached)
-    setModelNote(
-      payload.error
-        ? `${payload.error}${payload.models?.length ? ' · showing a saved list' : ''}`
-        : payload.models?.length
-          ? payload.cached
-            ? `${payload.models.length} models, reused from ${new Date(payload.at ?? '').toLocaleString()}`
-            : `${payload.models.length} models, fetched now`
-          : 'no models listed'
-    )
   }
 
   async function saveProviderBase(id: string) {
@@ -1914,10 +1902,6 @@ export default function App() {
                   <button className="ghost small" disabled={!modelProvider} onClick={() => void loadModels(modelProvider, true)}>
                     Refresh
                   </button>
-                  <span className="oauthstate">
-                    {modelNote}
-                    {modelCached && modelAt ? '' : ''}
-                  </span>
                 </div>
               </div>
 

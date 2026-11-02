@@ -47,6 +47,7 @@ import {
   undoJournal,
   writeSettings
 } from './lifecycle'
+import { consolidateDryRun } from './consolidate'
 import { curateDryRun } from './curate'
 import { improveDryRun } from './improve'
 import { PROVIDERS, cachedModels, providerById, providerSummary, refreshModels, testProvider } from './providers'
@@ -531,6 +532,12 @@ app.get('/api/github/status', async () => {
     remaining: payload?.resources?.core?.remaining ?? null,
     limit: payload?.resources?.core?.limit ?? null
   }
+})
+
+app.post('/api/consolidate/dry-run', async () => {
+  // Read-only. Every group names its merge type and the body evidence behind it, and a router
+  // family comes back as intentional-family with no plan at all.
+  return consolidateDryRun()
 })
 
 app.post('/api/improve/dry-run', async () => {
