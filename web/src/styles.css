@@ -1894,3 +1894,24 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .md blockquote { margin: 1px 0; }
 .md .md-code { margin: 0 0 1px; }
 .md table { margin: 0 0 1px; }
+
+/* Archive action and the trash rows it feeds. */
+.btn.archive {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 10.5px;
+  color: #d8a09b;
+  background: rgba(184, 92, 87, 0.14);
+  border: 1px solid rgba(184, 92, 87, 0.45);
+  border-radius: 5px;
+}
+
+.btn.archive:hover { background: rgba(184, 92, 87, 0.24); }
+
+.detailhead .btn.archive + .seg { margin-left: 8px; }
+
+.nav.trash-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; cursor: default; }
+.nav.trash-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.nav.trash-row .iconbtn { opacity: 0.55; }
+.nav.trash-row:hover .iconbtn { opacity: 1; }

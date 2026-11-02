@@ -22,6 +22,16 @@ import {
   tokensByRoot,
   totals
 } from './db'
+import {
+  archiveSkill,
+  expiredTrash,
+  listTrash,
+  purgeTrash,
+  readSettings,
+  restoreTrash,
+  undoJournal,
+  writeSettings
+} from './lifecycle'
 import { place, unplace } from './placement'
 import { applyChange } from './apply'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
@@ -408,6 +418,58 @@ app.post('/api/placements', async (request, reply) => {
   }
   rescanRoot(root.path)
   return { state: 'off', mode: result.mode, target, trashed: result.trashed }
+})
+
+app.post('/api/skills/:id/archive', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { reason?: string }
+  const result = archiveSkill(Number(id), body.reason ?? 'manual')
+  if (!result.ok) {
+    reply.code(result.reason === 'not-found' ? 404 : 409)
+    return { error: result.reason }
+  }
+  broadcast({ type: 'library', root: null, added: 0, changed: 0, removed: 1, at: new Date().toISOString() })
+  return { state: 'archived', trashedTo: result.trashedTo, trashId: result.trashId, journalId: result.journalId }
+})
+
+app.get('/api/trash', async () => ({ entries: listTrash(), expired: expiredTrash(), settings: readSettings() }))
+
+app.post('/api/trash/:id/restore', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const result = restoreTrash(Number(id))
+  if (!result.ok) {
+    reply.code(409)
+    return { error: result.reason }
+  }
+  broadcast({ type: 'library', root: null, added: 1, changed: 0, removed: 0, at: new Date().toISOString() })
+  return { state: 'restored', restoredTo: result.restoredTo, journalId: result.journalId }
+})
+
+app.post('/api/trash/:id/purge', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const result = purgeTrash(Number(id))
+  if (!result.ok) {
+    reply.code(409)
+    return { error: result.reason }
+  }
+  return { state: 'purged' }
+})
+
+app.post('/api/journal/:id/undo', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const result = undoJournal(Number(id))
+  if (!result.ok) {
+    reply.code(409)
+    return { error: result.reason }
+  }
+  return { state: 'undone', action: result.action }
+})
+
+app.get('/api/settings', async () => ({ settings: readSettings() }))
+
+app.post('/api/settings', async (request) => {
+  const body = (request.body ?? {}) as { archiveDir?: string; trashDays?: number }
+  return { settings: writeSettings(body) }
 })
 
 app.get('/api/journal', async (request) => {

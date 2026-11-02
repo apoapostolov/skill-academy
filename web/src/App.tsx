@@ -220,6 +220,23 @@ function buildPackageTree(entries: PackageEntry[]): PkgNode[] {
   return root.children
 }
 
+function RestoreGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <path d="M3.5 8a4.5 4.5 0 1 0 1.5-3.4" strokeLinecap="round" />
+      <path d="M3 2.5V5h2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function TrashGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.6 8.2h4.8l.6-8.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function PreviewGlyph() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
@@ -454,6 +471,9 @@ export default function App() {
   const [compareOpen, setCompareOpen] = useState(false)
   const [closedFolders, setClosedFolders] = useState<Record<string, boolean>>({})
   // Remembers whether markdown reads as prose or as source, across sessions.
+  const [trashList, setTrashList] = useState<
+    { id: number; name: string; moved_to: string; expires_at: string }[]
+  >([])
   const [mdMode, setMdMode] = useState<'preview' | 'raw'>(() =>
     localStorage.getItem('skill-academy:md-mode') === 'raw' ? 'raw' : 'preview'
   )
@@ -541,6 +561,41 @@ export default function App() {
     const timer = setTimeout(() => setDebounced(query.trim()), 120)
     return () => clearTimeout(timer)
   }, [query])
+
+  async function loadTrash() {
+    try {
+      const response = await fetch('/api/trash')
+      if (!response.ok) return
+      const payload = (await response.json()) as {
+        entries?: { id: number; name: string; moved_to: string; expires_at: string }[]
+      }
+      setTrashList(payload.entries ?? [])
+    } catch {
+      /* offline is not an error worth a message */
+    }
+  }
+
+  async function archiveCurrent() {
+    if (!detail) return
+    await fetch(`/api/skills/${detail.id}/archive`, { method: 'POST' })
+    setSelected(null)
+    await loadTrash()
+    await loadState()
+  }
+
+  async function restoreFromTrash(id: number) {
+    await fetch(`/api/trash/${id}/restore`, { method: 'POST' })
+    await loadTrash()
+    await loadState()
+  }
+
+  async function purgeFromTrash(id: number) {
+    const entry = trashList.find((row) => row.id === id)
+    if (!entry) return
+    if (!window.confirm(`Send ${entry.name} to the Recycle Bin? This cannot be undone here.`)) return
+    await fetch(`/api/trash/${id}/purge`, { method: 'POST' })
+    await loadTrash()
+  }
 
   async function loadState() {
     try {
@@ -938,6 +993,30 @@ export default function App() {
           >
             Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
           </button>
+          {trashList.length > 0 && <div className="group">Trash</div>}
+          {trashList.map((entry) => (
+            <div className="nav trash-row" key={entry.id} title={`Archived to ${entry.moved_to}`}>
+              <span className="name">{entry.name}</span>
+              <div className="head-actions">
+                <button
+                  className="ghost iconbtn"
+                  title="Restore"
+                  aria-label={`Restore ${entry.name}`}
+                  onClick={() => void restoreFromTrash(entry.id)}
+                >
+                  <RestoreGlyph />
+                </button>
+                <button
+                  className="ghost iconbtn"
+                  title="Delete permanently"
+                  aria-label={`Delete ${entry.name}`}
+                  onClick={() => void purgeFromTrash(entry.id)}
+                >
+                  <TrashGlyph />
+                </button>
+              </div>
+            </div>
+          ))}
 
           <div className="group head">
             <span>Agents</span>
@@ -1084,6 +1163,9 @@ export default function App() {
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>
+                <button className="btn archive" onClick={() => void archiveCurrent()}>
+                  Archive
+                </button>
                 <MarkdownModeSwitch mode={mdMode} onChange={setMdMode} />
                 <button
                   className="ghost wrapbtn"

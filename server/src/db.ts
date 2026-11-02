@@ -116,6 +116,18 @@ function migrate(db: DatabaseSync): void {
       hidden     INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+    -- Trash is user data, not derived: it survives every schema change.
+    CREATE TABLE IF NOT EXISTS trash (
+      id          INTEGER PRIMARY KEY,
+      skill_path  TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      root_path   TEXT NOT NULL,
+      scope       TEXT NOT NULL,
+      moved_to    TEXT NOT NULL,
+      at          TEXT NOT NULL,
+      expires_at  TEXT NOT NULL,
+      restored_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS journal (
       id         INTEGER PRIMARY KEY,
       at         TEXT NOT NULL,
