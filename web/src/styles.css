@@ -1806,3 +1806,12 @@ pre.code .tok-key { color: #9db3a0; }
 .md .md-code { margin: 0 0 8px; }
 .md table { margin: 0 0 8px; }
 .md hr { margin: 10px 0; }
+
+/* Second pass on rhythm: about 40% less air than the first tightening. */
+.md { line-height: 1.44; }
+.md p { margin: 0 0 3px; }
+.md ul, .md ol { margin: 0 0 3px; }
+.md li + li { margin-top: 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 6px 0 2px; }
+.md blockquote, .md .md-code, .md table { margin-bottom: 4px; }
+.md hr { margin: 6px 0; }
