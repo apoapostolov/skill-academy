@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
+  "license": "MIT",
   "description": "Local control plane for AI agent skills",
   "workspaces": [
     "server",
