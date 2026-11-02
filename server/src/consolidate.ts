@@ -18,7 +18,13 @@ import { getDb } from './db'
  * reported as `weak-evidence` and cannot be applied.
  */
 
-export type MergeType = 'near-duplicate' | 'partial-overlap' | 'intentional-family' | 'weak-evidence' | 'cross-root-placement'
+export type MergeType =
+  | 'near-duplicate'
+  | 'partial-overlap'
+  | 'intentional-family'
+  | 'weak-evidence'
+  | 'cross-root-placement'
+  | 'shape-only'
 
 export interface Body {
   dir: string
@@ -368,7 +374,17 @@ export function consolidateDryRun(): {
       const larger = left.chars >= right.chars ? left : right
       const smaller = larger === left ? right : left
       const unique = difference(smaller.headings, larger.headings)
-      const mergeType: MergeType = sameFamilyRouters ? 'intentional-family' : unique.length ? 'partial-overlap' : 'near-duplicate'
+      // A shared skeleton is not shared content: identical headings with almost no rule in common
+      // describes two different skills written to the same shape, and merging one into the other
+      // would delete a subject.
+      const shapeOnly = !sameFamilyRouters && ruleScore < 0.5
+      const mergeType: MergeType = sameFamilyRouters
+        ? 'intentional-family'
+        : shapeOnly
+          ? 'shape-only'
+          : unique.length
+            ? 'partial-overlap'
+            : 'near-duplicate'
       groups.push({
         key,
         mergeType,
@@ -378,7 +394,7 @@ export function consolidateDryRun(): {
         survivor: mergeType === 'intentional-family' ? null : larger.name,
         members: [member(left, [right]), member(right, [left])],
         plan:
-          mergeType === 'intentional-family'
+          mergeType === 'intentional-family' || mergeType === 'shape-only'
             ? null
             : {
                 survivor: larger.name,
@@ -404,6 +420,8 @@ export function consolidateDryRun(): {
         blocked:
           mergeType === 'intentional-family'
             ? 'router and child: architecture, not duplication, so nothing is proposed'
+            : mergeType === 'shape-only'
+              ? 'same section shape, different rules: these are separate skills, not copies'
             : 'same territory with high body overlap; bodies must be read end to end before this is applied'
       })
       if (groups.length > 120) break
@@ -416,7 +434,8 @@ export function consolidateDryRun(): {
     'partial-overlap': 0,
     'intentional-family': 0,
     'weak-evidence': 0,
-      'cross-root-placement': 0
+      'cross-root-placement': 0,
+      'shape-only': 0
   }
   for (const group of groups) summary[group.mergeType] += 1
 
