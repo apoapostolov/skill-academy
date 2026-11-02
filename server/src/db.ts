@@ -700,7 +700,6 @@ export function tagFacets(): { tag: string; count: number }[] {
   return [...counts.entries()]
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
-    .slice(0, 24)
 }
 
 /** Categories are the authors' own grouping, counted separately from tags. */
