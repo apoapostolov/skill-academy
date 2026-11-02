@@ -95,6 +95,32 @@ interface OAuthRow {
   mode: string | null
 }
 
+interface ImproveFinding {
+  rule: string
+  severity: 'error' | 'warn'
+  skill: string
+  path: string
+  detail: string
+}
+
+interface ConsolidateMemberView {
+  name: string
+  path: string
+  version: string | null
+  chars: number
+  uniqueHeadings: string[]
+}
+
+interface ConsolidateGroupView {
+  key: string
+  mergeType: string
+  evidence: string
+  survivor: string | null
+  members: ConsolidateMemberView[]
+  plan: null | { survivor: string; pointerize: Array<{ name: string }>; routerize: Array<{ name: string; outline: string[] }>; rewire: string[] }
+  blocked: string | null
+}
+
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; archived?: number; tokens: number }[]
   hidden: string[]
@@ -650,6 +676,13 @@ export default function App() {
   >({})
   const [oauthCode, setOauthCode] = useState('')
   const [oauthBusy, setOauthBusy] = useState<string>('')
+  const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
+  const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
+  const [improveRule, setImproveRule] = useState('')
+  const [consolidateGroups, setConsolidateGroups] = useState<ConsolidateGroupView[]>([])
+  const [consolidateSummary, setConsolidateSummary] = useState<Record<string, number>>({})
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewOpenKey, setReviewOpenKey] = useState('')
   const [modelProvider, setModelProvider] = useState('')
   const [modelList, setModelList] = useState<string[]>([])
   const [modelAt, setModelAt] = useState<string | null>(null)
@@ -830,6 +863,31 @@ export default function App() {
     setModelList(payload.models ?? [])
     setModelAt(payload.at ?? null)
     setModelCached(!!payload.cached)
+  }
+
+  async function openImprove() {
+    setReviewOpen('improve')
+    setReviewBusy(true)
+    try {
+      const response = await fetch('/api/improve/dry-run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const payload = (await response.json()) as { findings: ImproveFinding[] }
+      setImproveFindings(payload.findings ?? [])
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  async function openConsolidate() {
+    setReviewOpen('consolidate')
+    setReviewBusy(true)
+    try {
+      const response = await fetch('/api/consolidate/dry-run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const payload = (await response.json()) as { groups: ConsolidateGroupView[]; summary: Record<string, number> }
+      setConsolidateGroups(payload.groups ?? [])
+      setConsolidateSummary(payload.summary ?? {})
+    } finally {
+      setReviewBusy(false)
+    }
   }
 
   async function saveProviderBase(id: string) {
@@ -1618,6 +1676,12 @@ export default function App() {
           <span>View</span>
           <span>Skills</span>
           <span>Sources</span>
+          <button className="mb-item" onClick={openImprove}>
+            Improve
+          </button>
+          <button className="mb-item" onClick={openConsolidate}>
+            Consolidate
+          </button>
           <button className="mb-item" onClick={openProviders}>
             Providers
           </button>
@@ -1688,6 +1752,109 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {reviewOpen === 'improve' && (
+        <div className="installscrim" onClick={() => setReviewOpen(null)}>
+          <div className="installmodal reviewmodal" onClick={(event) => event.stopPropagation()}>
+            <div className="imhead">
+              <span>
+                Improve · {improveFindings.length} finding{improveFindings.length === 1 ? '' : 's'}
+              </span>
+              <button className="iconbtn crossbtn" aria-label="Close" onClick={() => setReviewOpen(null)}>
+                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="imbody">
+              <div className="reviewchips">
+                <button className={`chip ${improveRule === '' ? 'on' : ''}`} onClick={() => setImproveRule('')}>
+                  all · {improveFindings.length}
+                </button>
+                {[...new Set(improveFindings.map((finding) => finding.rule))].map((rule) => (
+                  <button key={rule} className={`chip ${improveRule === rule ? 'on' : ''}`} onClick={() => setImproveRule(rule)}>
+                    {rule} · {improveFindings.filter((finding) => finding.rule === rule).length}
+                  </button>
+                ))}
+              </div>
+              <div className="reviewlist">
+                {reviewBusy && <div className="reviewnote">running the rule set…</div>}
+                {improveFindings
+                  .filter((finding) => !improveRule || finding.rule === improveRule)
+                  .slice(0, 400)
+                  .map((finding, index) => (
+                    <div className={`reviewrow ${finding.severity}`} key={`${finding.rule}:${finding.path}:${index}`}>
+                      <span className="reviewrule">{finding.rule}</span>
+                      <span className="reviewname">{finding.skill}</span>
+                      <span className="reviewdetail">{finding.detail}</span>
+                      <span className="reviewpath" title={finding.path}>
+                        {finding.path.split(/[\\/]/).slice(-2).join('/')}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewOpen === 'consolidate' && (
+        <div className="installscrim" onClick={() => setReviewOpen(null)}>
+          <div className="installmodal reviewmodal" onClick={(event) => event.stopPropagation()}>
+            <div className="imhead">
+              <span>Consolidate · {consolidateGroups.length} group{consolidateGroups.length === 1 ? '' : 's'}</span>
+              <button className="iconbtn crossbtn" aria-label="Close" onClick={() => setReviewOpen(null)}>
+                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="imbody">
+              <div className="reviewchips">
+                {Object.entries(consolidateSummary).map(([kind, count]) => (
+                  <span className={`chip ${kind === 'intentional-family' ? 'quiet' : ''}`} key={kind}>
+                    {kind} · {count}
+                  </span>
+                ))}
+              </div>
+              <div className="reviewlist">
+                {reviewBusy && <div className="reviewnote">comparing bodies…</div>}
+                {consolidateGroups.map((group) => (
+                  <div className="cgroup" key={group.key}>
+                    <button className="cghead" onClick={() => setReviewOpenKey(reviewOpenKey === group.key ? '' : group.key)}>
+                      <span className={`cgtype ${group.mergeType}`}>{group.mergeType}</span>
+                      <span className="cgname">{group.plan?.survivor ?? group.key}</span>
+                      <span className="cgev">{group.evidence}</span>
+                      <span className="cgcount">{group.members.length} copies</span>
+                    </button>
+                    {reviewOpenKey === group.key && (
+                      <div className="cgbody">
+                        {group.members.map((member) => (
+                          <div className="cgmember" key={member.path}>
+                            <span className="cgmname">{member.name}</span>
+                            <span className="cgmsize">{member.chars} chars</span>
+                            <span className="cgmver">{member.version ?? 'no version'}</span>
+                            <span className="cgmhead" title={member.path}>
+                              {member.uniqueHeadings.length ? `unique: ${member.uniqueHeadings.join(', ')}` : 'nothing unique'}
+                            </span>
+                          </div>
+                        ))}
+                        {group.blocked && <div className="reviewnote">{group.blocked}</div>}
+                        {group.plan && (
+                          <div className="cgplan">
+                            survivor <b>{group.plan.survivor}</b> · pointer {group.plan.pointerize.length} · router{' '}
+                            {group.plan.routerize.length}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {providersOpen && (
         <div className="installscrim" onClick={() => setProvidersOpen(false)}>
