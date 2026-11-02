@@ -569,6 +569,65 @@ app.get('/api/sources/status', async () => ({
 
 app.post('/api/sources/poll', async () => pollSources())
 
+const updatePlans = new Map<string, { sourceId: number; commit: string | null; release: string | null; at: string }>()
+
+app.post('/api/sources/:id/plan-update', async (request, reply) => {
+  // A plan is what would change and nothing more. It never writes, and it expires, so a stale
+  // plan cannot be confirmed later against a source that has moved on.
+  const { id } = request.params as { id: string }
+  const source = listSources().find((row) => row.id === Number(id))
+  if (!source) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const fresh = await checkSource(source)
+  if ('error' in fresh) {
+    reply.code(502)
+    return fresh
+  }
+
+  const commitChanged = fresh.commit !== fresh.previous.commit
+  const releaseChanged = fresh.release !== fresh.previous.release
+  const planId = `${source.id}-${Date.now().toString(36)}`
+  updatePlans.set(planId, { sourceId: source.id, commit: fresh.commit ?? null, release: fresh.release ?? null, at: new Date().toISOString() })
+
+  return {
+    dryRun: true,
+    planId,
+    repo: source.repo,
+    from: fresh.previous,
+    to: { commit: fresh.commit, release: fresh.release },
+    changes: [
+      ...(commitChanged ? [{ kind: 'commit', from: fresh.previous.commit, to: fresh.commit }] : []),
+      ...(releaseChanged ? [{ kind: 'release', from: fresh.previous.release, to: fresh.release }] : [])
+    ],
+    affects: [],
+    note:
+      'Confirming records the decision and journals it. Pulling new skill files needs a repository to library mapping, which is the next step of this phase.'
+  }
+})
+
+app.post('/api/sources/:id/apply-update', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { planId?: string; confirm?: boolean }
+  const plan = body.planId ? updatePlans.get(body.planId) : undefined
+  if (!plan || plan.sourceId !== Number(id)) {
+    reply.code(404)
+    return { error: 'plan-not-found' }
+  }
+  if (body.confirm !== true) {
+    reply.code(409)
+    return { error: 'confirmation-required', plan }
+  }
+  updatePlans.delete(body.planId!)
+
+  const acknowledged = listSourceEvents().filter((event) => event.repo === listSources().find((row) => row.id === Number(id))?.repo)
+  for (const event of acknowledged) acknowledgeSourceEvent(event.id)
+  addJournal('source-update', { repo: acknowledged[0]?.repo ?? '', commit: plan.commit, release: plan.release, events: acknowledged.length })
+
+  return { applied: true, from: plan.at, commit: plan.commit, release: plan.release, acknowledged: acknowledged.length }
+})
+
 app.post('/api/sources/check-all', async () => {
   const sources = listSources()
   const results = []
