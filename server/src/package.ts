@@ -191,3 +191,51 @@ export function readPackageFile(skillPath: string, relPath: string): { ok: boole
     return { ok: false, reason: (error as Error).message }
   }
 }
+
+const IMAGE_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml'
+}
+
+export const MAX_IMAGE_BYTES = 12 * 1024 * 1024
+
+/**
+ * Reads a file inside a package as bytes, for the preview to show it rather than
+ * describe it. Containment is resolved, not string-matched, so `..` cannot escape.
+ */
+export function readPackageImage(
+  dir: string,
+  rel: string
+): { ok: true; bytes: Buffer; type: string; name: string } | { ok: false; reason: string } {
+  const root = path.resolve(dir)
+  const target = path.resolve(root, rel)
+  if (target !== root && !target.startsWith(root + path.sep)) return { ok: false, reason: 'outside-package' }
+  const type = IMAGE_TYPES[path.extname(target).toLowerCase()]
+  if (!type) return { ok: false, reason: 'not-an-image' }
+  try {
+    const stats = fs.statSync(target)
+    if (!stats.isFile()) return { ok: false, reason: 'not-a-file' }
+    if (stats.size > MAX_IMAGE_BYTES) return { ok: false, reason: 'too-large' }
+    return { ok: true, bytes: fs.readFileSync(target), type, name: path.basename(target) }
+  } catch {
+    return { ok: false, reason: 'missing' }
+  }
+}
+
+/** Same containment as readPackageImage, returned as a data URL the preview can show. */
+export function readPackageImageData(
+  dir: string,
+  rel: string
+): { ok: true; dataUrl: string; name: string } | { ok: false; reason: string } {
+  const image = readPackageImage(dir, rel)
+  if (!image.ok) return image
+  if (image.bytes.length > 4 * 1024 * 1024) return { ok: false, reason: 'too-large' }
+  return { ok: true, dataUrl: `data:${image.type};base64,${image.bytes.toString('base64')}`, name: image.name }
+}

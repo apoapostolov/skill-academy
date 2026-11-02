@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { highlight } from './highlight'
 
 interface State {
   version: string
@@ -178,6 +179,46 @@ function CheckGlyph() {
  * reserving a lane, fades in while scrolling and fades out shortly after the last
  * scroll event. The native bar is hidden, so the content keeps its full width.
  */
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.svg'])
+
+function isImagePath(rel: string): boolean {
+  const dot = rel.lastIndexOf('.')
+  return dot !== -1 && IMAGE_EXT.has(rel.slice(dot).toLowerCase())
+}
+
+function extensionOf(rel: string): string {
+  const dot = rel.lastIndexOf('.')
+  return dot === -1 ? '' : rel.slice(dot).toLowerCase()
+}
+
+interface PkgNode {
+  name: string
+  path: string
+  entry?: PackageEntry
+  children: PkgNode[]
+}
+
+/** Nests package entries by their real folders instead of flattening them per kind. */
+function buildPackageTree(entries: PackageEntry[]): PkgNode[] {
+  const root: PkgNode = { name: '', path: '', children: [] }
+  for (const entry of entries) {
+    // relPath arrives with Windows separators; the tree is built on '/'.
+    const parts = entry.relPath.replace(/\\/g, '/').split('/')
+    let node = root
+    for (let depth = 0; depth < parts.length - 1; depth += 1) {
+      const folderPath = parts.slice(0, depth + 1).join('/')
+      let child = node.children.find((candidate) => candidate.path === folderPath && !candidate.entry)
+      if (!child) {
+        child = { name: parts[depth], path: folderPath, children: [] }
+        node.children.push(child)
+      }
+      node = child
+    }
+    node.children.push({ name: parts[parts.length - 1], path: entry.relPath, entry, children: [] })
+  }
+  return root.children
+}
+
 function ScrollPane({
   className = '',
   axis = 'y',
@@ -357,9 +398,10 @@ export default function App() {
   const [detail, setDetail] = useState<
     (Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> }; drift?: Drift | null }) | null
   >(null)
-  const [openRef, setOpenRef] = useState<{ name: string; text: string } | null>(null)
+  const [openRef, setOpenRef] = useState<{ name: string; rel: string; text: string; image: string | null } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [closedFolders, setClosedFolders] = useState<Record<string, boolean>>({})
   const [collapsedBlocks, setCollapsedBlocks] = useState<Record<string, boolean>>(() => {
     try {
       const stored = window.localStorage.getItem('skill-academy.collapsed-blocks')
@@ -598,7 +640,12 @@ export default function App() {
       const response = await fetch(`/api/skills/${detail.id}/file?rel=${encodeURIComponent(entry.relPath)}`)
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error ?? `file ${response.status}`)
-      setOpenRef({ name: entry.name, text: payload.text })
+      setOpenRef({
+        name: entry.name,
+        rel: entry.relPath,
+        text: payload.image ? '' : payload.text,
+        image: payload.image ?? null
+      })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -682,6 +729,58 @@ export default function App() {
     if (scope.kind === 'agent') return scope.agent
     return 'All skills'
   }, [scope, facets])
+
+  function renderTree(nodes: PkgNode[], depth: number, kind: string) {
+    return nodes.flatMap((node) => {
+      const indent = 8 + depth * 11
+      if (!node.entry) {
+        const key = `${kind}:${node.path}`
+        const isOpen = !closedFolders[key]
+        const files = node.children.reduce((sum, child) => sum + (child.entry ? 1 : child.children.length), 0)
+        return [
+          <button
+            className="pkg-folder"
+            key={node.path}
+            style={{ paddingLeft: indent }}
+            aria-expanded={isOpen}
+            onClick={() => setClosedFolders((previous) => ({ ...previous, [key]: !previous[key] }))}
+          >
+            <svg className={`folder-chevron${isOpen ? ' open' : ''}`} width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+              <path d="M2.4 1.2 5.2 4 2.4 6.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <svg className="folder-icon" width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M1.6 3.4a.9.9 0 0 1 .9-.9h3.1l1.3 1.6h6.6a.9.9 0 0 1 .9.9v7.2a.9.9 0 0 1-.9.9H2.5a.9.9 0 0 1-.9-.9z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="pkg-folder-name">{node.name}</span>
+            <span className="pkg-meta">{files}</span>
+          </button>,
+          ...(isOpen ? renderTree(node.children, depth + 1, kind) : [])
+        ]
+      }
+      const entry = node.entry
+      const image = isImagePath(entry.relPath)
+      return [
+        <button
+          className={`pkg-row${image ? ' is-image' : ''}`}
+          key={entry.relPath}
+          style={{ paddingLeft: indent }}
+          title={`${entry.relPath}${entry.description ? ` — ${entry.description}` : ''}`}
+          onClick={() => (kind === 'asset' && !image ? void reveal(entry) : void openReference(entry))}
+        >
+          <span className="pkg-name">{entry.name}</span>
+          <span className="pkg-meta">
+            {image ? 'image' : entry.description ? entry.description.slice(0, 70) : entry.relPath}
+          </span>
+        </button>
+      ]
+    })
+  }
 
   return (
     <div className="app">
@@ -1031,23 +1130,7 @@ export default function App() {
                           onToggle={() => toggleBlock(`pkg:${kind}`)}
                         />
                         {!collapsedBlocks[`pkg:${kind}`] &&
-                          rows.slice(0, 12).map((entry) => (
-                          <button
-                            className="pkg-row"
-                            key={entry.relPath}
-                            title={`${entry.relPath}${entry.description ? ` — ${entry.description}` : ''}`}
-                            onClick={() =>
-                              kind === 'asset'
-                                ? void reveal(entry)
-                                : void openReference(entry)
-                            }
-                          >
-                            <span className="pkg-name">{entry.name}</span>
-                            <span className="pkg-meta">
-                              {kind === 'asset' ? 'reveal' : entry.description ? entry.description.slice(0, 70) : entry.relPath}
-                            </span>
-                          </button>
-                        ))}
+                          renderTree(buildPackageTree(rows), 0, kind)}
                       </div>
                     )
                   })}
@@ -1076,7 +1159,23 @@ export default function App() {
                 </button>
                 <span>{openRef.name}</span>
               </div>
-              <pre className="body">{openRef.text}</pre>
+              {openRef.image ? (
+                <div className="refimg-wrap">
+                  <img className="refimg" src={openRef.image} alt={openRef.name} />
+                </div>
+              ) : (
+                <pre className="body code">
+                  {highlight(openRef.text, extensionOf(openRef.rel)).map((token, position) =>
+                    token.cls ? (
+                      <span className={token.cls} key={position}>
+                        {token.text}
+                      </span>
+                    ) : (
+                      token.text
+                    )
+                  )}
+                </pre>
+              )}
             </div>
           )}
           </ScrollPane>

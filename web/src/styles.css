@@ -1594,3 +1594,88 @@ h2 {
 .drift .drift-action.btn.primary:hover {
   background: #c69a6d;
 }
+
+/* Package tree: folders above their children, collapsible like folders. */
+.pkg-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px 3px;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.pkg-folder:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pkg-folder .folder-chevron {
+  flex: 0 0 auto;
+  opacity: 0.7;
+  transition: transform 0.14s ease;
+}
+
+.pkg-folder .folder-chevron.open {
+  transform: rotate(90deg);
+}
+
+.pkg-folder .folder-icon {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.pkg-folder .pkg-folder-name {
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+
+.pkg-folder .pkg-meta {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pkg-row.is-image .pkg-name::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, rgba(127, 163, 199, 0.85), rgba(110, 158, 138, 0.85));
+}
+
+/* Image preview inside the detail pane. */
+.refimg-wrap {
+  padding: 12px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.refimg {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: repeating-conic-gradient(#1b1d20 0% 25%, #16181a 0% 50%) 50% / 16px 16px;
+}
+
+/* Code view: one palette, muted, shared by every language. */
+pre.code {
+  tab-size: 2;
+}
+
+pre.code .tok-com { color: #6f7772; font-style: italic; }
+pre.code .tok-str { color: #b3a481; }
+pre.code .tok-num { color: #8aa7ca; }
+pre.code .tok-kw  { color: #a79bc6; }
+pre.code .tok-fn  { color: #8fb0d0; }
+pre.code .tok-key { color: #9db3a0; }

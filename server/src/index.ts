@@ -24,7 +24,7 @@ import {
 } from './db'
 import { place, unplace } from './placement'
 import { applyChange } from './apply'
-import { readPackage, readPackageFile } from './package'
+import { readPackage, readPackageFile, readPackageImageData } from './package'
 import { compareVersions, provenanceOf } from './provenance'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
@@ -254,6 +254,9 @@ app.get('/api/skills/:id/file', async (request, reply) => {
     reply.code(400)
     return { error: 'id and rel are required' }
   }
+  const image = readPackageImageData(row.path, rel)
+  if (image.ok) return { name: image.name, rel, image: image.dataUrl }
+
   const file = readPackageFile(row.path, rel)
   if (!file.ok) {
     reply.code(file.reason === 'outside-package' ? 403 : 404)
