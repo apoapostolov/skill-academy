@@ -2561,8 +2561,11 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 }
 
 /* Installed over archived, with the archived half held back. */
-.archcount {
+.nav .archcount,
+.nav.root .archcount,
+.nav button span .archcount {
   color: #6f6a72;
+  opacity: 1;
 }
 
 /* The list header holds its place while the rows scroll under it. */
