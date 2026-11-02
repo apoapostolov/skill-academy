@@ -96,11 +96,31 @@ Git profiles, manifest, push with secrets scan, pull with three-way merge and pe
 
 Exit: two machines converge on the same package hashes through a private repo; a conflicting edit surfaces as one conflict and loses nothing; a key-shaped string blocks the push; deleting `index.db` and pulling restores skills and placements.
 
-### P8 — Polish (6 days)
+### P8 — Polish (8 days, including the key map)
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve themes with the contrast gate, notification center, reduced motion. Copy pass in Apo's voice.
 
-Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan.
+**Keyboard navigation follows Google Reader.** The list is the spine, so moving between skills never needs the mouse and never moves the page under it.
+
+| Key | Does |
+| --- | --- |
+| `j` / `k` | next / previous skill in the list, detail follows the selection |
+| `n` / `p` | next / previous skill that needs attention: issues, drift, high risk |
+| `g` then `g`, `G` | first, last |
+| `Space` / `Shift+Space` | page the detail pane down, up, without changing the selection |
+| `o` or `Enter` | open the selected skill's own folder |
+| `s` | switch the selected skill on or off for the active agent scope |
+| `a`, then `a` | archive, two-stage on the same rule as the button; the second press confirms |
+| `e` | enter or leave selection mode; `x` toggles the row's box; `Shift+A` archives the selection |
+| `/` | focus search, `Escape` clears it and returns focus to the list |
+| `v` | preview or raw; `w` toggles wrap |
+| `u` | undo the last journal entry |
+| `?` | keyboard map overlay |
+| `Escape` | close a menu, drop a confirm, clear the scope |
+
+Rules: no shortcut fires while focus is in a text field or a menu is open; the two-stage keys obey the same four-second lapse; every keyboard action lands in the journal exactly as its button does, so `u` can reverse it; and `?` lists the map rather than leaving it to be discovered.
+
+Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan; the key map covers every action that has a button.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 
@@ -108,7 +128,7 @@ An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` fir
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
-Total: about 73 working days for v1. With the parity pass, 79. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
+Total: about 75 working days for v1. With the parity pass, 81. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 
 ## Risks
 
