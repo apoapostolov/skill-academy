@@ -879,6 +879,18 @@ export default function App() {
     await refreshOAuth()
   }
 
+  // A provider is chosen for the reader: a signed-in account first, then a saved key, so the
+  // dropdown and Refresh are usable the moment the panel opens.
+  useEffect(() => {
+    if (modelProvider) return
+    const signedIn = oauthRows.find((row) => row.connected)
+    const withKey = providerRows?.find((row) => row.configured && !row.requiresSignIn)
+    const pick = signedIn?.id ?? withKey?.id
+    if (!pick) return
+    setModelProvider(pick)
+    void loadModels(pick)
+  }, [oauthRows, providerRows, modelProvider])
+
   async function loadModels(id: string, refresh = false) {
     if (!id) {
       setModelList([])
@@ -2144,7 +2156,8 @@ export default function App() {
                         </div>
                       )}
 
-                      {flow && flow.status !== 'waiting' && flow.status !== 'paste' && flow.message && (
+                      {/* A connected row already shows its account, so a second line would repeat it. */}
+                      {flow && flow.status !== 'waiting' && flow.status !== 'paste' && flow.status !== 'connected' && flow.message && (
                         <div className="oauthstate">{flow.message}</div>
                       )}
                     </div>
@@ -2171,6 +2184,8 @@ export default function App() {
                     <option value="">Choose a signed-in provider</option>
                     {providerRows
                       ?.filter((row) => row.configured && !row.requiresSignIn)
+                      // A provider that is also signed in appears once, as the sign-in.
+                      .filter((row) => !oauthRows.some((oauth) => oauth.connected && oauth.id === row.id))
                       .map((row) => (
                         <option key={row.id} value={row.id}>
                           {row.label} · key

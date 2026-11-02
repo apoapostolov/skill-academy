@@ -132,29 +132,61 @@ export function providerById(id: string): Provider | undefined {
 
 /** The credential a model listing should carry: a saved key, or an OAuth session. */
 function listingToken(providerId: string): string | null {
-  if (OAUTH_PROVIDERS[providerId]) return oauthAccessToken(providerId)
-  return getKey(providerId)
+  // A sign-in wins when it exists, but a provider that supports both must still fall back to a
+  // saved API key instead of reporting itself unconfigured.
+  const session = OAUTH_PROVIDERS[providerId] ? oauthAccessToken(providerId) : null
+  return session ?? getKey(providerId)
 }
 
 /**
- * Discover models from a provider's own `/models` endpoint. OpenAI-compatible servers answer with
- * `{ data: [{ id }] }`, which is also the shape xAI and the rest use.
+ * Discover models from the endpoint the credential actually belongs to.
+ *
+ * A ChatGPT session reads its catalogue from the Codex backend, not from api.openai.com; the
+ * request needs `client_version` or it answers 400, and the session must never be sent to the
+ * platform base URL. Claude over OAuth needs its beta header. Everything else speaks the plain
+ * OpenAI-compatible `{ data: [{ id }] }` shape, which xAI, OpenRouter, Ollama and LM Studio share.
  */
-export async function discoverModels(provider: Provider): Promise<string[] | null> {
-  const url = `${provider.base.replace(/\/$/, '')}/models`
+export async function discoverModels(provider: Provider): Promise<{ models: string[] | null; error?: string }> {
+  const session = OAUTH_PROVIDERS[provider.id] ? oauthAccessToken(provider.id) : null
   const token = listingToken(provider.id)
+  const headers: Record<string, string> = { accept: 'application/json' }
+  let url = `${provider.base.replace(/\/$/, '')}/models`
+
+  if (session && provider.id === 'openai') {
+    url = 'https://chatgpt.com/backend-api/codex/models?client_version=1.0.0'
+    headers.authorization = `Bearer ${session}`
+    headers.originator = 'codex_cli_rs'
+    headers['OpenAI-Beta'] = 'responses=experimental'
+  } else if (session && provider.kind === 'anthropic') {
+    url = `${provider.base.replace(/\/$/, '')}/models?limit=100`
+    headers.authorization = `Bearer ${session}`
+    headers['anthropic-version'] = '2023-06-01'
+    headers['anthropic-beta'] = 'oauth-2025-04-20'
+  } else if (token && provider.kind === 'anthropic') {
+    // Anthropic reads an API key from its own header; it does not accept a bearer key.
+    headers['x-api-key'] = token
+    headers['anthropic-version'] = '2023-06-01'
+  } else if (token) {
+    headers.authorization = `Bearer ${token}`
+  } else {
+    return { models: null, error: 'no key or sign-in saved for this provider' }
+  }
+
   try {
-    const response = await fetch(url, {
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-      signal: AbortSignal.timeout(6000)
-    })
-    if (!response.ok) return null
-    const payload = (await response.json()) as { data?: Array<{ id?: string }>; models?: Array<{ id?: string; name?: string }> }
-    const listed: Array<{ id?: string; name?: string }> = payload.data ?? payload.models ?? []
-    const ids = listed.map((entry) => entry.id ?? entry.name).filter((id): id is string => !!id)
-    return ids.length ? ids : null
-  } catch {
-    return null
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
+    const body = await response.text()
+    if (!response.ok) {
+      return { models: null, error: `${new URL(url).host} answered ${response.status}${body ? `: ${body.slice(0, 160)}` : ''}` }
+    }
+    type Listed = { id?: string; name?: string; slug?: string }
+    const payload = JSON.parse(body) as { data?: Listed[]; models?: Array<Listed | string> }
+    const listed = payload.data ?? payload.models ?? []
+    const ids = listed
+      .map((entry) => (typeof entry === 'string' ? entry : entry.id ?? entry.slug ?? entry.name))
+      .filter((id): id is string => !!id)
+    return ids.length ? { models: ids } : { models: null, error: 'the endpoint returned no models' }
+  } catch (error) {
+    return { models: null, error: (error as Error).message }
   }
 }
 
@@ -170,11 +202,11 @@ export function cachedModels(providerId: string): { models: string[]; at: string
 }
 
 export async function refreshModels(provider: Provider): Promise<{ models: string[]; at: string } | { error: string }> {
-  const models = await discoverModels(provider)
-  if (!models) return { error: `no model list at ${provider.base}/models` }
+  const found = await discoverModels(provider)
+  if (!found.models) return { error: found.error ?? `no model list at ${provider.base}/models` }
   const at = new Date().toISOString()
-  setOverride(provider.id, { models, modelsAt: at })
-  return { models, at }
+  setOverride(provider.id, { models: found.models, modelsAt: at })
+  return { models: found.models, at }
 }
 
 /** What the renderer is allowed to know: no key material, ever. */
