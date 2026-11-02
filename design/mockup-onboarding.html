@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — first run</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#6C6E73;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow);position:relative}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .progress{height:2px;background:var(--sep)}
+  .progress i{display:block;height:2px;width:34%;background:var(--accent)}
+  .stage{flex:1;display:flex;align-items:flex-start;justify-content:center;padding-top:64px}
+  .col{width:720px}
+  .step{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+  h1{font-size:26px;line-height:32px;font-weight:600;letter-spacing:-.02em;margin-top:8px}
+  .lede{font-size:13px;line-height:20px;color:var(--text-2);margin-top:8px;max-width:560px}
+  .list{margin-top:24px;border:1px solid var(--sep);border-radius:6px;background:var(--surface);overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px;border-bottom:1px solid var(--sep)}
+  .row:last-child{border-bottom:none}
+  .row .g{width:16px;height:16px;border-radius:3px;display:grid;place-items:center;font-size:8.5px;font-weight:700;
+          color:#101113;background:var(--text-3);flex:0 0 16px}
+  .g1{background:#C08A72}.g2{background:#D8D9DC;color:#17181B}.g3{background:#8FA8C4}.g4{background:#A79BC4}
+  .g5{background:#8FB3A4}.g6{background:#C9B18A}
+  .row .n{font-size:12.5px;font-weight:500;min-width:132px}
+  .row .p{font-family:var(--mono);font-size:10.5px;color:var(--text-3);flex:1;min-width:0;overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap}
+  .row .c{font-size:10.5px;color:var(--text-2);margin-right:6px}
+  .sw{position:relative;width:34px;height:20px;border-radius:999px;background:var(--ok);flex:0 0 34px}
+  .sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#F4F5F7;
+        box-shadow:0 1px 2px rgba(0,0,0,.4);transform:translateX(14px)}
+  .sw.off{background:var(--neutral)} .sw.off i{transform:none}
+  .shared{font-size:10px;color:var(--text-3);padding:6px 12px;border-bottom:1px solid var(--sep);background:var(--bg)}
+  .foot{display:flex;align-items:center;gap:10px;margin-top:20px}
+  .foot .note{font-size:10.5px;color:var(--text-3)}
+  .foot .right{margin-left:auto;display:flex;gap:8px}
+  .btn{height:30px;padding:0 14px;border-radius:6px;border:1px solid var(--sep);background:var(--surface);color:var(--text);
+       font-size:12px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .btn.ghost{background:transparent;color:var(--text-2)}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+  <div class="progress"><i></i></div>
+
+  <div class="stage">
+    <div class="col">
+      <div class="step">Step 1 of 3 · Agents</div>
+      <h1>12 agents found on this machine.</h1>
+      <p class="lede">Skill Academy reads their skill folders. Nothing is changed until you flip a switch.</p>
+
+      <div class="list">
+        <div class="row"><span class="g g1">C</span><span class="n">Claude Code</span>
+          <span class="p">~/.claude/skills</span><span class="c">612 skills</span><span class="sw"><i></i></span></div>
+        <div class="row"><span class="g g2">⌘</span><span class="n">Cursor</span>
+          <span class="p">~/.cursor/skills</span><span class="c">488 skills</span><span class="sw"><i></i></span></div>
+        <div class="row"><span class="g g3">A</span><span class="n">Codex</span>
+          <span class="p">~/.agents/skills</span><span class="c">455 skills</span><span class="sw"><i></i></span></div>
+        <div class="shared">Codex, Cline, Zed and 10 others read this folder. One placement, many agents.</div>
+        <div class="row"><span class="g g4">H</span><span class="n">Hermes Agent</span>
+          <span class="p">~/.hermes/skills</span><span class="c">398 skills</span><span class="sw"><i></i></span></div>
+        <div class="row"><span class="g g5">P</span><span class="n">Pi</span>
+          <span class="p">~/.pi/agent/skills</span><span class="c">41 skills</span><span class="sw off"><i></i></span></div>
+        <div class="row"><span class="g g6">W</span><span class="n">Windsurf</span>
+          <span class="p">~/.windsurf/skills</span><span class="c">not found</span><span class="sw off"><i></i></span></div>
+      </div>
+
+      <div class="foot">
+        <span class="note">66 global folders known. 4 more agents appear after you install them.</span>
+        <span class="right"><button class="btn ghost">Skip</button><button class="btn primary">Continue</button></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">Reading folders · 4,912 packages found · nothing written</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — curation</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--raised:#1D1F22;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;
+        --text-3:#6C6E73;--sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);
+        --ok:#6E9E8A;--attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--surface);
+           border-bottom:1px solid var(--sep)}
+  .mark{font-size:13px;font-weight:600}.mark span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .tright{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-2)}
+  .btn{height:26px;padding:0 10px;border-radius:5px;border:1px solid var(--sep);background:var(--surface);color:var(--text);
+       font-size:11.5px;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .btn.ghost{background:transparent}
+  .panes{flex:1;display:flex;min-height:0}
+  .sidebar{width:248px;flex:0 0 248px;background:var(--sidebar);border-right:1px solid var(--sep);padding:8px}
+  .group{margin:12px 8px 3px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);font-weight:500}
+  .run{display:block;padding:7px 8px;border-radius:5px;font-size:12px}
+  .run:hover{background:var(--hover)}
+  .run.sel{background:var(--accent-soft)}
+  .run .l1{display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px}
+  .run .l2{font-size:10.5px;color:var(--text-3);margin-top:2px}
+  .tag{font-size:9px;border:1px solid var(--sep);border-radius:3px;padding:0 3px;color:var(--text-3);font-weight:500}
+  .tag.dry{color:var(--accent);border-color:rgba(127,163,199,.35)}
+  .tag.applied{color:var(--ok);border-color:rgba(110,158,138,.35)}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .banner{height:32px;flex:0 0 32px;display:flex;align-items:center;gap:8px;padding:0 18px;
+          background:var(--accent-soft);border-bottom:1px solid var(--sep);font-size:11.5px;color:var(--accent)}
+  .report{flex:1;overflow:hidden;padding:16px 22px}
+  .rhead{display:flex;align-items:flex-start;gap:12px}
+  .rhead h1{font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.015em}
+  .sub{font-size:10.5px;color:var(--text-3);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .stats{display:flex;gap:10px;margin:14px 0}
+  .stat{flex:1;border:1px solid var(--sep);border-radius:6px;background:var(--surface);padding:9px 10px}
+  .stat .n{font-size:20px;line-height:24px;font-weight:600;letter-spacing:-.02em}
+  .stat .l{font-size:10px;color:var(--text-3);margin-top:2px}
+  .stat .n.ok{color:var(--ok)} .stat .n.att{color:var(--attention)}
+  .sect{font-size:11px;color:var(--text-3);margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+  .sect .line{flex:1;height:1px;background:var(--sep)}
+  .prop{border:1px solid var(--sep);border-radius:6px;background:var(--surface);margin-bottom:8px;overflow:hidden}
+  .prop .ph{display:flex;align-items:center;gap:9px;padding:9px 11px}
+  .prop .to{font-size:12.5px;font-weight:600}
+  .arrow{color:var(--text-3)}
+  .prop .from{font-size:11px;color:var(--text-2)}
+  .prop .why{font-size:10.5px;color:var(--text-3);padding:0 11px 9px 30px}
+  .prop .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .chip{font-size:10px;border:1px solid var(--sep);border-radius:3px;padding:1px 5px;color:var(--text-2)}
+  .gb{width:14px;height:14px;border-radius:3px;display:grid;place-items:center;font-size:8px;font-weight:700;
+      background:var(--ok);color:#101113}
+  .gb.att{background:var(--attention)}
+  .fb{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--sep);
+      font-size:10.5px;color:var(--text-3)}
+  .fb .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .statusbar .mid,.statusbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+
+  <div class="toolbar">
+    <div class="mark">Curation<span>dry run</span></div>
+    <div class="tright">
+      <span>claude-sonnet · 84,120 tokens · $0.38</span>
+      <button class="btn ghost">Run again</button>
+      <button class="btn primary">Apply 4 merges</button>
+    </div>
+  </div>
+
+  <div class="panes">
+    <nav class="sidebar">
+      <div class="group">Runs</div>
+      <div class="run sel">
+        <div class="l1">Today 14:20 <span class="tag dry">Dry</span></div>
+        <div class="l2">4 merges · 3 archives · $0.38</div>
+      </div>
+      <div class="run">
+        <div class="l1">Oct 26 <span class="tag applied">Applied</span></div>
+        <div class="l2">7 merges · 9 archives · $0.71</div>
+      </div>
+      <div class="run">
+        <div class="l1">Oct 19 <span class="tag applied">Applied</span></div>
+        <div class="l2">2 merges · 0 archives · $0.19</div>
+      </div>
+      <div class="group">Settings</div>
+      <div class="run"><div class="l1" style="font-weight:500">Thresholds</div><div class="l2">stale 14d · archive 30d</div></div>
+      <div class="run"><div class="l1" style="font-weight:500">Model binding</div><div class="l2">cluster: haiku · write: sonnet</div></div>
+      <div class="run"><div class="l1" style="font-weight:500">Report folder</div><div class="l2">~/.skill-academy/reports</div></div>
+    </nav>
+
+    <section class="main">
+      <div class="banner">Dry run. Nothing was changed. Applying re-reads the library first.</div>
+
+      <div class="report">
+        <div class="rhead">
+          <div>
+            <h1>Curation report</h1>
+            <div class="sub"><span>2,140 skills scanned</span><span>·</span><span>312 candidates</span>
+              <span>·</span><span>23 clusters</span><span>·</span><span>4m 12s</span></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="n ok">4</div><div class="l">Merges proposed</div></div>
+          <div class="stat"><div class="n att">3</div><div class="l">Archives proposed</div></div>
+          <div class="stat"><div class="n">6</div><div class="l">Variant conflicts</div></div>
+          <div class="stat"><div class="n">2</div><div class="l">Dangling references</div></div>
+        </div>
+
+        <div class="sect">Proposed merges <span class="line"></span></div>
+
+        <div class="prop">
+          <div class="ph">
+            <div class="gb">↳</div>
+            <div><div class="to">writing-review <span class="arrow">←</span> <span class="from">prose-review, humanizer, short-humanizer, ai-writing-detector</span></div></div>
+            <div class="right"><span class="chip">4 → 1</span><span class="chip">−18 KB</span><span class="btn ghost" style="height:22px;font-size:10.5px">Read</span></div>
+          </div>
+          <div class="why">One class-level skill with three labelled sections and two references. The four bodies repeat the same rule about preserving facts.</div>
+        </div>
+
+        <div class="prop">
+          <div class="ph">
+            <div class="gb">↳</div>
+            <div><div class="to">foundry-package-ops <span class="arrow">←</span> <span class="from">foundry-manifest-install, foundry-backup-swap</span></div></div>
+            <div class="right"><span class="chip">2 → 1</span><span class="chip">−6 KB</span><span class="btn ghost" style="height:22px;font-size:10.5px">Read</span></div>
+          </div>
+          <div class="why">Both procedures run in the same order and share the same manifest-version rule. The second adds one backup step.</div>
+        </div>
+
+        <div class="prop">
+          <div class="ph">
+            <div class="gb">↳</div>
+            <div><div class="to">github-release-ops <span class="arrow">←</span> <span class="from">changelog-authoring, release-notes</span></div></div>
+            <div class="right"><span class="chip">2 → 1</span><span class="chip">−4 KB</span><span class="btn ghost" style="height:22px;font-size:10.5px">Read</span></div>
+          </div>
+          <div class="why">Same reader, same evidence rules. Release notes are the direction of the changelog, not a separate discipline.</div>
+        </div>
+
+        <div class="sect">Proposed archives <span class="line"></span></div>
+
+        <div class="prop">
+          <div class="ph">
+            <div class="gb att">×</div>
+            <div><div class="to">pr-triage-claude-183</div></div>
+            <div class="right"><span class="chip">absorbed into github-release-ops</span><span class="chip">8 months old</span></div>
+          </div>
+          <div class="why">Session artifact named after one PR number. Its one durable rule now lives under the umbrella.</div>
+        </div>
+
+        <div class="fb">
+          <span>Every archive keeps a snapshot. Restore returns the exact tree hash.</span>
+          <span class="right"><span>Budget $0.50 · used $0.38</span><button class="btn">Open REPORT.md</button></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="statusbar"><span>Dry run · 84,120 tokens · $0.38</span><span class="mid">report.json validated</span><span class="right">anthropic · claude-sonnet</span></div>
+</div>
+</body>
+</html>

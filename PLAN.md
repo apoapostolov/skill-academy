@@ -106,6 +106,7 @@ Total: about 31 working days. P0-P2 is a usable product.
 | D8 | Port providers verbatim, including OAuth quirks | String Theory already solved Codex base URL, Anthropic beta header and catalogue-as-health-check |
 | D9 | Curation is dry-run by default | It is the only feature that can make the library worse |
 | D10 | Usage telemetry is honest about being unknown | No cross-agent usage signal exists; pretending otherwise would archive good skills |
+| D11 | Dark-first, grey-forward, PC-software density | Apo's stated taste: polished desktop software, dark default, neutral grey chrome, and a replaced signal palette (verdigris / raw sienna / rosewood / dusty blue) instead of system green, amber and red. Owned by [docs/ui.md](docs/ui.md) |
 
 ## Open questions for Apo
 

@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — library</title>
+<style>
+  :root{
+    --bg:#101113; --surface:#17181B; --raised:#1D1F22; --sidebar:#141518;
+    --text:#E9EAEC; --text-2:#9A9CA1; --text-3:#6C6E73;
+    --sep:rgba(255,255,255,.08); --accent:#7FA3C7; --accent-soft:rgba(127,163,199,.14);
+    --ok:#6E9E8A; --attention:#B58B62; --destructive:#B85C57; --neutral:#6C6E73;
+    --hover:rgba(255,255,255,.05);
+    --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+    --mono:"SF Mono","Cascadia Code",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#FAFAFB; --surface:#FFFFFF; --raised:#FFFFFF; --sidebar:#F2F2F4;
+      --text:#1C1C1E; --text-2:#6A6C70; --text-3:#8A8C90;
+      --sep:rgba(0,0,0,.09); --accent:#3D6B93; --accent-soft:rgba(61,107,147,.10);
+      --ok:#3F6F5B; --attention:#8A6236; --destructive:#993F3A; --neutral:#8A8C90;
+      --hover:rgba(0,0,0,.04);
+      --shadow:0 10px 30px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.06);
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg)}
+  body{font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased;
+       width:1280px;font-size:13px;line-height:18px}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;background:var(--bg);
+       overflow:hidden;border:1px solid var(--sep);border-radius:8px;box-shadow:var(--shadow)}
+
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;
+           background:var(--sidebar);border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;gap:14px;padding:0 12px;
+           background:var(--surface);border-bottom:1px solid var(--sep)}
+  .mark{font-size:13px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+  .mark span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .filter{flex:1;max-width:440px;height:28px;display:flex;align-items:center;gap:8px;padding:0 9px;
+          border-radius:6px;background:var(--bg);border:1px solid var(--sep);color:var(--text-2);font-size:12px}
+  .filter .kbd{margin-left:auto;font-size:10px;color:var(--text-3);border:1px solid var(--sep);
+               border-radius:3px;padding:1px 4px}
+  .tright{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .scan{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)}
+  .ring{width:12px;height:12px;border-radius:50%;border:2px solid var(--sep);border-top-color:var(--accent);
+        animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .icon{width:26px;height:26px;display:grid;place-items:center;border-radius:5px;color:var(--text-2);position:relative}
+  .icon:hover{background:var(--hover)}
+  .badge{position:absolute;top:1px;right:0;min-width:13px;height:13px;border-radius:999px;background:var(--accent);
+         color:#101113;font-size:9px;font-weight:700;display:grid;place-items:center;padding:0 3px;
+         border:2px solid var(--surface)}
+
+  .panes{flex:1;display:flex;min-height:0}
+
+  .sidebar{width:232px;flex:0 0 232px;background:var(--sidebar);border-right:1px solid var(--sep);
+           padding:8px;display:flex;flex-direction:column;gap:1px;overflow:hidden}
+  .group{margin:12px 8px 3px;font-size:10px;line-height:12px;font-weight:500;letter-spacing:.05em;
+         text-transform:uppercase;color:var(--text-3)}
+  .nav{display:flex;align-items:center;gap:8px;height:24px;padding:0 8px;border-radius:4px;font-size:12.5px}
+  .nav:hover{background:var(--hover)}
+  .nav.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .nav .count{margin-left:auto;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .nav.sel .count{color:var(--accent)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .dot.att{background:var(--attention)}
+  .glyph{width:15px;height:15px;border-radius:3px;display:grid;place-items:center;font-size:8px;
+         font-weight:700;color:#101113;background:var(--text-3);flex:0 0 15px}
+  .g1{background:#C08A72}.g2{background:#D8D9DC;color:#17181B}.g3{background:#8FA8C4;color:#101113}
+  .g4{background:#A79BC4}.g5{background:#8FB3A4}
+  .sidefoot{margin-top:auto;padding:7px 8px 2px;border-top:1px solid var(--sep);display:flex;
+            align-items:center;gap:8px;color:var(--text-3);font-size:10.5px}
+  .sidefoot .r{margin-left:auto;color:var(--text-2)}
+
+  .listpane{width:352px;flex:0 0 352px;border-right:1px solid var(--sep);display:flex;flex-direction:column;min-height:0}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;padding:8px 10px 4px}
+  .chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px 0 8px;border-radius:999px;
+        background:var(--surface);border:1px solid var(--sep);font-size:10.5px}
+  .chip b{font-weight:600}
+  .chip .x{color:var(--text-3)}
+  .listhead{display:flex;align-items:baseline;padding:2px 12px 6px;color:var(--text-3);font-size:10.5px}
+  .listhead .sort{margin-left:auto}
+  .rows{overflow:hidden;padding:0 6px 6px}
+  .row{position:relative;display:flex;gap:9px;padding:6px 8px 6px 10px;border-radius:6px;min-height:44px;
+       align-items:flex-start}
+  .row:hover{background:var(--surface)}
+  .row.sel{background:var(--accent-soft)}
+  .row.sel::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2.5px;border-radius:2px;background:var(--accent)}
+  .row .ico{width:15px;height:15px;margin-top:3px;border-radius:3px;background:var(--text-3);flex:0 0 15px;
+            display:grid;place-items:center;color:#101113;font-size:8.5px;font-weight:700}
+  .row .body{min-width:0;flex:1}
+  .row .name{font-size:12.5px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:6px;line-height:16px}
+  .row .desc{font-size:10.5px;line-height:14px;color:var(--text-2);margin-top:1px;white-space:nowrap;
+             overflow:hidden;text-overflow:ellipsis}
+  .row .meta{font-size:10.5px;line-height:14px;color:var(--text-3);margin-top:2px;display:flex;align-items:center;
+             gap:6px;white-space:nowrap;overflow:hidden}
+  .pill{display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:3px;font-size:9.5px;
+        font-weight:500;background:var(--bg);color:var(--text-2);border:1px solid var(--sep)}
+  .pill.att{color:var(--attention);border-color:rgba(181,139,98,.35);background:rgba(181,139,98,.10)}
+  .pill.upd{color:var(--accent);border-color:rgba(127,163,199,.35);background:var(--accent-soft)}
+
+  .sw{position:relative;width:34px;height:20px;border-radius:999px;background:var(--neutral);flex:0 0 34px;
+      margin-top:2px;transition:background .12s}
+  .sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#F4F5F7;
+        box-shadow:0 1px 2px rgba(0,0,0,.4);transition:transform .18s cubic-bezier(.32,.72,0,1)}
+  .sw.on{background:var(--ok)} .sw.on i{transform:translateX(14px)}
+  .sw.mixed{background:var(--ok)} .sw.mixed i{transform:translateX(7px)}
+  .sw.mixed i::after{content:"";position:absolute;left:4px;right:4px;top:7.5px;height:1.5px;border-radius:1px;background:var(--ok)}
+  .sw.shadow{background:var(--sep);opacity:.65} .sw.shadow i{background:var(--sidebar)}
+  .driftdot{position:absolute;top:-1px;right:-1px;width:6px;height:6px;border-radius:50%;background:var(--attention);
+            border:1.5px solid var(--bg)}
+  .listfoot{height:24px;display:flex;align-items:center;padding:0 12px;color:var(--text-3);font-size:10.5px;
+            border-top:1px solid var(--sep)}
+
+  .detail{flex:1;min-width:0;display:flex;flex-direction:column}
+  .dhead{padding:14px 22px 10px;border-bottom:1px solid var(--sep);display:flex;gap:11px;align-items:flex-start}
+  .dhead .ico{width:30px;height:30px;border-radius:6px;background:#C08A72;color:#101113;display:grid;
+              place-items:center;font-size:11px;font-weight:700}
+  .dtitle{min-width:0;flex:1}
+  .dtitle h1{font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.015em}
+  .sub{font-size:10.5px;color:var(--text-3);margin-top:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .sub .src{color:var(--text-2)} .mono{font-family:var(--mono);font-size:10.5px}
+  .dctl{display:flex;align-items:center;gap:9px;padding-top:4px}
+  .ontxt{font-size:10.5px;color:var(--text-2);text-align:right;line-height:13px}
+  .kebab{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;color:var(--text-3)}
+  .kebab:hover{background:var(--hover)}
+  .tabs{display:flex;gap:18px;padding:0 22px;border-bottom:1px solid var(--sep)}
+  .tab{height:32px;display:flex;align-items:center;font-size:12.5px;color:var(--text-2);position:relative}
+  .tab.sel{color:var(--text);font-weight:600}
+  .tab.sel::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent);border-radius:2px 2px 0 0}
+  .tab .n{font-size:10.5px;color:var(--text-3);margin-left:5px}
+  .dbody{flex:1;overflow:hidden;padding:14px 22px 8px}
+  .slabel{font-size:10.5px;color:var(--text-3);margin:0 0 6px}
+  .matrix{border:1px solid var(--sep);border-radius:6px;background:var(--surface);overflow:hidden}
+  .mrow{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-bottom:1px solid var(--sep)}
+  .mrow:last-child{border-bottom:none}
+  .mrow .agent{font-size:12.5px;font-weight:500;min-width:100px}
+  .mrow .path{font-family:var(--mono);font-size:10.5px;color:var(--text-3);flex:1;min-width:0;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mode{font-size:9.5px;color:var(--text-2);border:1px solid var(--sep);border-radius:3px;padding:0 4px}
+  .hint{font-size:10.5px;color:var(--text-3);margin-top:6px}
+  .doc{margin-top:14px;max-width:700px}
+  .fm{border:1px solid var(--sep);border-radius:6px;overflow:hidden;background:var(--surface);margin-bottom:12px}
+  .fm div{display:flex;gap:10px;padding:5px 9px;border-bottom:1px solid var(--sep);font-size:10.5px}
+  .fm div:last-child{border-bottom:none}
+  .fm b{width:86px;color:var(--text-3);font-weight:500;flex:0 0 86px}
+  .fm span{font-family:var(--mono);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .doc h2{font-size:14px;line-height:19px;font-weight:600;letter-spacing:-.01em;margin:0 0 5px}
+  .doc p{font-size:12.5px;line-height:20px;margin:0 0 10px}
+  .doc ul{margin:0 0 10px 17px}
+  .doc li{font-size:12.5px;line-height:20px;margin-bottom:2px}
+  .code{background:var(--sidebar);border:1px solid var(--sep);border-radius:6px;padding:8px 10px;
+        font-family:var(--mono);font-size:11px;display:flex;justify-content:space-between;align-items:center}
+  .code .copy{font-family:var(--font);font-size:9.5px;color:var(--text-3);border:1px solid var(--sep);
+              border-radius:3px;padding:1px 5px;background:var(--surface)}
+
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:16px;padding:0 12px;
+             background:var(--sidebar);border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+  .statusbar .mid{margin-left:auto} .statusbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+
+  <div class="toolbar">
+    <div class="mark">Library<span>Cursor</span></div>
+    <div class="filter">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      <span>Filter in Cursor</span><span class="kbd">⌘K</span>
+    </div>
+    <div class="tright">
+      <div class="scan"><div class="ring"></div>12 of 66</div>
+      <div class="icon">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 2a4 4 0 0 0-4 4v2.5L3 11h10l-1-2.5V6a4 4 0 0 0-4-4Z"/><path d="M6.5 13a1.6 1.6 0 0 0 3 0"/></svg>
+        <span class="badge">3</span>
+      </div>
+      <div class="icon">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="panes">
+    <nav class="sidebar">
+      <div class="nav sel">All skills<span class="count">2140</span></div>
+      <div class="nav">Updates<span class="count">3</span></div>
+      <div class="nav">Mixed<span class="count">12</span></div>
+      <div class="nav">Drift<span class="count">1</span></div>
+      <div class="nav">Archive<span class="count">41</span></div>
+
+      <div class="group">Agents</div>
+      <div class="nav"><span class="glyph g1">C</span>Claude Code<span class="count">612</span></div>
+      <div class="nav"><span class="glyph g2">⌘</span>Cursor<span class="count">488</span></div>
+      <div class="nav"><span class="glyph g3">A</span>Codex<span class="count">455</span></div>
+      <div class="nav"><span class="glyph g4">H</span>Hermes Agent<span class="count">398</span></div>
+      <div class="nav"><span class="glyph g5">Z</span>Zed<span class="count">187</span></div>
+
+      <div class="group">Sources</div>
+      <div class="nav"><span class="dot"></span>mattpocock/skills<span class="count">38</span></div>
+      <div class="nav"><span class="dot att"></span>anthropics/skills<span class="count">16</span></div>
+      <div class="nav"><span class="dot"></span>local · git<span class="count">9</span></div>
+      <div class="nav">Add source…</div>
+
+      <div class="sidefoot">2,140 skills · 66 roots<span class="r">↻</span></div>
+    </nav>
+
+    <section class="listpane">
+      <div class="chips">
+        <span class="chip"><b>agent:</b>cursor <span class="x">×</span></span>
+        <span class="chip"><b>is:</b>mixed <span class="x">×</span></span>
+      </div>
+      <div class="listhead"><span>18 results</span><span class="sort">Recently changed ⌄</span></div>
+      <div class="rows">
+
+        <div class="row sel">
+          <div class="ico">P</div>
+          <div class="body">
+            <div class="name">prose-review</div>
+            <div class="desc">Rewrites prose without changing meaning.</div>
+            <div class="meta"><span>ApoMakesMods/prose-review</span><span class="pill">v2.1</span><span class="pill att">Mixed</span></div>
+          </div>
+          <div class="sw mixed"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g5">S</div>
+          <div class="body">
+            <div class="name">seo-audit</div>
+            <div class="desc">Technical and on-page audit with a fix list.</div>
+            <div class="meta"><span>mattpocock/skills</span><span class="pill upd">Update</span></div>
+          </div>
+          <div class="sw on"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g3">D</div>
+          <div class="body">
+            <div class="name">design-mobile-apps</div>
+            <div class="desc">Layout, type and motion for native-feeling apps.</div>
+            <div class="meta"><span>designed-by-ai/skills</span><span class="pill">v1.4</span></div>
+          </div>
+          <div class="sw off"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g4">G</div>
+          <div class="body">
+            <div class="name">grill-me</div>
+            <div class="desc">Interviews you before building, so the brief is decided.</div>
+            <div class="meta"><span>mattpocock/skills</span><span class="pill">Pinned</span></div>
+          </div>
+          <div class="sw on"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g1">P</div>
+          <div class="body">
+            <div class="name">pdf-layout</div>
+            <div class="desc">Reads and writes PDF geometry with a real renderer.</div>
+            <div class="meta"><span>anthropics/skills</span><span class="pill att">Drift</span></div>
+          </div>
+          <div class="sw on" style="position:relative"><i></i><span class="driftdot"></span></div>
+        </div>
+
+        <div class="row">
+          <div class="ico">B</div>
+          <div class="body">
+            <div class="name">brandkit</div>
+            <div class="desc">Bundled tokens, marks and export rules.</div>
+            <div class="meta"><span>bundled</span><span class="pill">Read-only</span></div>
+          </div>
+          <div class="sw shadow"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g3">T</div>
+          <div class="body">
+            <div class="name">tdd</div>
+            <div class="desc">Test-first loop with a failing test before any code.</div>
+            <div class="meta"><span>mattpocock/skills</span><span class="pill">v1.3</span></div>
+          </div>
+          <div class="sw on"><i></i></div>
+        </div>
+
+        <div class="row">
+          <div class="ico g5">H</div>
+          <div class="body">
+            <div class="name">handoff</div>
+            <div class="desc">Writes the next session's context before you stop.</div>
+            <div class="meta"><span>mattpocock/skills</span><span class="pill">v1.1</span></div>
+          </div>
+          <div class="sw on"><i></i></div>
+        </div>
+
+      </div>
+      <div class="listfoot">Showing 18 of 2140 · ⌘A selects all filtered</div>
+    </section>
+
+    <section class="detail">
+      <div class="dhead">
+        <div class="ico">P</div>
+        <div class="dtitle">
+          <h1>prose-review</h1>
+          <div class="sub"><span class="src">ApoMakesMods/prose-review</span><span class="pill">v2.1</span>
+            <span class="mono">8f3a1c2</span><span>·</span><span>9 files</span><span>·</span><span>18 KB</span></div>
+        </div>
+        <div class="dctl">
+          <div class="ontxt">On in 3 of 5<br>agents</div>
+          <div class="sw mixed"><i></i></div>
+          <div class="kebab">⋯</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab">Instructions</div>
+        <div class="tab sel">Agents</div>
+        <div class="tab">Files<span class="n">9</span></div>
+        <div class="tab">Activity</div>
+        <div class="tab">Updates</div>
+        <div class="tab">Curation</div>
+      </div>
+
+      <div class="dbody">
+        <div class="slabel">Placements</div>
+        <div class="matrix">
+          <div class="mrow"><div class="agent">Claude Code</div><div class="path">~/.claude/skills/prose-review</div><span class="mode">linked</span><div class="sw on"><i></i></div></div>
+          <div class="mrow"><div class="agent">Cursor</div><div class="path">~/.cursor/skills/prose-review</div><span class="mode">linked</span><div class="sw on"><i></i></div></div>
+          <div class="mrow"><div class="agent">Codex</div><div class="path">~/.agents/skills/prose-review</div><span class="mode">linked</span><div class="sw off"><i></i></div></div>
+          <div class="mrow"><div class="agent">Hermes Agent</div><div class="path">~/.hermes/skills/prose-review</div><span class="mode">native</span><div class="sw on"><i></i></div></div>
+          <div class="mrow"><div class="agent">Zed</div><div class="path">same root as Codex</div><span class="mode">aliased</span><div class="sw shadow"><i></i></div></div>
+        </div>
+        <div class="hint">Turned off by renaming SKILL.md. The package stays where it is.</div>
+
+        <div class="doc">
+          <div class="fm">
+            <div><b>name</b><span>prose-review</span></div>
+            <div><b>description</b><span>Rewrites prose without changing meaning…</span></div>
+            <div><b>allowed-tools</b><span>Read, Write, Edit</span></div>
+          </div>
+          <h2>Rewrites prose without changing meaning</h2>
+          <p>Keep facts, attribution, uncertainty and conditions exactly as written. Decide whether the passage is chat, documentation or public prose before editing a word.</p>
+          <ul>
+            <li>One rule per sentence. If a sentence carries two rules, split it.</li>
+            <li>Drop narration that exists only because a model produced it.</li>
+          </ul>
+          <div class="code"><span>references/humanizer.md</span><span class="copy">Copy</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="statusbar">
+    <span>2,140 skills · 66 roots · scanned 4m ago</span>
+    <span class="mid">SQLite · 3 jobs</span>
+    <span class="right">148 MB · anthropic</span>
+  </div>
+</div>
+</body>
+</html>

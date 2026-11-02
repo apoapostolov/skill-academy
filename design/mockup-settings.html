@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skill Academy — settings</title>
+<style>
+  :root{--bg:#101113;--surface:#17181B;--sidebar:#141518;--text:#E9EAEC;--text-2:#9A9CA1;--text-3:#6C6E73;
+        --sep:rgba(255,255,255,.08);--accent:#7FA3C7;--accent-soft:rgba(127,163,199,.14);--ok:#6E9E8A;
+        --attention:#B58B62;--destructive:#B85C57;--neutral:#6C6E73;--hover:rgba(255,255,255,.05);
+        --shadow:0 10px 30px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07);
+        --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,sans-serif;
+        --mono:"SF Mono","Cascadia Code",ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:var(--font);color:var(--text);width:1280px;font-size:13px;line-height:18px;
+       -webkit-font-smoothing:antialiased}
+  .app{width:1280px;height:800px;display:flex;flex-direction:column;border:1px solid var(--sep);border-radius:8px;
+       overflow:hidden;box-shadow:var(--shadow)}
+  .menubar{height:26px;flex:0 0 26px;display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--sidebar);
+           border-bottom:1px solid var(--sep);font-size:12px;color:var(--text-2)}
+  .menubar b{color:var(--text);font-weight:600}
+  .toolbar{height:44px;flex:0 0 44px;display:flex;align-items:center;padding:0 14px;background:var(--surface);
+           border-bottom:1px solid var(--sep);font-size:13px;font-weight:600}
+  .toolbar span{color:var(--text-3);font-weight:400;margin-left:8px;font-size:12px}
+  .panes{flex:1;display:flex;min-height:0}
+  .navpane{width:212px;flex:0 0 212px;background:var(--sidebar);border-right:1px solid var(--sep);padding:8px}
+  .nav{display:flex;align-items:center;height:26px;padding:0 9px;border-radius:5px;font-size:12.5px;color:var(--text-2)}
+  .nav:hover{background:var(--hover)}
+  .nav.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .main{flex:1;display:flex;min-height:0}
+  .col{flex:1;min-width:0;padding:18px 22px;overflow:hidden}
+  h2{font-size:15px;line-height:20px;font-weight:600;margin-bottom:3px}
+  .sub{font-size:11px;color:var(--text-3);margin-bottom:14px}
+  .prow{display:flex;align-items:center;gap:10px;height:48px;padding:0 12px;border:1px solid var(--sep);
+        border-radius:6px;background:var(--surface);margin-bottom:6px}
+  .prow.sel{border-color:rgba(127,163,199,.45);background:var(--accent-soft)}
+  .prow .n{font-size:12.5px;font-weight:600;min-width:112px}
+  .prow .m{font-size:10.5px;color:var(--text-3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prow .state{font-size:10.5px;display:flex;align-items:center;gap:5px;color:var(--text-2)}
+  .d{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .d.off{background:var(--neutral)} .d.att{background:var(--attention)}
+  .btn{height:24px;padding:0 9px;border-radius:4px;border:1px solid var(--sep);background:var(--bg);color:var(--text);
+       font-size:11px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#101113;font-weight:600}
+  .side{width:380px;flex:0 0 380px;border-left:1px solid var(--sep);background:var(--sidebar);padding:18px;overflow:hidden}
+  .card{border:1px solid var(--sep);border-radius:6px;background:var(--surface);margin-bottom:10px;overflow:hidden}
+  .card h3{font-size:10.5px;font-weight:500;color:var(--text-3);padding:8px 11px;border-bottom:1px solid var(--sep);
+           letter-spacing:.03em;text-transform:uppercase}
+  .kv{display:flex;align-items:center;gap:10px;padding:7px 11px;border-bottom:1px solid var(--sep);font-size:11px}
+  .kv:last-child{border-bottom:none}
+  .kv b{width:104px;font-weight:500;color:var(--text-3);flex:0 0 104px}
+  .kv span{font-family:var(--mono);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .field{margin:0 11px 10px;height:26px;border:1px solid var(--sep);border-radius:4px;background:var(--bg);
+         display:flex;align-items:center;padding:0 8px;font-family:var(--mono);font-size:10.5px;color:var(--text-3)}
+  .note{font-size:10.5px;color:var(--text-3);padding:0 11px 10px;line-height:15px}
+  .models{display:flex;flex-wrap:wrap;gap:4px;padding:0 11px 10px}
+  .mtag{font-size:9.5px;border:1px solid var(--sep);border-radius:3px;padding:1px 4px;color:var(--text-2);
+        font-family:var(--mono)}
+  .rowb{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--sep)}
+  .rowb .right{margin-left:auto;display:flex;gap:6px}
+  .bar{height:4px;border-radius:2px;background:var(--sep);margin:2px 11px 10px;overflow:hidden}
+  .bar i{display:block;height:4px;width:38%;background:var(--accent)}
+  .statusbar{height:24px;flex:0 0 24px;display:flex;align-items:center;padding:0 12px;background:var(--sidebar);
+             border-top:1px solid var(--sep);font-size:10.5px;color:var(--text-3)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="menubar"><b>Skill Academy</b><span>File</span><span>Edit</span><span>View</span><span>Skills</span><span>Sources</span><span>Tools</span><span>Help</span></div>
+  <div class="toolbar">Settings<span>Providers</span></div>
+
+  <div class="panes">
+    <nav class="navpane">
+      <div class="nav">General</div>
+      <div class="nav">Agents</div>
+      <div class="nav">Sources</div>
+      <div class="nav sel">Providers</div>
+      <div class="nav">Curation</div>
+      <div class="nav">Shortcuts</div>
+      <div class="nav">Advanced</div>
+    </nav>
+
+    <div class="main">
+      <div class="col">
+        <h2>Providers</h2>
+        <div class="sub">Eleven providers, three wire formats, keys in the OS keychain. The catalogue is fetched, not hardcoded.</div>
+
+        <div class="prow sel">
+          <span class="n">Anthropic</span>
+          <span class="m">api.anthropic.com · anthropic wire · 41 models</span>
+          <span class="state"><span class="d"></span>Connected</span>
+          <button class="btn">Test</button>
+        </div>
+        <div class="prow">
+          <span class="n">OpenAI</span>
+          <span class="m">api.openai.com · chatgpt session · 62 models</span>
+          <span class="state"><span class="d"></span>Signed in</span>
+          <button class="btn">Test</button>
+        </div>
+        <div class="prow">
+          <span class="n">xAI</span>
+          <span class="m">api.x.ai · device sign-in · Grok access</span>
+          <span class="state"><span class="d att"></span>Session expires in 2h</span>
+          <button class="btn">Renew</button>
+        </div>
+        <div class="prow">
+          <span class="n">OpenCode Go</span>
+          <span class="m">opencode.ai/zen/go · openai wire · 8 models</span>
+          <span class="state"><span class="d"></span>Connected</span>
+          <button class="btn">Test</button>
+        </div>
+        <div class="prow">
+          <span class="n">Local</span>
+          <span class="m">127.0.0.1:11434 · no key · llama3.2, qwen3:8b</span>
+          <span class="state"><span class="d off"></span>Not running</span>
+          <button class="btn">Test</button>
+        </div>
+        <div class="prow">
+          <span class="n">Gemini</span>
+          <span class="m">generativelanguage.googleapis.com · gemini wire</span>
+          <span class="state"><span class="d off"></span>No key</span>
+          <button class="btn">Add key</button>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="card">
+          <h3>Anthropic · credential</h3>
+          <div class="field">sk-ant-••••••••••••••••••••7f2a</div>
+          <div class="note">Key stored in Windows Credential Manager. Never written to the database or a log.</div>
+          <div class="rowb">
+            <span class="state" style="font-size:10.5px;color:var(--text-2)">Checked 4m ago</span>
+            <span class="right"><button class="btn">Replace</button><button class="btn">Test</button></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Catalogue</h3>
+          <div class="kv"><b>Source</b><span>GET /v1/models</span></div>
+          <div class="kv"><b>Fetched</b><span>2026-11-02 13:58</span></div>
+          <div class="kv"><b>TTL</b><span>24h · refresh on key change</span></div>
+          <div class="models">
+            <span class="mtag">claude-sonnet-4-5</span><span class="mtag">claude-haiku-4-5</span>
+            <span class="mtag">claude-opus-4-5</span><span class="mtag">+38</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Budgets</h3>
+          <div class="kv"><b>Per run</b><span>$0.50</span></div>
+          <div class="kv"><b>Today</b><span>$1.14 of $5.00</span></div>
+          <div class="bar"><i></i></div>
+          <div class="note">At 90% of a run budget the job stops cleanly and writes a partial report.</div>
+        </div>
+
+        <div class="card">
+          <h3>Task bindings</h3>
+          <div class="kv"><b>Cluster</b><span>claude-haiku-4-5</span></div>
+          <div class="kv"><b>Write merge</b><span>claude-sonnet-4-5</span></div>
+          <div class="kv"><b>Report text</b><span>claude-haiku-4-5</span></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="statusbar">Keys: 3 stored · 1 session · 0 in plain text</div>
+</div>
+</body>
+</html>

@@ -21,7 +21,11 @@ Skill Academy scans those directories, treats duplicates as one skill with many 
 | [docs/curation.md](docs/curation.md) | Hermes curator port, both passes |
 | [docs/providers.md](docs/providers.md) | String Theory provider port |
 | [registry/agents.json](registry/agents.json) | The 67-row agent registry parsed from skills.sh |
-| [design/mockup-library.html](design/mockup-library.html) | Static design mockup |
+| [design/README.md](design/README.md) | Five screen mockups: library, updates, curation, onboarding, settings |
+
+## Look
+
+Polished desktop software, dark by default, neutral grey chrome, colour only for state. The signal palette replaces system green, amber and red with verdigris, raw sienna, rosewood and a dusty blue. Measurements, states and copy rules are in [docs/ui.md](docs/ui.md).
 
 ## Status
 
