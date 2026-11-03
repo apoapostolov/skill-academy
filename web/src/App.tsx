@@ -2089,6 +2089,8 @@ export default function App() {
           <input
             ref={searchRef}
             className="search"
+            // A placeholder is a hint, not a name: a screen reader may skip it entirely.
+            aria-label="Search skills"
             placeholder="Filter by name, description or tag"
             value={query}
             onChange={(event) => setQuery(event.target.value)}

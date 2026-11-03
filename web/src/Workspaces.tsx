@@ -67,6 +67,7 @@ export function WorkspaceSidebar({
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          aria-label="Workspace folder"
           placeholder="C:\path\to\workspace"
           onKeyDown={(event) => {
             if (event.key === 'Enter' && draft.trim()) {

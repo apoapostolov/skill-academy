@@ -222,7 +222,9 @@ Built: **twelve themes with a contrast gate** — `web/src/themes.ts`, the Appea
 
 The whole map in one handler in `web/src/App.tsx`, the `?` overlay, and `docs/keyboard.md`. Every acting key calls the function its button calls, so the journal and undo are identical; a dialog owns the keyboard; the typing guard is on the focused element; two-stage keys share the buttons' four-second lapse. Verified by driving the running app in a browser: `j/k`, `gg/G`, `/` with the typing guard holding, `Escape`, `?` opening fourteen rows, `v`, `w`, `Space`/`Shift+Space` scrolling the real pane, and `a` arming without removing a row.
 
-Still open in this phase: the notification centre, the onboarding pass, and screen reader labels on every remaining control.
+Screen reader labels: audited in the running app across the main screen, Appearance, Sync, Sources and the key map — **1,137 visible controls, none unnamed** — and the two fields that relied on a placeholder now carry an explicit `aria-label` (`docs/accessibility.md`).
+
+Still open in this phase: the notification centre and the onboarding pass.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 
