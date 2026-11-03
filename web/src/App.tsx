@@ -720,6 +720,8 @@ export default function App() {
   const [monitorOpen, setMonitorOpen] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [keysOpen, setKeysOpen] = useState(false)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const [moveTarget, setMoveTarget] = useState<{ id: number; name: string; path: string } | null>(null)
   const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
   const [planGroup, setPlanGroup] = useState<ConsolidateGroupView | null>(null)
@@ -1449,6 +1451,192 @@ export default function App() {
     void archiveCurrent()
   }
 
+  /**
+   * The key map from PLAN/P8, in one place.
+   *
+   * The list is the spine: moving between skills never needs the mouse and never moves the page
+   * under it. Every key that acts calls the same function its button calls, so the journal entry and
+   * the undo are the same whichever way the action was taken. No key fires while focus is in a text
+   * field, and the two-stage keys obey the same four-second lapse as the buttons.
+   */
+  useEffect(() => {
+    const archiveArmed = { at: 0 }
+    let lastG = 0
+
+    const rows = (): Skill[] => skills
+    const indexOfSelected = (): number => rows().findIndex((skill) => skill.id === selected)
+    const moveTo = (index: number): void => {
+      const list = rows()
+      if (!list.length) return
+      const bounded = Math.min(Math.max(index, 0), list.length - 1)
+      const target = list[bounded]
+      setSelected(target.id)
+      const node = document.querySelector(`[data-skill-id="${target.id}"]`)
+      if (node instanceof HTMLElement) node.scrollIntoView({ block: 'nearest' })
+    }
+    const attentionIndex = (direction: 1 | -1): number => {
+      const list = rows()
+      const current = indexOfSelected()
+      const needs = (skill: Skill): boolean =>
+        (skill.health?.length ?? 0) > 0 || skill.risk === 'high' || Boolean((skill as Skill & { drift?: unknown }).drift)
+      for (let step = 1; step <= list.length; step += 1) {
+        const candidate = ((current < 0 ? (direction > 0 ? -1 : list.length) : current) + direction * step + list.length * 2) % list.length
+        if (needs(list[candidate])) return candidate
+      }
+      return current
+    }
+    // The detail column is `aside.detail`, and the pane that scrolls inside it is `.detail-scroll`.
+    // A selector that names neither scrolls nothing and looks exactly like a dead key.
+    const detailPane = (): HTMLElement | null =>
+      document.querySelector('aside.detail .detail-scroll') ?? document.querySelector('aside.detail')
+
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        Boolean(target) &&
+        (target!.tagName === 'INPUT' || target!.tagName === 'TEXTAREA' || target!.isContentEditable)
+      if (event.key === 'Escape') {
+        if (typing) {
+          setQuery('')
+          ;(target as HTMLElement).blur()
+          return
+        }
+        setRowMenu(null)
+        setKeysOpen(false)
+        return
+      }
+      // A dialog owns the keyboard while it is open; Escape has already had its chance above.
+      if (typing || rowMenu || document.querySelector('.modal-backdrop')) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+      const key = event.key
+      const list = rows()
+      if (!list.length && !['/', '?'].includes(key)) return
+      const current = indexOfSelected()
+
+      if (key === 'j') {
+        event.preventDefault()
+        moveTo(current < 0 ? 0 : current + 1)
+      } else if (key === 'k') {
+        event.preventDefault()
+        moveTo(current < 0 ? 0 : current - 1)
+      } else if (key === 'n') {
+        event.preventDefault()
+        moveTo(attentionIndex(1))
+      } else if (key === 'p') {
+        event.preventDefault()
+        moveTo(attentionIndex(-1))
+      } else if (key === 'g') {
+        const now = Date.now()
+        if (now - lastG < 600) {
+          event.preventDefault()
+          moveTo(0)
+          lastG = 0
+        } else {
+          lastG = now
+        }
+      } else if (key === 'G') {
+        event.preventDefault()
+        moveTo(list.length - 1)
+      } else if (key === ' ') {
+        event.preventDefault()
+        const pane = detailPane()
+        if (pane) pane.scrollBy({ top: (event.shiftKey ? -1 : 1) * pane.clientHeight * 0.9 })
+      } else if (key === '/' ) {
+        event.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      } else if (key === '?') {
+        event.preventDefault()
+        setKeysOpen((open) => !open)
+      } else if (key === 'w') {
+        event.preventDefault()
+        toggleWrap()
+      } else if (key === 'v') {
+        event.preventDefault()
+        setMdMode((mode) => (mode === 'preview' ? 'raw' : 'preview'))
+      } else if (key === 'e') {
+        event.preventDefault()
+        setSelectMode((on) => !on)
+      } else if (key === 'x') {
+        if (current >= 0) {
+          event.preventDefault()
+          if (!selectMode) setSelectMode(true)
+          toggleChecked(list[current].id)
+        }
+      } else if (key === 's') {
+        if (current >= 0) {
+          event.preventDefault()
+          void togglePlatform(list[current])
+        }
+      } else if (key === 'o' || key === 'Enter') {
+        if (current >= 0) {
+          event.preventDefault()
+          void revealPath(list[current].path)
+        }
+      } else if (key === 'A') {
+        if (selectMode && checked.size) {
+          event.preventDefault()
+          void archiveChecked()
+        }
+      } else if (key === 'a') {
+        if (current < 0) return
+        event.preventDefault()
+        const now = Date.now()
+        if (now - archiveArmed.at < 4000) {
+          archiveArmed.at = 0
+          void archiveSkillRow(list[current])
+        } else {
+          archiveArmed.at = now
+          setError('Press a again to archive.')
+          setTimeout(() => setError(null), 4000)
+        }
+      } else if (key === 'u') {
+        event.preventDefault()
+        void undoLast()
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // The handler reads current state through these values; a stale closure would act on a skill
+    // that is no longer selected.
+  }, [skills, selected, rowMenu, keysOpen, selectMode, checked, query])
+
+  /** Opens the folder of a skill by its own path, which is what `o` does. */
+  async function revealPath(skillPath: string): Promise<void> {
+    try {
+      const response = await fetch('/api/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: skillPath })
+      })
+      if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? `reveal ${response.status}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /** Undo is the last journal entry, whichever way it was made. */
+  async function undoLast(): Promise<void> {
+    const response = await fetch('/api/journal?limit=1')
+    const data = (await response.json()) as { entries?: Array<{ id: number; action: string; undone_at?: string | null }> }
+    const entry = (data.entries ?? []).find((row) => !row.undone_at)
+    if (!entry) {
+      setError('Nothing to undo.')
+      setTimeout(() => setError(null), 4000)
+      return
+    }
+    const undo = await fetch(`/api/journal/${entry.id}/undo`, { method: 'POST' })
+    if (!undo.ok) {
+      const payload = (await undo.json().catch(() => ({}))) as { reason?: string; error?: string }
+      setError(payload.reason ?? payload.error ?? `undo ${undo.status}`)
+      return
+    }
+    await loadState()
+    await fetchPage(0, true)
+  }
+
   async function archiveSkillRow(skill: Skill) {
     try {
       const response = await fetch(`/api/skills/${skill.id}/archive`, { method: 'POST' })
@@ -1867,6 +2055,7 @@ export default function App() {
         </div>
         <div className="searchwrap">
           <input
+            ref={searchRef}
             className="search"
             placeholder="Filter by name, description or tag"
             value={query}
@@ -1934,6 +2123,44 @@ export default function App() {
       {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
       {sourcesOpen && <SourcesDialog onClose={() => setSourcesOpen(false)} />}
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
+      {keysOpen && (
+        <div className="modal-backdrop" role="dialog" aria-label="Keyboard map" onClick={() => setKeysOpen(false)}>
+          <div className="keysdlg" onClick={(event) => event.stopPropagation()}>
+            <div className="sdhead">
+              <div>
+                <div className="mergetitle">Keyboard</div>
+                <div className="mergesub">The list is the spine. Nothing here moves the page under you.</div>
+              </div>
+              <button className="ghost small" onClick={() => setKeysOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="keysgrid">
+              {[
+                ['j / k', 'next / previous skill'],
+                ['n / p', 'next / previous that needs attention'],
+                ['g g / G', 'first / last'],
+                ['Space / Shift+Space', 'page the detail pane'],
+                ['o or Enter', 'open the skill’s folder'],
+                ['s', 'switch it on or off for this agent'],
+                ['a then a', 'archive, twice within four seconds'],
+                ['e / x', 'selection mode / toggle a row'],
+                ['Shift+A', 'archive the selection'],
+                ['/', 'focus search'],
+                ['v / w', 'preview or raw / wrap'],
+                ['u', 'undo the last entry'],
+                ['?', 'this map'],
+                ['Escape', 'close a menu, clear search']
+              ].map(([keys, what]) => (
+                <div className="keysrow" key={keys}>
+                  <kbd>{keys}</kbd>
+                  <span>{what}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {moveTarget && <MoveDialog skill={moveTarget} onClose={() => setMoveTarget(null)} />}
       {improveTarget && <ImproveDialog skill={improveTarget} onClose={() => setImproveTarget(null)} />}
       {planGroup && (
@@ -2790,6 +3017,7 @@ export default function App() {
           {scope.kind !== 'trash' && scope.kind !== 'drafts' && scope.kind !== 'workspace' && skills.map((skill) => (
             <button
               key={skill.id}
+              data-skill-id={skill.id}
               className={`row ${selected === skill.id ? 'selected' : ''}`}
               onClick={() => setSelected(skill.id)}
               onContextMenu={(event) => {

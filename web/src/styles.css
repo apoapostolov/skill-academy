@@ -5158,3 +5158,43 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .syncbranch {
   max-width: 90px;
 }
+
+/* The keyboard map: a compact two-column list, keys in a monospace pill so they read as keys. */
+.keysdlg {
+  width: 520px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 18px 20px 20px;
+  background: var(--bg);
+  border: 1px solid var(--sep);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.keysgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+  margin-top: 14px;
+}
+
+.keysrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.keysrow kbd {
+  flex: 0 0 auto;
+  min-width: 46px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: var(--surface, transparent);
+}

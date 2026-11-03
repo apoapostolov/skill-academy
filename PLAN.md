@@ -192,7 +192,7 @@ Exit: two machines converge on the same package hashes through a private repo; a
 
 Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact pull, conflict copies), `server/src/lockdoc.ts` (the lock also lists the library's own packages), `server/src/lockrestore.ts` (a lock rebuilds the index and the placements), `web/src/Sync.tsx` (the Sync dialog) and `scripts/sync-check.sh` with **20 checks** over three servers and one bare repository. Detail and limits: `docs/sync.md`.
 
-### P8 — Polish (8 days, including the key map)
+### P8 — Polish (8 days, including the key map) — the key map is built
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve themes with the contrast gate, notification center, reduced motion. Copy pass in Apo's voice.
 
@@ -217,6 +217,10 @@ Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve th
 Rules: no shortcut fires while focus is in a text field or a menu is open; the two-stage keys obey the same four-second lapse; every keyboard action lands in the journal exactly as its button does, so `u` can reverse it; and `?` lists the map rather than leaving it to be discovered.
 
 Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan; the key map covers every action that has a button.
+
+Built: the whole map in one handler in `web/src/App.tsx`, the `?` overlay, and `docs/keyboard.md`. Every acting key calls the function its button calls, so the journal and undo are identical; a dialog owns the keyboard; the typing guard is on the focused element; two-stage keys share the buttons' four-second lapse. Verified by driving the running app in a browser: `j/k`, `gg/G`, `/` with the typing guard holding, `Escape`, `?` opening fourteen rows, `v`, `w`, `Space`/`Shift+Space` scrolling the real pane, and `a` arming without removing a row.
+
+Still open in this phase: the twelve themed accents with a contrast gate, the notification centre, the onboarding pass, and screen reader labels on every remaining control.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 
