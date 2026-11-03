@@ -4701,3 +4701,212 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   font: inherit;
   color: inherit;
 }
+
+/* Workspaces: a folder of skills compared against the library. */
+.wssection {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.wstitle {
+  padding: 2px 12px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(120, 124, 132);
+}
+
+.wsnav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.wsnavname {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: rgb(200, 202, 207);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wsnav:hover .wsnavname {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wsnav.active .wsnavname {
+  color: rgb(226, 229, 234);
+  background: rgba(127, 163, 199, 0.16);
+}
+
+.wsnavdrop {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: rgb(120, 124, 132);
+  background: transparent;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wsnav:hover .wsnavdrop {
+  opacity: 1;
+}
+
+.wsadd {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px 0;
+}
+
+.wsadd input {
+  flex: 1 1 auto;
+  outline: none;
+  min-width: 0;
+  padding: 3px 7px;
+  font: inherit;
+  font-size: 11px;
+  color: rgb(214, 217, 222);
+  background: rgb(18, 20, 24);
+  border: 1px solid rgb(40, 44, 50);
+  border-radius: 6px;
+}
+
+.wsrows {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.wsrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgb(30, 33, 38);
+  cursor: pointer;
+}
+
+.wsrow:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wsrow.selected {
+  background: rgba(127, 163, 199, 0.14);
+}
+
+.wsrowname {
+  font-size: 12.5px;
+  color: rgb(222, 225, 230);
+}
+
+.wspill {
+  padding: 1px 7px;
+  font-size: 10.5px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.wspill.same {
+  color: var(--signal-on, #6e9e8a);
+  border-color: rgba(110, 158, 138, 0.4);
+}
+
+.wspill.different {
+  color: var(--signal-attention, #b58b62);
+  border-color: rgba(181, 139, 98, 0.42);
+}
+
+.wspill.workspace-only {
+  color: var(--signal-available, #7fa3c7);
+  border-color: rgba(127, 163, 199, 0.42);
+}
+
+.wsdetail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.wsdhead .mergesub {
+  font-size: 11px;
+  color: rgb(138, 142, 150);
+  word-break: break-all;
+}
+
+.wsdcounts {
+  font-size: 11.5px;
+  color: rgb(160, 164, 172);
+}
+
+.wsdcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgb(40, 44, 50);
+  border-radius: 10px;
+}
+
+.wsdrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.wsdlabel {
+  width: 74px;
+  color: rgb(138, 142, 150);
+}
+
+.wsdhash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: rgb(190, 194, 200);
+}
+
+.wsdpath {
+  font-size: 11px;
+  color: rgb(130, 134, 142);
+  word-break: break-all;
+}
+
+.wsdask {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: rgb(190, 194, 200);
+}
+
+.wsdclose {
+  align-self: flex-start;
+}

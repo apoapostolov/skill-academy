@@ -18,7 +18,7 @@
     "dev:server": "npm -w @skill-academy/server run dev",
     "dev:web": "npm -w @skill-academy/web run dev",
     "build": "npm -w @skill-academy/web run build",
-    "typecheck": "npm -w @skill-academy/server run typecheck",
+    "typecheck": "npm -w @skill-academy/server run typecheck && npm -w @skill-academy/web run typecheck",
     "seed": "node scripts/seed.mjs",
     "bench:p1": "npx tsx scripts/bench-p1.ts",
     "fixtures": "bash scripts/fixture-check.sh"

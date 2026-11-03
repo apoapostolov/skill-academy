@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 10009 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --port 10009"
+    "preview": "vite preview --port 10009",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

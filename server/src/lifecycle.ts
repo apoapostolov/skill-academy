@@ -231,7 +231,14 @@ export function undoJournal(journalId: number): { ok: boolean; reason?: string; 
     | undefined
   if (!row) return { ok: false, reason: 'not-found' }
   if (row.undone_at) return { ok: false, reason: 'already-undone' }
-  const payload = JSON.parse(row.payload) as { trashId?: number; target?: string; from?: string; to?: string }
+  const payload = JSON.parse(row.payload) as {
+    trashId?: number
+    target?: string
+    from?: string
+    to?: string
+    snapshot?: string | null
+    name?: string
+  }
 
   if (row.action === 'archive' && payload.trashId) {
     const restored = restoreTrash(payload.trashId)
@@ -247,6 +254,20 @@ export function undoJournal(journalId: number): { ok: boolean; reason?: string; 
     if (!live) return { ok: false, reason: 'skill-missing' }
     const archived = archiveSkill(live.id, 'undo-restore')
     if (!archived.ok) return { ok: false, reason: archived.reason }
+  } else if (row.action === 'workspace-promote' && payload.target) {
+    // Undo is the same act in reverse: the library copy goes, and the snapshot comes back if the
+    // promotion replaced a package rather than creating one.
+    try {
+      if (payload.snapshot && fs.existsSync(payload.snapshot)) {
+        fs.rmSync(payload.target, { recursive: true, force: true })
+        fs.cpSync(payload.snapshot, payload.target, { recursive: true })
+        fs.rmSync(payload.snapshot, { recursive: true, force: true })
+      } else {
+        fs.rmSync(payload.target, { recursive: true, force: true })
+      }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message }
+    }
   } else if (row.action === 'enable' || row.action === 'disable') {
     return { ok: false, reason: 'handled-by-placements' }
   } else {

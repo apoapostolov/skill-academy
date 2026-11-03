@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Versioning from './Monitor'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
 import { DraftEditor, DraftList, type DraftRow } from './Write'
+import {
+  WorkspaceDetail,
+  WorkspaceRows,
+  WorkspaceSidebar,
+  type CompareRow,
+  type CompareView,
+  type WorkspaceRow
+} from './Workspaces'
 import { highlight } from './highlight'
 import { renderMarkdown } from './markdown'
 
@@ -160,6 +168,7 @@ type Scope =
   | { kind: 'health' }
   | { kind: 'trash' }
   | { kind: 'drafts' }
+  | { kind: 'workspace'; id: number }
   | { kind: 'agent'; agent: string; path: string }
   | { kind: 'tag'; tag: string }
   | { kind: 'category'; category: string }
@@ -713,6 +722,10 @@ export default function App() {
   const [trashSelecting, setTrashSelecting] = useState(false)
   const [drafts, setDrafts] = useState<DraftRow[]>([])
   const [activeDraft, setActiveDraft] = useState<string | null>(null)
+  const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([])
+  const [workspaceView, setWorkspaceView] = useState<CompareView | null>(null)
+  const [workspaceRow, setWorkspaceRow] = useState<CompareRow | null>(null)
+  const [workspaceRefresh, setWorkspaceRefresh] = useState(0)
   const [trashWipeAsk, setTrashWipeAsk] = useState(false)
   const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
   const [improveRule, setImproveRule] = useState('')
@@ -845,9 +858,7 @@ export default function App() {
     for (let attempt = 0; attempt < 200; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, Math.max(3, interval) * 1000))
       const response = await fetch('/api/oauth')
-      const payload = (await response.json()) as {
-        providers: Array<{ id: string; connected: boolean; account: string; watch: { status: string; account: string; message: string } | null }>
-      }
+      const payload = (await response.json()) as { providers: OAuthRow[] }
       const row = payload.providers.find((entry) => entry.id === id)
       if (!row) return
       if (row.connected) {
@@ -1139,6 +1150,31 @@ export default function App() {
     }
   }
 
+  async function loadWorkspaces() {
+    const response = await fetch('/api/workspaces')
+    const data = (await response.json()) as { workspaces?: WorkspaceRow[] }
+    setWorkspaces(data.workspaces ?? [])
+  }
+
+  async function addWorkspace(workspacePath: string) {
+    const response = await fetch('/api/workspaces', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: workspacePath })
+    })
+    const data = (await response.json()) as { workspace?: WorkspaceRow; error?: string }
+    if (data.workspace) {
+      await loadWorkspaces()
+      setScope({ kind: 'workspace', id: data.workspace.id })
+    }
+  }
+
+  async function removeWorkspace(id: number) {
+    await fetch(`/api/workspaces/${id}`, { method: 'DELETE' })
+    if (scope.kind === 'workspace' && scope.id === id) setScope({ kind: 'all' })
+    await loadWorkspaces()
+  }
+
   async function loadTrash() {
     try {
       const response = await fetch('/api/trash')
@@ -1314,7 +1350,7 @@ export default function App() {
     }
   }
 
-  async function togglePlatform(skill: SkillRow) {
+  async function togglePlatform(skill: Skill) {
     if (scope.kind !== 'agent') return
     const on = skill.path.indexOf('.archive') > -1
     const response = await fetch(`/api/skills/${skill.id}/switch`, {
@@ -1460,6 +1496,7 @@ export default function App() {
 
   useEffect(() => {
     loadState()
+    void loadWorkspaces()
   }, [])
 
   function paramsFor(offset: number): string {
@@ -1738,13 +1775,14 @@ export default function App() {
     if (scope.kind === 'health') return 'Needs attention'
     if (scope.kind === 'trash') return 'Deleted'
     if (scope.kind === 'drafts') return 'Drafts'
+    if (scope.kind === 'workspace') return workspaces.find((row) => row.id === scope.id)?.name ?? 'Workspace'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
     if (scope.kind === 'agent') return scope.agent
     return 'All skills'
   }, [scope, facets])
 
-  function renderTree(nodes: PkgNode[], depth: number, kind: string) {
+  function renderTree(nodes: PkgNode[], depth: number, kind: string): ReactNode[] {
     return nodes.flatMap((node) => {
       const indent = 8 + depth * 11
       if (!node.entry) {
@@ -2377,6 +2415,19 @@ export default function App() {
           >
             Deleted <span>{trashList.length}</span>
           </button>
+          <div className="wssection">
+            <div className="wstitle">Workspaces</div>
+            <WorkspaceSidebar
+              workspaces={workspaces}
+              activeId={scope.kind === 'workspace' ? scope.id : null}
+              onOpen={(id) => {
+                setWorkspaceRow(null)
+                setScope({ kind: 'workspace', id })
+              }}
+              onAdd={(workspacePath) => void addWorkspace(workspacePath)}
+              onRemove={(id) => void removeWorkspace(id)}
+            />
+          </div>
           <button
             className={`nav ${scope.kind === 'drafts' ? 'active' : ''}`}
             onClick={() => {
@@ -2557,7 +2608,8 @@ export default function App() {
               />
             )}
             <span className="scope">{scopeLabel}</span>
-            <div className="seg" role="group" aria-label="Shown skills">
+            {scope.kind !== 'workspace' && scope.kind !== 'drafts' && scope.kind !== 'trash' && (
+              <div className="seg" role="group" aria-label="Shown skills">
               {(
                 [
                   ['active', 'Installed'],
@@ -2579,11 +2631,14 @@ export default function App() {
                   {label}
                 </button>
               ))}
-            </div>
+              </div>
+            )}
             <span className={`count ${scope.kind === 'trash' ? 'trashcount' : ''}`}>
               {scope.kind === 'trash'
                 ? `${fmt.format(trashList.length)} ${trashList.length === 1 ? 'entry' : 'entries'}`
-                : `${fmt.format(total)} ${total === 1 ? 'skill' : 'skills'}`}
+                : scope.kind === 'workspace'
+                  ? `${fmt.format(workspaceView?.total ?? 0)} ${(workspaceView?.total ?? 0) === 1 ? 'skill' : 'skills'}`
+                  : `${fmt.format(total)} ${total === 1 ? 'skill' : 'skills'}`}
               {scope.kind !== 'trash' &&
                 (checked.size > 0
                   ? ` · ${checked.size}/${fmt.format(skills.length)} selected`
@@ -2695,6 +2750,18 @@ export default function App() {
               onWipeHandled={() => setTrashWipeAsk(false)}
             />
           )}
+          {scope.kind === 'workspace' && (
+            <WorkspaceRows
+              workspaceId={scope.id}
+              refresh={workspaceRefresh}
+              selected={workspaceRow?.name ?? null}
+              onSelect={(name) => setWorkspaceRow(workspaceView?.rows.find((row) => row.name === name) ?? null)}
+              onCompare={(view) => {
+                setWorkspaceView(view)
+                setWorkspaceRow((current) => (current ? view.rows.find((row) => row.name === current.name) ?? null : null))
+              }}
+            />
+          )}
           {scope.kind === 'drafts' && (
             <DraftList
               drafts={drafts}
@@ -2704,7 +2771,7 @@ export default function App() {
               onGenerate={(intent) => void newDraft(intent)}
             />
           )}
-          {scope.kind !== 'trash' && scope.kind !== 'drafts' && skills.map((skill) => (
+          {scope.kind !== 'trash' && scope.kind !== 'drafts' && scope.kind !== 'workspace' && skills.map((skill) => (
             <button
               key={skill.id}
               className={`row ${selected === skill.id ? 'selected' : ''}`}
@@ -2783,9 +2850,13 @@ export default function App() {
               )}
             </button>
           ))}
-          {loadingMore && <div className="listfoot">Loading…</div>}
-          {!hasMore && skills.length > 0 && <div className="listfoot">{fmt.format(total)} total</div>}
-          {scope.kind !== 'drafts' && scope.kind !== 'trash' && skills.length === 0 && !loadingMore && (
+          {scope.kind !== 'workspace' && scope.kind !== 'drafts' && loadingMore && (
+            <div className="listfoot">Loading…</div>
+          )}
+          {scope.kind !== 'workspace' && scope.kind !== 'drafts' && !hasMore && skills.length > 0 && (
+            <div className="listfoot">{fmt.format(total)} total</div>
+          )}
+          {scope.kind !== 'drafts' && scope.kind !== 'trash' && scope.kind !== 'workspace' && skills.length === 0 && !loadingMore && (
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
           </ScrollPane>
@@ -3037,6 +3108,22 @@ export default function App() {
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
           <ScrollPane axis={wrap ? 'y' : 'both'} className="detail-scroll">
+          {scope.kind === 'workspace' ? (
+            <WorkspaceDetail
+              workspaceId={scope.id}
+              view={workspaceView}
+              row={workspaceRow}
+              onPromoted={() => {
+                // The list is the truth about what the library holds, so it is re-read rather than
+                // left showing the state from before the write.
+                setWorkspaceRefresh((value) => value + 1)
+                void loadWorkspaces()
+                void fetchPage(0, true)
+                void loadTrash()
+              }}
+              onClose={() => setScope({ kind: 'all' })}
+            />
+          ) : null}
           {scope.kind === 'drafts' ? (
             activeDraft ? (
               <DraftEditor
@@ -3048,8 +3135,10 @@ export default function App() {
               <div className="empty">Pick a draft, or describe a new one.</div>
             )
           ) : null}
-          {scope.kind !== 'drafts' && !detail && <div className="empty">Select a skill to read it.</div>}
-          {scope.kind !== 'drafts' && detail && (
+          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && !detail && (
+            <div className="empty">Select a skill to read it.</div>
+          )}
+          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && detail && (
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>

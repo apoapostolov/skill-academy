@@ -444,11 +444,19 @@ function stmt(sql: string): ReturnType<DatabaseSync['prepare']> {
 }
 
 function indexedFor(row: { name: string; description: string; tags: string; body: string }, path: string): { rowid: number } | null {
-  const existing = stmt('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
+  const existing = stmt('SELECT id, name, description, tags, body FROM skills_doc WHERE path = ?').get(path) as
+    | { id: number; name: string; description: string; tags: string; body: string }
+    | undefined
   if (existing) {
+    // FTS5 removes a row only when it is handed the exact values that were indexed. Reading them
+    // back from another table (skill_body) corrupts the index instead: the next query reports a
+    // malformed database.
     stmt(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`).run(
       existing.id,
-      ...docValues(path)
+      existing.name,
+      existing.description,
+      existing.tags,
+      existing.body
     )
   }
   const stored = stmt(`

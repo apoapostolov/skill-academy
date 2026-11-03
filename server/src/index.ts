@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -38,6 +38,7 @@ import {
   sourceSkills,  getDb,  archivedByRoot,
   allSkillPaths,
   removeByPath,
+  saveOne,
   setMutationHook
 } from './db'
 import {
@@ -94,6 +95,7 @@ import {
   startWatch
 } from './oauth'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
+import { parseSkill } from './skill'
 import { applyChange } from './apply'
 import {
   acknowledgeEvents,
@@ -1675,6 +1677,98 @@ app.post('/api/workspaces/:id/import', async (request, reply) => {
   }
 })
 
+/** The skill folders a workspace may keep, in the same order the comparison reads them. */
+function workspaceSkillDirs(workspacePath: string): string[] {
+  const found: string[] = []
+  for (const candidate of ['skills', path.join('.claude', 'skills'), path.join('.agents', 'skills')]) {
+    const full = path.join(workspacePath, candidate)
+    if (!existsSync(full)) continue
+    for (const entry of readdirSync(full, { withFileTypes: true })) {
+      if (entry.isDirectory() && existsSync(path.join(full, entry.name, 'SKILL.md'))) {
+        found.push(path.join(full, entry.name))
+      }
+    }
+  }
+  return found
+}
+
+app.post('/api/workspaces/:id/promote', async (request, reply) => {
+  // The other direction of import: a skill the workspace owns becomes a library package. It is a
+  // copy with a snapshot, never a move, so the workspace keeps working if the library changes.
+  const { id } = request.params as { id: string }
+  const workspace = listWorkspaces().find((row) => row.id === Number(id))
+  if (!workspace) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const body = (request.body ?? {}) as { name?: string; replace?: boolean }
+  const name = (body.name ?? '').trim()
+  if (!name) {
+    reply.code(400)
+    return { error: 'name is required' }
+  }
+  const source = workspaceSkillDirs(workspace.path).find((dir) => path.basename(dir) === name)
+  if (!source) {
+    reply.code(404)
+    return { error: 'not-in-workspace', name }
+  }
+  const parsed = parseSkill(source, workspace.path, 'workspace')
+  if (!parsed) {
+    reply.code(400)
+    return { error: 'not-a-skill', detail: 'the folder has a SKILL.md that does not parse' }
+  }
+
+  const hashOf = (dir: string): string => {
+    try {
+      return createHash('sha256').update(readFileSync(path.join(dir, 'SKILL.md'))).digest('hex')
+    } catch {
+      return ''
+    }
+  }
+  const target = path.join(LIBRARY_DIR, name)
+  const sourceHash = hashOf(source)
+  let replaced = false
+  let snapshot: string | null = null
+
+  if (existsSync(target)) {
+    if (hashOf(target) === sourceHash) {
+      reply.code(409)
+      return { error: 'unchanged', target, hash: sourceHash }
+    }
+    if (!body.replace) {
+      reply.code(409)
+      return { error: 'exists', target, hash: sourceHash, libraryHash: hashOf(target) }
+    }
+  }
+
+  let record = null as ReturnType<typeof parseSkill>
+  try {
+    if (existsSync(target)) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      snapshot = path.join(DATA_DIR, 'library', '.snapshots', `${name}-${stamp}`)
+      mkdirSync(path.dirname(snapshot), { recursive: true })
+      cpSync(target, snapshot, { recursive: true })
+      rmSync(target, { recursive: true, force: true })
+      replaced = true
+    }
+    mkdirSync(LIBRARY_DIR, { recursive: true })
+    cpSync(source, target, { recursive: true })
+    // The import manifest describes a copy inside a workspace; the library package must not carry it.
+    rmSync(path.join(target, MANIFEST), { force: true })
+    // The library is not a scanned root, so the package is indexed here rather than by a whole scan:
+    // one promotion should cost one package's parse, not the library's.
+    record = parseSkill(target, LIBRARY_DIR, 'library')
+    if (record) saveOne(LIBRARY_DIR, 'library', record)
+    addJournal('workspace-promote', { workspace: workspace.name, name, target, source, snapshot, replaced })
+  } catch (error) {
+    console.error('workspace-promote failed:', (error as Error).stack ?? (error as Error).message)
+    reply.code(500)
+    return { error: (error as Error).message, detail: (error as Error).stack?.split('\n').slice(0, 3).join(' | ') }
+  }
+
+  return { ok: true, name, target, replaced, snapshot, hash: sourceHash, indexed: Boolean(record) }
+})
+
 app.get('/api/workspaces/:id/compare', async (request, reply) => {
   // A workspace is a repository that keeps its own skills. Compare by name and by the hash of
   // SKILL.md, so "same skill, different content" cannot hide behind a matching name.
@@ -1705,15 +1799,19 @@ app.get('/api/workspaces/:id/compare', async (request, reply) => {
   const rows = skillDirs.map((dir) => {
     const name = path.basename(dir)
     const hash = hashOf(dir)
+    // The library copy is a package on disk; the index is only how it is usually found.
     const known = querySkills({ q: name, limit: 200 }).rows.find((row) => row.name === name)
-    if (!known) return { name, state: 'workspace-only' as const, hash }
-    const libraryHash = hashOf(known.path)
+    const libraryDir = path.join(LIBRARY_DIR, name)
+    const libraryPath = existsSync(path.join(libraryDir, 'SKILL.md')) ? libraryDir : known?.path
+    if (!libraryPath) return { name, state: 'workspace-only' as const, hash }
+    const libraryHash = hashOf(libraryPath)
     return {
       name,
       state: hash === libraryHash ? ('same' as const) : ('different' as const),
       hash,
       libraryHash,
-      skillId: known.id
+      libraryPath,
+      skillId: known?.id
     }
   })
 
@@ -2269,6 +2367,8 @@ app.post('/api/journal/:id/undo', async (request, reply) => {
     reply.code(409)
     return { error: result.reason }
   }
+  // Actions that move packages change what the scanner would find, so the index follows them.
+  if (result.action === 'workspace-promote') await fullScan()
   return { state: 'undone', action: result.action }
 })
 

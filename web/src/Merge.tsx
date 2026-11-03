@@ -428,7 +428,7 @@ export function ImproveDialog({ skill, onClose }: { skill: { id: number; name: s
         {job && (
           <div className="mergesteps">
             {job.steps.map((step, index) => (
-              <div className={`mergestep ${step.status}`} key={`${step.name}-${step.at}-${index}`}>
+              <div className={`mergestep ${step.status}`} key={`${step.name}-${index}`}>
                 <span className="mergestepname">{step.name}</span>
                 <span className="mergestepms">{step.ms} ms</span>
                 {step.note && <span className="mergestepnote" title={step.note}>{step.note.slice(0, 140)}</span>}
@@ -861,7 +861,11 @@ export function GroupPlanDialog({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ planId: merged.planId, ack: true })
         })
-        const data = (await response.json()) as { result?: { name?: string; files?: number }; error?: string; detail?: unknown }
+        const data = (await response.json()) as {
+          result?: { name?: string; files?: number; backup?: string }
+          error?: string
+          detail?: unknown
+        }
         if (data.error) setMessage(`${data.error}: ${JSON.stringify(data.detail ?? '').slice(0, 160)}`)
         else {
           setMessage(

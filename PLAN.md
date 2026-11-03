@@ -68,6 +68,13 @@ Link farm with the Windows symlink → junction → tracked-copy chain, native r
 
 Exit: every enable, disable and archive on this workstation is reversible from the journal; a skill toggled off in Claude Code stays on in Cursor; an archive to a second drive restores after `index.db` is deleted; an offline archive location refuses instead of falling back; a skill containing a shell exfiltration line is flagged and blocked from enable with the file and line; killing the app mid-write leaves a recoverable state.
 
+**Workspaces, completed after the audit:** the routes existed and nothing could reach them. The screen
+is a sidebar section, the middle column lists each workspace skill as `same`, `differs` or
+`library lacks it`, and the detail pane promotes a skill into the library — creating it, or replacing
+it behind a snapshot after asking. `POST /api/workspaces/:id/promote` indexes the package in the same
+request, and `workspace-promote` undoes through the journal. `bash scripts/workspaces-check.sh` runs
+28 checks. Specification and limits: `docs/workspaces.md`.
+
 **Deferred out of P2:** the compare panel. The diff engine is live — `GET /api/skills/:id/compare` returns the changed region of both copies with line numbers, and refuses with 409 when nothing is newer — but its presentation belongs with the provider layer, where a side-by-side visual diff and the AI fold-and-replace can be built and judged together. P2 ships the engine, not the panel.
 
 ### Install and recovery policies (decided)
