@@ -5,6 +5,8 @@ export interface ThemeTokens {
   text: string
   'text-2': string
   'text-3': string
+  /** The one colour every sidebar facet row reads, per Apo's rule. A token so light themes can differ. */
+  facet: string
   accent: string
   'accent-soft': string
   ok: string
@@ -26,8 +28,8 @@ export interface Theme {
  * colour directly, so a theme is a variable swap and no component needs to know it exists.
  *
  * The palette is not a matter of taste alone: `npm run contrast` computes WCAG ratios for every theme
- * and fails the build when text, secondary text or an accent does not reach its bar. A theme that
- * looks good and cannot be read is not a theme.
+ * and fails the build when text, secondary text or an accent does not reach its bar, and the rendered
+ * audit checks the same thing in the live app where hard-coded colours would show.
  */
 export const THEMES: Theme[] = [
   {
@@ -41,6 +43,7 @@ export const THEMES: Theme[] = [
       text: '#e9eaec',
       'text-2': '#a8aab0',
       'text-3': '#8b8e94',
+      facet: '#c8cacf',
       accent: '#7ba0c6',
       'accent-soft': 'rgba(123, 160, 198, 0.16)',
       ok: '#7fb39a',
@@ -61,6 +64,7 @@ export const THEMES: Theme[] = [
       text: '#e8e9eb',
       'text-2': '#a4a7ad',
       'text-3': '#86898f',
+      facet: '#c8cacf',
       accent: '#a9b1bd',
       'accent-soft': 'rgba(169, 177, 189, 0.16)',
       ok: '#84b49f',
@@ -81,6 +85,7 @@ export const THEMES: Theme[] = [
       text: '#ece7e1',
       'text-2': '#ad9f92',
       'text-3': '#8c8175',
+      facet: '#c8cacf',
       accent: '#d99a62',
       'accent-soft': 'rgba(217, 154, 98, 0.18)',
       ok: '#8fb58c',
@@ -101,6 +106,7 @@ export const THEMES: Theme[] = [
       text: '#e6ebe7',
       'text-2': '#a2aea6',
       'text-3': '#829087',
+      facet: '#c8cacf',
       accent: '#88b79b',
       'accent-soft': 'rgba(136, 183, 155, 0.16)',
       ok: '#8fc0a0',
@@ -108,6 +114,27 @@ export const THEMES: Theme[] = [
       destructive: '#c8796f',
       sep: 'rgba(255, 255, 255, 0.08)',
       hover: 'rgba(230, 255, 240, 0.05)'
+    }
+  },
+  {
+    id: 'jade',
+    name: 'Jade',
+    mode: 'dark',
+    tokens: {
+      bg: '#0c1210',
+      surface: '#151c19',
+      sidebar: '#101715',
+      text: '#e5ebe7',
+      'text-2': '#9fada5',
+      'text-3': '#7f8d85',
+      facet: '#c8cacf',
+      accent: '#8cbfa4',
+      'accent-soft': 'rgba(140, 191, 164, 0.16)',
+      ok: '#8fc0a0',
+      attention: '#c5a273',
+      destructive: '#c97c72',
+      sep: 'rgba(255, 255, 255, 0.08)',
+      hover: 'rgba(230, 250, 240, 0.05)'
     }
   },
   {
@@ -121,6 +148,7 @@ export const THEMES: Theme[] = [
       text: '#e7e9f2',
       'text-2': '#a3a8bc',
       'text-3': '#8389a0',
+      facet: '#c8cacf',
       accent: '#9aa2e0',
       'accent-soft': 'rgba(154, 162, 224, 0.18)',
       ok: '#8db29c',
@@ -141,6 +169,7 @@ export const THEMES: Theme[] = [
       text: '#ece8f0',
       'text-2': '#aca2b8',
       'text-3': '#8b8197',
+      facet: '#c8cacf',
       accent: '#c095d6',
       'accent-soft': 'rgba(192, 149, 214, 0.18)',
       ok: '#90b59a',
@@ -161,6 +190,7 @@ export const THEMES: Theme[] = [
       text: '#e4edee',
       'text-2': '#9fb0b2',
       'text-3': '#7f9194',
+      facet: '#c8cacf',
       accent: '#79bcc4',
       'accent-soft': 'rgba(121, 188, 196, 0.16)',
       ok: '#8dbfa6',
@@ -181,6 +211,7 @@ export const THEMES: Theme[] = [
       text: '#eae7e1',
       'text-2': '#a9a49a',
       'text-3': '#88847b',
+      facet: '#c8cacf',
       accent: '#dbb06a',
       'accent-soft': 'rgba(219, 176, 106, 0.18)',
       ok: '#9dbb8f',
@@ -188,6 +219,27 @@ export const THEMES: Theme[] = [
       destructive: '#c87f6d',
       sep: 'rgba(255, 255, 255, 0.08)',
       hover: 'rgba(255, 245, 225, 0.05)'
+    }
+  },
+  {
+    id: 'clay',
+    name: 'Clay',
+    mode: 'dark',
+    tokens: {
+      bg: '#121110',
+      surface: '#1a1917',
+      sidebar: '#151413',
+      text: '#eae7e2',
+      'text-2': '#a8a29a',
+      'text-3': '#88837b',
+      facet: '#c8cacf',
+      accent: '#c08a6a',
+      'accent-soft': 'rgba(192, 138, 106, 0.18)',
+      ok: '#93b394',
+      attention: '#cfa971',
+      destructive: '#c87b6c',
+      sep: 'rgba(255, 255, 255, 0.08)',
+      hover: 'rgba(255, 240, 230, 0.05)'
     }
   },
   {
@@ -201,6 +253,7 @@ export const THEMES: Theme[] = [
       text: '#eee7ea',
       'text-2': '#b0a1a7',
       'text-3': '#8f8187',
+      facet: '#c8cacf',
       accent: '#dd9dab',
       'accent-soft': 'rgba(221, 157, 171, 0.18)',
       ok: '#93b69c',
@@ -221,6 +274,7 @@ export const THEMES: Theme[] = [
       text: '#e6ebef',
       'text-2': '#a4adb5',
       'text-3': '#848d95',
+      facet: '#c8cacf',
       accent: '#8fb6d6',
       'accent-soft': 'rgba(143, 182, 214, 0.16)',
       ok: '#8bb4a3',
@@ -229,7 +283,19 @@ export const THEMES: Theme[] = [
       sep: 'rgba(255, 255, 255, 0.08)',
       hover: 'rgba(230, 245, 255, 0.05)'
     }
-  },
+  }
+]
+
+/**
+ * The two light palettes are authored and kept, but deliberately not shipped yet.
+ *
+ * A theme only works if every colour in the app comes from a token, and `styles.css` still carries
+ * hard-coded greys from before it had themes. On a light palette those surface immediately: the
+ * active nav row and the primary button rendered light text on light backgrounds. Shipping two themes
+ * that fail the rendered audit would make the contrast claim false, so they wait here with the audit
+ * as the list of work.
+ */
+export const UNSHIPPED_LIGHT: Theme[] = [
   {
     id: 'day',
     name: 'Day',
@@ -240,8 +306,8 @@ export const THEMES: Theme[] = [
       sidebar: '#efeeea',
       text: '#1c1d20',
       'text-2': '#565a61',
-      // 4.3:1 against this background was the gate catching a colour that only looked fine.
       'text-3': '#666a72',
+      facet: '#3f434a',
       accent: '#37648e',
       'accent-soft': 'rgba(55, 100, 142, 0.12)',
       ok: '#3f6f57',
@@ -262,6 +328,7 @@ export const THEMES: Theme[] = [
       text: '#232019',
       'text-2': '#5b5445',
       'text-3': '#736b5a',
+      facet: '#4a4335',
       accent: '#7d5322',
       'accent-soft': 'rgba(125, 83, 34, 0.12)',
       ok: '#43664a',
@@ -301,6 +368,7 @@ export function worstContrast(theme: Theme): { label: string; ratio: number } {
     ['text on surface', t.text, t.surface],
     ['secondary on bg', t['text-2'], t.bg],
     ['tertiary on bg', t['text-3'], t.bg],
+    ['facet rows on sidebar', t.facet, t.sidebar],
     ['accent on bg', t.accent, t.bg],
     ['accent on surface', t.accent, t.surface],
     ['ok on bg', t.ok, t.bg],

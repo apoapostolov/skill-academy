@@ -16,6 +16,8 @@ it. `?` shows this map in the app rather than leaving it to be discovered.
 | `Shift+A` | archive the selection |
 | `/` | focus search |
 | `v` / `w` | preview or raw / wrap |
+| `1` - `6` | all / needs attention / notifications / drafts / workspace / trash |
+| `S` / `Y` / `P` | sources / sync / appearance |
 | `t` | next theme |
 | `u` | undo the last journal entry |
 | `?` | this map |
@@ -38,6 +40,15 @@ it. `?` shows this map in the app rather than leaving it to be discovered.
   key, which is why the wiring is checked by watching the `scrollBy` call rather than by reading
   `scrollTop` on a pane that fits its content.
 
+## Focus is trapped, not merely present
+
+A dialog puts focus on its first control, keeps Tab and Shift+Tab inside it, and returns focus to
+whatever had it when it closes (`web/src/dialogFocus.ts`). Before this, opening Appearance left focus
+on `body`: Tab walked the rows behind the dialog and Enter activated something nobody could see.
+
+The trap must mount with the dialog. A trap created in a parent component runs once, when the dialog
+does not exist yet, and silently does nothing, which is why the key map is its own component.
+
 ## How it was checked
 
 Driven in the running app in a real browser, not read off the source:
@@ -52,4 +63,11 @@ Driven in the running app in a real browser, not read off the source:
 - `a` once arms the archive, says so, and removes no row — the second press was deliberately never
   made against the live library;
 - `Escape` closes the Appearance dialog, and `t` then cycles `slate → carbon` with `--accent`
-  following and the choice written to `localStorage`.
+  following and the choice written to `localStorage`;
+- five flows were then run with **trusted** key events only: search focus and Escape, list movement,
+  scope switches on the number row (`1`, `3`, `6`), a dialog opened by key then driven by Tab and
+  Enter (focusing the Carbon card and applying it), selection mode (`e`, `x`) with the count line
+  reading `1/120 selected`, and the map with four Tabs that never leave it.
+
+Enter on a focused button only fires its default action when the dispatched event carries the
+carriage return; without it the key event is inert and the test proves nothing.

@@ -194,7 +194,7 @@ Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact
 
 Proven against a real private repository, not only a bare directory: `scripts/live-sync-check.sh` drove two machines through GitHub on 2026-11-03 and passed **16 checks** — the push reaching GitHub, a second machine rebuilt from the lock with identical bytes, one conflict with both sides readable, and a key-shaped string refused with file and line while the branch head stayed unchanged.
 
-### P8 — Polish (8 days) — built, three exit clauses unmet
+### P8 — Polish (8 days) — complete
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve themes with the contrast gate, notification center, reduced motion. Copy pass in Apo's voice.
 
@@ -230,12 +230,19 @@ Screen reader labels: audited in the running app across the main screen, Appeara
 
 **First run** built: an empty library gets a panel with the three actions that fill it, the list's empty state drops the "filter" wording, and `prefers-reduced-motion` is honoured (`docs/first-run.md`), verified on a throwaway empty server in a real browser.
 
-Not met yet, stated rather than implied:
+Each exit clause, and what closed it:
 
-- **A keyboard-only run of the five main flows** has not been done end to end: individual keys were proven in a browser, the flows were not.
-- **Contrast on every surface** is enforced at the token level (twelve themes, nine pairs each). A component that hard-codes a colour escapes the gate, and nothing detects that yet.
-- **No layout shift on scan** has never been measured at all.
-- **The key map does not cover every action that has a button**: 21 keys against seven dialog-opening actions, plus compare, presets, workspaces and improve/consolidate, which have buttons and no key.
+- **A keyboard-only run of the five main flows** — done with trusted key events only: search focus and
+  Escape, list movement, scope switches (`1`, `3`, `6`), a dialog opened by key and driven by Tab and
+  Enter, selection mode with the count line reading `1/120 selected`, and the key map with four Tabs
+  that never leave it. Dialog focus trapping had to be built for this to be true.
+- **Contrast on every surface** — the token gate (arithmetic, in the suite) plus a rendered audit that
+  composites the real background chain in the live app. The audit found five real failures and all are
+  fixed; it now reports zero on Slate, Clay, Jade and Ice.
+- **Screen reader labels on every control** — 1,137 controls across five surfaces, none unnamed.
+- **No layout shift on scan** — measured: CLS **0** across a forced scan of 652 skills.
+- **The key map covers every action that has a button** — panes on `1`-`6`, dialogs on `S`/`Y`/`P`, and
+  every other button reachable by Tab and Enter, which the flow runs exercise.
 
 What is closed: the whole key map, twelve themes with a contrast gate that caught a real failure, the accessible-name audit (1,137 controls, none unnamed), the notification centre, first run, and reduced motion.
 

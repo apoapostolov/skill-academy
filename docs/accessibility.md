@@ -31,6 +31,7 @@ which is why each one was opened first.
 - No automated a11y check runs in the suite yet: it needs a browser, which the shell harnesses do not
   have. The audit is a recorded run, not a gate, and that is a weaker guarantee than the contrast
   gate, which is arithmetic.
-- Focus order and focus trapping inside dialogs have not been audited; `Escape` closes the dialog on
-  top, but Tab is not cycled within it.
+- Focus trapping is implemented for Appearance, Sync and the key map (`web/src/dialogFocus.ts`) and
+  checked by driving Tab in the running app. The remaining dialogs (Sources, Versioning, the review
+  and install dialogs) still let Tab escape into the page behind them.
 - Alt text on generated artwork and reduced-motion support are unchecked.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Versioning from './Monitor'
 import { SourcesDialog } from './Sources'
 import { SyncDialog } from './Sync'
+import { KeysMap } from './KeysMap'
 import { NotificationList } from './Notifications'
 import { AppearanceDialog } from './Appearance'
 import { THEMES, applyTheme, themeById, type Theme } from './themes'
@@ -1619,6 +1620,34 @@ export default function App() {
           setError('Press a again to archive.')
           setTimeout(() => setError(null), 4000)
         }
+      } else if (key === '1' || key === '2' || key === '3' || key === '4' || key === '5' || key === '6') {
+        event.preventDefault()
+        const scopes = [
+          { kind: 'all' } as Scope,
+          { kind: 'health' } as Scope,
+          { kind: 'notifications' } as Scope,
+          { kind: 'drafts' } as Scope,
+          { kind: 'workspace', id: -1 } as Scope,
+          { kind: 'trash' } as Scope
+        ]
+        const wanted = scopes[Number(key) - 1]
+        // A workspace scope needs a workspace, so the key takes the first one rather than guessing.
+        if (wanted.kind === 'workspace') {
+          const first = workspaces[0]
+          if (first) setScope({ kind: 'workspace', id: first.id })
+        } else {
+          setScope(wanted)
+          if (wanted.kind === 'drafts') void loadDrafts()
+        }
+      } else if (key === 'S') {
+        event.preventDefault()
+        setSourcesOpen(true)
+      } else if (key === 'Y') {
+        event.preventDefault()
+        setSyncOpen(true)
+      } else if (key === 'P') {
+        event.preventDefault()
+        setAppearanceOpen(true)
       } else if (key === 't') {
         event.preventDefault()
         const at = THEMES.findIndex((theme) => theme.id === themeId)
@@ -2170,45 +2199,7 @@ export default function App() {
       {appearanceOpen && (
         <AppearanceDialog current={themeId} onPick={pickTheme} onClose={() => setAppearanceOpen(false)} />
       )}
-      {keysOpen && (
-        <div className="modal-backdrop" role="dialog" aria-label="Keyboard map" onClick={() => setKeysOpen(false)}>
-          <div className="keysdlg" onClick={(event) => event.stopPropagation()}>
-            <div className="sdhead">
-              <div>
-                <div className="mergetitle">Keyboard</div>
-                <div className="mergesub">The list is the spine. Nothing here moves the page under you.</div>
-              </div>
-              <button className="ghost small" onClick={() => setKeysOpen(false)}>
-                Close
-              </button>
-            </div>
-            <div className="keysgrid">
-              {[
-                ['j / k', 'next / previous skill'],
-                ['n / p', 'next / previous that needs attention'],
-                ['g g / G', 'first / last'],
-                ['Space / Shift+Space', 'page the detail pane'],
-                ['o or Enter', 'open the skill’s folder'],
-                ['s', 'switch it on or off for this agent'],
-                ['a then a', 'archive, twice within four seconds'],
-                ['e / x', 'selection mode / toggle a row'],
-                ['Shift+A', 'archive the selection'],
-                ['/', 'focus search'],
-                ['v / w', 'preview or raw / wrap'],
-                ['t', 'next theme'],
-                ['u', 'undo the last entry'],
-                ['?', 'this map'],
-                ['Escape', 'close a menu, clear search']
-              ].map(([keys, what]) => (
-                <div className="keysrow" key={keys}>
-                  <kbd>{keys}</kbd>
-                  <span>{what}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {keysOpen && <KeysMap onClose={() => setKeysOpen(false)} />}
       {moveTarget && <MoveDialog skill={moveTarget} onClose={() => setMoveTarget(null)} />}
       {improveTarget && <ImproveDialog skill={improveTarget} onClose={() => setImproveTarget(null)} />}
       {planGroup && (

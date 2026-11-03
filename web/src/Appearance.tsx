@@ -1,4 +1,5 @@
 import { THEMES, worstContrast, type Theme } from './themes'
+import { useDialogFocus } from './dialogFocus'
 
 /**
  * Twelve themes, each shown as the thing it actually is: a palette with a background, a surface, a
@@ -14,9 +15,10 @@ export function AppearanceDialog({
   onPick: (theme: Theme) => void
   onClose: () => void
 }) {
+  const panel = useDialogFocus<HTMLDivElement>()
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Appearance">
-      <div className="appearancedlg">
+    <div className="modal-backdrop" role="dialog" aria-label="Appearance" aria-modal="true">
+      <div className="appearancedlg" ref={panel} tabIndex={-1}>
         <div className="sdhead">
           <div>
             <div className="mergetitle">Appearance</div>

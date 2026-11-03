@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useDialogFocus } from './dialogFocus'
 
 interface SyncState {
   config: { repo: string; branch: string }
@@ -45,6 +46,7 @@ export function SyncDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [findings, setFindings] = useState<Array<{ file: string; line: number; kind: string }>>([])
+  const panel = useDialogFocus<HTMLDivElement>()
 
   const load = useCallback(async (): Promise<void> => {
     const response = await fetch('/api/sync')
@@ -125,8 +127,8 @@ export function SyncDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Sync">
-      <div className="sourcesdlg syncdlg">
+    <div className="modal-backdrop" role="dialog" aria-label="Sync" aria-modal="true">
+      <div className="sourcesdlg syncdlg" ref={panel} tabIndex={-1}>
         <div className="sdhead">
           <div>
             <div className="mergetitle">Sync</div>
