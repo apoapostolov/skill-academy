@@ -187,7 +187,7 @@ check('the distilled section is gone after undo', '## From receiving-code-review
 # section went with the snapshot B restored. Undo in reverse order and this never bites.
 check('an older undo takes the later ingest with it',
       '## From brainstorming (obra/superpowers@' not in body,
-      'the section the run after B wrote is still there, so undo is per-source after all')
+      'undo in reverse order; an older snapshot cannot know what came after it')
 
 # 8. A composite skill is not a merge candidate.
 status, groups = call('GET', '/api/consolidate')
