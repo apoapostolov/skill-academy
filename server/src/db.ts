@@ -268,7 +268,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   // Prepared once: preparing inside the loop was most of the cost of indexing two thousand rows.
   const createdOf = db.prepare('SELECT CAST(id AS TEXT) AS id FROM skills WHERE real_path = ?')
   const dropDuplicate = db.prepare('DELETE FROM skills WHERE path = ? AND id <> ?')
-  const changedPaths: string[] = []
+  const changedSkills: Array<{ path: string; name: string; description: string; tags: string; text: string }> = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
     const row = existing.get(real, skill.path) as { id: number; package_hash: string } | undefined
@@ -301,7 +301,13 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       if (created) {
         idsByReal.set(real, Number(created.id))
         upsertBody.run(created.id as never, skill.text)
-        changedPaths.push(skill.path)
+        changedSkills.push({
+          path: skill.path,
+          name: skill.name,
+          description: skill.description,
+          tags: JSON.stringify(skill.tags),
+          text: skill.text
+        })
       }
       result.added += 1
       continue
@@ -332,15 +338,24 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     )
     upsertBody.run(row.id, skill.text)
     result.changed += 1
-    changedPaths.push(skill.path)
+    changedSkills.push({
+      path: skill.path,
+      name: skill.name,
+      description: skill.description,
+      tags: JSON.stringify(skill.tags),
+      text: skill.text
+    })
   }
 
   // Only what actually changed is reindexed: the document row carries the path, so one
   // package is touched instead of the whole table.
-  if (changedPaths.length > 0) {
+  if (changedSkills.length > 0) {
     db.exec('SAVEPOINT index_changes')
     try {
-      for (const changed of changedPaths) indexSkill(changed)
+      // The row we just wrote is the row to index: reading it back was a query per skill.
+      for (const changed of changedSkills) {
+        indexedFor({ name: changed.name, description: changed.description, tags: changed.tags, body: changed.text }, changed.path)
+      }
       db.exec('RELEASE index_changes')
     } catch (error) {
       db.exec('ROLLBACK TO index_changes')

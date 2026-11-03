@@ -55,7 +55,10 @@ Exit: the app opens, detects at least 10 agent roots on this workstation, and li
 Full walker, frontmatter parser, file hashing, duplicate folding, drift-free rescan. A watcher per root pushes changes into the running app: a package that appears on disk is a row in under 500 ms, and a removal disappears as fast. The library screen with sidebar, list, detail, and instant filter. Token accounting per skill and per agent set. Health view over the checks curation already computes.
 
 Cold scan runs in parallel across roots (`scanWorker.ts`, one lane per core, serial fallback), the
-parser and the safety scan share one walk, and statements are prepared once per connection.
+parser and the safety scan share one walk, statements are prepared once per connection, and the
+indexer writes the row it just saved instead of reading it back. Measured on this workstation:
+3,401 ms serial, then **1,401 ms and 1,297 ms** on two consecutive runs — under the bar, with
+parse ≈ 850 ms and indexing ≈ 550 ms.
 
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; a skill created on disk appears in the running app in under 500 ms and its removal disappears in the same window; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
