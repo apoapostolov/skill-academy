@@ -15,6 +15,10 @@ GIT="git -c user.email=check@example.com -c user.name=Check"
   printf 'support\n' > skills/from-checkout/notes.md && \
   $GIT add -A && $GIT commit -qm "first" && $GIT tag v1.0.0 )
 
+# The registry's verdict is parsed from a captured payload, so the rule is proven without the network.
+npx tsx scripts/skillssh-probe.ts
+if [ $? -ne 0 ]; then echo "the skills.sh probe failed"; exit 1; fi
+
 win() { cygpath -w "$1" 2>/dev/null || echo "$1"; }
 LOG="$DATA/server.log"
 SKILL_ACADEMY_DATA="$(win "$DATA")" \
@@ -179,6 +183,20 @@ check('a folder without .git is refused by name', status == 400 and refused2.get
 
 status, deleted = call('DELETE', f'/api/sources/{sid}', {})
 check('the source unregisters', status == 200, str(deleted)[:120])
+
+# --- a skills.sh entry --------------------------------------------------------------------------
+status, refused_entry = call('POST', '/api/sources', {'kind': 'skillssh', 'repo': 'not a repo'})
+check('a skills.sh entry must look like owner/repo', status == 400, str(refused_entry)[:120])
+
+status, entry_source = call('POST', '/api/sources', {'kind': 'skillssh', 'repo': 'vercel-labs/skills/find-skills'})
+esid = entry_source.get('source', {}).get('id')
+check('a skills.sh entry registers with its skill named',
+      status == 200 and entry_source.get('source', {}).get('kind') == 'skillssh'
+      and entry_source.get('source', {}).get('repo') == 'vercel-labs/skills/find-skills', str(entry_source)[:160])
+
+status, not_entry = call('GET', f'/api/sources/{esid}/audit')
+check('the audit endpoint asks only for a registry entry', status in (200, 502), str(not_entry)[:120])
+call('DELETE', f'/api/sources/{esid}', {})
 
 # --- a zip behind a URL -------------------------------------------------------------------------
 # The archive is wrapped in one folder, the way a GitHub archive is, so the unwrap is exercised too.

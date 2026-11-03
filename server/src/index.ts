@@ -60,6 +60,7 @@ import {
   setMutationHook
 } from './db'
 import { downloadZip, extractZip, skillDirsIn, zipTreeDir } from './zipsource'
+import { fetchAudit, parseEntry, type RegistryVerdict } from './skillssh'
 import {
   archiveSkill,
   expiredTrash,
@@ -946,6 +947,15 @@ app.get('/api/sources', async () => ({ sources: listSources() }))
 
 app.post('/api/sources', async (request, reply) => {
   const body = (request.body ?? {}) as { repo?: string; path?: string; url?: string; kind?: string }
+  if (body.kind === 'skillssh') {
+    const parsed = parseEntry((body.repo ?? body.url ?? '').trim())
+    if (!parsed) {
+      reply.code(400)
+      return { error: 'a skills.sh entry looks like owner/repo or owner/repo/skill' }
+    }
+    // The entry is kept whole: the audit is asked for per skill, and a three-part entry names one.
+    return { source: saveSource(parsed.skill ? `${parsed.source}/${parsed.skill}` : parsed.source, 'skillssh') }
+  }
   if (body.kind === 'zip' || body.url) {
     const given = (body.url ?? body.repo ?? '').trim()
     if (!/^https?:\/\//i.test(given)) {
@@ -1051,17 +1061,21 @@ async function checkSource(source: {
       kind: 'local' as const
     }
   }
+  // A skills.sh entry is a GitHub repository with a registry listing beside it, so the commit and
+  // release are read from the repository the entry names.
+  const entry = source.kind === 'skillssh' ? parseEntry(source.repo) : null
+  const repo = entry?.source ?? source.repo
   const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
   if (token) headers.authorization = `Bearer ${token}`
 
-  const commitResponse = await fetch(`https://api.github.com/repos/${source.repo}/commits?per_page=1`, { headers })
+  const commitResponse = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, { headers })
   if (!commitResponse.ok) return { repo: source.repo, error: `github ${commitResponse.status}` }
   const commits = (await commitResponse.json()) as Array<{ sha?: string }>
   const commit = commits[0]?.sha?.slice(0, 12) ?? null
 
   let release: string | null = null
-  const releaseResponse = await fetch(`https://api.github.com/repos/${source.repo}/releases/latest`, { headers })
+  const releaseResponse = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers })
   if (releaseResponse.ok) {
     const payload = (await releaseResponse.json()) as { tag_name?: string }
     release = payload.tag_name ?? null
@@ -1591,6 +1605,39 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
       ? 'Files are staged. Installing them into the library is a separate, reversible step.'
       : 'No mapped files to fetch.'
   }
+})
+
+/**
+ * The registry's own verdict for a source's skills, asked one skill at a time. A skills.sh entry that
+ * names a skill asks about that skill; a repository entry asks about each mapped folder by its own
+ * name. A skill the registry has never audited answers `audited: false` rather than a guess.
+ */
+app.get('/api/sources/:id/audit', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const source = listSources().find((row) => row.id === Number(id))
+  if (!source) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const entry = parseEntry(source.repo)
+  if (!entry) {
+    reply.code(400)
+    return { error: 'this source is not a skills.sh entry' }
+  }
+  const names = entry.skill
+    ? [entry.skill]
+    : sourceSkills(source.id).map((mapped) => path.basename(mapped.replace(/\/+$/, '')))
+  const verdicts: Array<{ skill: string; audited: boolean; verdict: RegistryVerdict | null }> = []
+  for (const name of names) {
+    if (!name) continue
+    try {
+      const verdict = await fetchAudit(entry.source, name)
+      verdicts.push({ skill: name, audited: verdict !== null, verdict })
+    } catch {
+      verdicts.push({ skill: name, audited: false, verdict: null })
+    }
+  }
+  return { repo: entry.source, verdicts }
 })
 
 app.post('/api/sources/check-all', async () => {

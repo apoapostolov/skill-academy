@@ -10,6 +10,7 @@ things to one source at a time: check it, map its skill folders, plan an update,
 | `github` | `owner/name` | GitHub API: latest commit, latest release, file trees, raw files |
 | `local` | an absolute path to a checkout | git: `rev-parse HEAD`, `describe --tags`; files straight from disk |
 | `zip` | an `http(s)` URL to a zip | the bytes themselves: the hash of the archive is the commit; the files come from the unpacked tree |
+| `skillssh` | `owner/repo` or `owner/repo/skill` | GitHub for the commit and files; `skills.sh` for the registry's own audit verdict |
 
 Adding a local source requires the folder to exist and to contain `.git` — a directory, or a file in a
 git worktree. The branch is read back so you know which one you are looking at. A folder without
@@ -30,6 +31,22 @@ so a mapping is `skills/zip-skill`, not `repo-main/skills/zip-skill`. Entries th
 the unpacked folder are skipped rather than followed.
 
 Everything after Check is the same machinery a local checkout uses: map, plan, stage, replace.
+
+## A skills.sh entry
+
+A skills.sh entry names a repository — `owner/repo` — or one skill inside it, `owner/repo/skill`.
+The repository part is always two segments, which is what makes a three-segment entry unambiguous.
+The entry is stored whole, and Check reads the commit from the same GitHub repository the entry
+names, so updates, plans and the local-edit guard all behave exactly as they do for a GitHub source.
+
+**Registry audit** asks skills.sh for its own verdict on each mapped skill. The answer is per
+provider — Gen Agent Trust Hub, Socket, Snyk, Runlayer, ZeroLeaks — and the row shows the worst
+status any provider reported, because a pass from one auditor does not outvote a fail from another.
+A skill the registry has never indexed answers `audited: false`; nothing is invented in its place.
+
+The catalog endpoints (`/api/v1/skills`, `/api/v1/skills/:source/:skill`, `/api/v1/skills/search`)
+require a Vercel OIDC token, which this app does not have, so the leaderboard cannot be browsed from
+here. `/api/v1/skills/audit/:source/:skill` is public, and the app uses only that.
 
 ## The four steps
 
@@ -77,7 +94,9 @@ kind, branch, commit and tag read from git, mapping, a plan that reads the folde
 counts its files, staging that leaves the library alone, a replace that writes the package and its
 support file into the library, the package answering a search afterwards, the `source-replace`
 journal entry, a second commit reported as a change with the previous commit named, the event, the
-plan naming both commits, and both refusals (`that path does not exist`, `not-a-checkout`). The nine zip checks cover registration without a download, a refusal for a non-URL,
+plan naming both commits, and both refusals (`that path does not exist`, `not-a-checkout`). The nine skills.sh checks cover entry parsing (repository, skill, a pasted URL, junk), the worst-status
+rule from a captured payload, a refusal for a malformed entry, and the audit endpoint answering a real
+registry entry. The nine zip checks cover registration without a download, a refusal for a non-URL,
 the byte hash as the commit, mapping inside the archive, a plan that reads the unpacked tree, a replace
 that lands both files and indexes the package, and a re-upload that reads as a change. The last nine cover the guard: an
 edit in the library stops a replace with `local-edit`, the package and the changed file are named, the
@@ -93,5 +112,8 @@ and the following replace is quiet because the forced write became the baseline.
   changes on every re-upload even when the content is identical. The commit hash is the reliable
   comparison.
 - Only zip is accepted. A `.tar.gz` URL answers with a download error rather than being unpacked.
+- A skills.sh entry gives no way to browse the catalog: without a Vercel OIDC token only the audit
+  endpoint is readable. Mapping stays typed, and an entry the registry has never indexed shows no
+  verdict rather than an assumed one.
 - Replacement is per mapped folder and lands in the library. Placement into agent roots stays with
   the switches, as everywhere else.

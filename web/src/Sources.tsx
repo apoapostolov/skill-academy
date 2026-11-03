@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 interface SourceRow {
   id: number
   repo: string
-  kind: 'github' | 'local' | 'zip'
+  kind: 'github' | 'local' | 'zip' | 'skillssh'
   added_at: string
   last_commit: string | null
   last_release: string | null
@@ -21,6 +21,25 @@ interface PlanFile {
   status: number
   hash: string | null
   bytes: number
+}
+
+interface RegistryAuditRow {
+  provider: string
+  status: string
+  risk: string | null
+  summary: string
+}
+
+interface RegistryVerdictRow {
+  skill: string
+  audited: boolean
+  verdict: { verdict: string; audits: RegistryAuditRow[] } | null
+}
+
+interface RegistryView {
+  sourceId: number
+  repo: string
+  verdicts: RegistryVerdictRow[]
 }
 
 interface Plan {
@@ -42,12 +61,28 @@ interface EventRow {
 export function SourcesDialog({ onClose }: { onClose: () => void }) {
   const [sources, setSources] = useState<SourceRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
-  const [kind, setKind] = useState<'github' | 'local' | 'zip'>('local')
+  const [kind, setKind] = useState<'github' | 'local' | 'zip' | 'skillssh'>('local')
   const [entry, setEntry] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [mapping, setMapping] = useState<Record<number, string>>({})
   const [plan, setPlan] = useState<{ sourceId: number; plan: Plan } | null>(null)
+
+  /** Fetches the registry's own audit for one entry. The catalog endpoints need a Vercel OIDC token;
+   *  the audit endpoint does not, so this is the part of skills.sh we can show honestly. */
+  const loadRegistry = async (source: SourceRow): Promise<void> => {
+    setBusy(true)
+    setNote('')
+    try {
+      const response = await fetch(`/api/sources/${source.id}/audit`)
+      const data = (await response.json()) as { repo?: string; verdicts?: RegistryVerdictRow[]; error?: string }
+      setRegistry(data.error ? null : { sourceId: source.id, repo: data.repo ?? source.repo, verdicts: data.verdicts ?? [] })
+      if (data.error) setNote(data.error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const [registry, setRegistry] = useState<RegistryView | null>(null)
   const [conflict, setConflict] = useState<{
     edited: Array<{ name: string; path: string; changed: Array<{ file: string; state: string }> }>
   } | null>(null)
@@ -82,7 +117,9 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
             ? { path: entry.trim(), kind: 'local' }
             : kind === 'zip'
               ? { url: entry.trim(), kind: 'zip' }
-              : { repo: entry.trim(), kind: 'github' }
+              : kind === 'skillssh'
+                ? { repo: entry.trim(), kind: 'skillssh' }
+                : { repo: entry.trim(), kind: 'github' }
         )
       })
       const data = (await response.json()) as { source?: SourceRow; error?: string; detail?: string; branch?: string }
@@ -210,7 +247,8 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
             [
               ['local', 'Local checkout'],
               ['github', 'GitHub repo'],
-              ['zip', 'Zip from a URL']
+              ['zip', 'Zip from a URL'],
+              ['skillssh', 'skills.sh entry']
             ] as const
           ).map(([key, label]) => (
             <button
@@ -227,7 +265,9 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
         <input
           value={entry}
           onChange={(event) => setEntry(event.target.value)}
-          placeholder={kind === 'local' ? 'C:\\git\\my-skills' : 'owner/name'}
+          placeholder={
+            kind === 'local' ? 'C:\\git\\my-skills' : kind === 'zip' ? 'https://example.com/skills.zip' : 'owner/repo'
+          }
           onKeyDown={(event) => {
             if (event.key === 'Enter') void add()
           }}
@@ -263,6 +303,29 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
+      {registry && (
+        <div className="sdcard sdaudit">
+          <div className="sdrowtitle">
+            <span className="sdname">{registry.repo}</span>
+            <span className="wspill same">skills.sh</span>
+            <button className="ghost small" onClick={() => setRegistry(null)}>
+              Close
+            </button>
+          </div>
+          {registry.verdicts.length === 0 && <div className="sdmeta">No skills mapped to ask about.</div>}
+          {registry.verdicts.map((row) => (
+            <div className="sdconflictrow" key={row.skill}>
+              <span className="sdname">{row.skill}</span>
+              <span className="sdbytes">
+                {row.audited && row.verdict
+                  ? `${row.verdict.verdict} · ${row.verdict.audits.map((audit) => `${audit.provider} ${audit.status}`).join(' · ')}`
+                  : 'the registry has not audited this skill'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {sources.length === 0 && <div className="empty">No sources yet.</div>}
 
       {sources.map((source) => (
@@ -288,6 +351,11 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
             <button className="ghost small" disabled={busy} onClick={() => void makePlan(source)}>
               Plan update
             </button>
+            {source.kind === 'skillssh' && (
+              <button className="ghost small" disabled={busy} onClick={() => void loadRegistry(source)}>
+                Registry audit
+              </button>
+            )}
           </div>
           <div className="sdmap">
             <input
