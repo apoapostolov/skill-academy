@@ -148,6 +148,9 @@ if pair:
     before = {one: digest(one), two: digest(two)}
     status, applied = post('/api/consolidate/apply', {'key': pair['key'], 'read': True, 'confirm': True})
     check('the pointer applies', status == 200 and not applied.get('error'), str(applied.get('error')))
+    check('every touched skill still loads afterwards',
+          bool((applied.get('closeOut') or {}).get('ok')),
+          str((applied.get('closeOut') or {}).get('problems')))
     archives = applied.get('archived') or []
     pointer_archive = archives[0] if archives else None
     check('the replaced body is archived exactly',
@@ -171,6 +174,8 @@ if router_group:
     status, applied = post('/api/consolidate/apply', {'key': router_group['key'], 'read': True, 'confirm': True})
     after = narrow.read_text(encoding='utf-8')
     check('the router applies', status == 200 and not applied.get('error'), str(applied.get('error')))
+    check('the router still loads afterwards', bool((applied.get('closeOut') or {}).get('ok')),
+          str((applied.get('closeOut') or {}).get('problems')))
     check('the router points at the canonical first', 'Load `zz-wide` first' in after)
     check('the router keeps its unique lane', 'A locked row retries four times' in after)
     check('the router keeps its own support-file table', 'references/retries.md' in after)

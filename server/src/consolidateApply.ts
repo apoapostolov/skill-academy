@@ -18,6 +18,8 @@ const TRASH = path.join(DATA_DIR, 'consolidation-trash')
 const JOURNAL = path.join(DATA_DIR, 'consolidation-journal.jsonl')
 
 export interface ApplyResult {
+  /** A merge that leaves a skill unable to load is not finished. */
+  closeOut?: { ok: boolean; problems: string[] }
   key: string
   mergeType: string
   survivor: string
@@ -72,6 +74,41 @@ function referencesSection(body: string): string | null {
     /^(references|reference files|support files)$/i.test(entry.heading.trim())
   )
   return section ? `## ${section.heading}\n${section.text.trimEnd()}\n` : null
+}
+
+/**
+ * Close-out: a skill that no longer loads is not merged, it is broken. Every touched package is
+ * re-parsed before the call reports success, and a body that fails is named.
+ */
+function closeOut(dirs: string[]): { ok: boolean; problems: string[] } {
+  const problems: string[] = []
+  for (const dir of dirs) {
+    const file = path.join(dir, 'SKILL.md')
+    if (!existsSync(file)) {
+      problems.push(`${path.basename(dir)}: SKILL.md missing`)
+      continue
+    }
+    const text = readFileSync(file, 'utf8')
+    const fm = frontmatterBlock(text)
+    if (!fm.trim()) {
+      problems.push(`${path.basename(dir)}: frontmatter missing`)
+      continue
+    }
+    let name = ''
+    for (const fmLine of fm.split(String.fromCharCode(10))) {
+      if (!fmLine.trimStart().startsWith('name:')) continue
+      let raw = fmLine.trimStart().slice('name:'.length).trim()
+      if (raw.length >= 2 && (raw[0] === '"' || raw[0] === "'") && raw[raw.length - 1] === raw[0]) raw = raw.slice(1, -1)
+      name = raw
+      break
+    }
+    if (!name) problems.push(`${path.basename(dir)}: name missing`)
+    else if (name.toLowerCase() !== path.basename(dir).toLowerCase()) {
+      problems.push(`${path.basename(dir)}: name is \`${name}\``)
+    }
+    if (!/^description:\s*\S/m.test(fm)) problems.push(`${path.basename(dir)}: description missing`)
+  }
+  return { ok: problems.length === 0, problems }
 }
 
 export function sectionsOf(body: string): Section[] {
@@ -235,6 +272,16 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
     rewired: sweep.rewired.length,
     dangling: sweep.dangling.length
   })
+  // Every package whose body was rewritten has to load afterwards.
+  const written = new Set([...pointerized, ...routerized])
+  const touchedDirs = [
+    survivor.dir,
+    ...group.members
+      .filter((member) => written.has(member.name))
+      .map((member) => bodies.get(member.name)?.dir)
+      .filter((dir): dir is string => !!dir)
+  ]
+  const checked = closeOut([...new Set(touchedDirs)])
   return {
     key,
     mergeType: group.mergeType,
@@ -242,6 +289,7 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
     pointerized,
     routerized,
     archived,
+    closeOut: checked,
     rewire: { files: sweep.rewired.length, occurrences: sweep.rewired.reduce((sum, hit) => sum + hit.occurrences, 0), dangling: sweep.dangling.length }
   }
 }

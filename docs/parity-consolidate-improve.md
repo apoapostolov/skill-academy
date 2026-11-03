@@ -35,6 +35,7 @@ libraries is touched.
 | Own `references/` and `scripts/` targets must exist | close-out check, scoped to the touched skills | `dangling` in the apply response |
 | Exercise merges on fixtures, never the live library | `SKILL_ACADEMY_ONLY_ROOTS`, own data dir, free port, readiness by record count | every check in `scripts/fixture-check.sh` |
 | A live root refuses a write without an explicit opt-in | `insideProtected()` → 403 `protected-root` | live library answers 403 on `~/.hermes/skills` |
+| Every touched skill loads afterwards, frontmatter valid, name matches its directory | `closeOut()` re-parses each rewritten package | `every touched skill still loads afterwards`, `the router still loads afterwards` |
 
 ## Curation
 
