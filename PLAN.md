@@ -44,13 +44,13 @@ Detail in [architecture.md](docs/architecture.md). Provider port in [providers.m
 
 Each phase ends with something usable, not a demo.
 
-### P0 — Skeleton and registry (3 days)
+### P0 — Skeleton and registry (3 days) — built
 
 Node service, SQLite schema, registry loader from `registry/agents.json`, detection of which agent roots exist on this machine. A read-only screen listing roots and what is in them.
 
 Exit: the app opens, detects at least 10 agent roots on this workstation, and lists skill counts per root without writing anything.
 
-### P1 — Scan and library (9 days)
+### P1 — Scan and library (9 days) — built
 
 Full walker, frontmatter parser, file hashing, duplicate folding, drift-free rescan. A watcher per root pushes changes into the running app: a package that appears on disk is a row in under 500 ms, and a removal disappears as fast. The library screen with sidebar, list, detail, and instant filter. Token accounting per skill and per agent set. Health view over the checks curation already computes.
 
@@ -62,7 +62,7 @@ parse ≈ 850 ms and indexing ≈ 550 ms.
 
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; a skill created on disk appears in the running app in under 500 ms and its removal disappears in the same window; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
-### P2 — Switches and archives (17 days)
+### P2 — Switches and archives (17 days) — built
 
 Link farm with the Windows symlink → junction → tracked-copy chain, native rename mode, named archive locations, restore, undo journal, drift detection and repair. Per-agent matrix in the detail pane, tri-state row switch, bulk actions, presets applied to one agent scope or all, and project workspaces: register a repository, compare its project skills with the library by hash, promote or apply with a diff. Right-click on any row for archive with its switch, delete, reveal and copy path. Delete moves the package to a 30-day trash that restores the path and the placements, and purges to the OS Recycle Bin rather than unlinking. Content scanning with a risk badge and a gate on enable: a skill that fails the policy cannot be turned on without an explicit override.
 
@@ -109,7 +109,7 @@ Seventeen days added rather than absorbed, because a monitor that mostly works t
 
 Built and verified: `docs/versioning-monitor.md` "Built (P3.5)" lists each part with the check that proves it, and `bash scripts/monitor-check.sh` runs those 31 checks against a real repository in a temporary library.
 
-### P3 — Sources and updates (11 days)
+### P3 — Sources and updates (11 days) — built
 
 Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
 The write follows every journal entry, debounced, and lands in `DATA_DIR` unless `SKILL_ACADEMY_LOCK` says otherwise.
@@ -124,7 +124,7 @@ Built since: **zip sources** (`kind='zip'`, the archive's bytes are the commit, 
 
 Sources carry a snapshot of everything they overwrite, so an automatic update is reversible; `undoJournal` handles `source-replace`. `scripts/sources-check.sh` runs 67 checks and `scripts/lock-check.sh` 14. Every exit criterion of this phase now has a check behind it except the live-network one, which `scripts/live-source-check.sh` proves by hand.
 
-### P4 — Providers and curation (7 days)
+### P4 — Providers and curation (7 days) — built
 
 Port the provider layer, settings UI with key and OAuth sign-in, model catalogue fetch, cost display. Then the deterministic curation pass, then the LLM consolidation pass with dry-run reports and approval.
 
@@ -132,7 +132,7 @@ Then the compare panel, which waits for this phase: a side-by-side visual diff o
 
 Exit: every one of the 11 providers answers a test call with a real key or a real sign-in; a dry-run curation on this library produces a report with merges that survive reading; an applied merge restores exactly from archive.
 
-### P5 — Linked sources (6 days)
+### P5 — Linked sources (6 days) — built
 
 Link a local skill to remote skills, resolve deltas since the last ingested ref, ingest in three modes, conflicts surfaced, provenance written, snapshot and undo.
 
@@ -192,7 +192,7 @@ Exit: two machines converge on the same package hashes through a private repo; a
 
 Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact pull, conflict copies), `server/src/lockdoc.ts` (the lock also lists the library's own packages), `server/src/lockrestore.ts` (a lock rebuilds the index and the placements), `web/src/Sync.tsx` (the Sync dialog) and `scripts/sync-check.sh` with **20 checks** over three servers and one bare repository. Detail and limits: `docs/sync.md`.
 
-### P8 — Polish (8 days, including the key map) — the key map is built
+### P8 — Polish (8 days) — built
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve themes with the contrast gate, notification center, reduced motion. Copy pass in Apo's voice.
 
