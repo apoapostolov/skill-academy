@@ -145,12 +145,70 @@ export function scanOne(root: AgentRoot): RootEntry {
   }
 }
 
-export function scanAll(roots: AgentRoot[]): ScanOutcome {
+/** Serial scan. The fallback, and what a single root needs. */
+export function scanAllSync(roots: AgentRoot[]): ScanOutcome {
   const started = Date.now()
   const entries = roots.filter((root) => root.exists).map(scanOne)
   return {
     entries,
     skills: entries.reduce((sum, entry) => sum + entry.skills.length, 0),
     ms: Date.now() - started
+  }
+}
+
+/**
+ * Parsing a skill is read, tokenise, scan: two thirds of it is CPU that one thread cannot share,
+ * so a cold scan over twenty roots uses the cores it has. Any worker failure falls back to the
+ * serial path rather than answering with a short library.
+ */
+export async function scanAll(roots: AgentRoot[]): Promise<ScanOutcome> {
+  const started = Date.now()
+  const live = roots.filter((root) => root.exists)
+  if (live.length < 3 || process.env.SKILL_ACADEMY_SERIAL_SCAN === '1') {
+    const serial = scanAllSync(live)
+    return { ...serial, ms: Date.now() - started }
+  }
+
+  const { Worker } = await import('node:worker_threads')
+  const { cpus } = await import('node:os')
+  const cap = Number(process.env.SKILL_ACADEMY_SCAN_LANES ?? '') || Math.min(10, Math.max(1, cpus().length - 1))
+  const lanes = Math.max(1, Math.min(live.length, cap))
+  const chunks: AgentRoot[][] = Array.from({ length: lanes }, () => [])
+  live.forEach((root, index) => chunks[index % lanes].push(root))
+  const workerUrl = new URL('./scanWorker.ts', import.meta.url)
+
+  const runLane = (chunk: AgentRoot[]): Promise<RootEntry[]> =>
+    new Promise((resolve, reject) => {
+      const worker = new Worker(workerUrl, {
+        execArgv: ['--import', 'tsx'],
+        workerData: { roots: chunk }
+      })
+      let settled = false
+      worker.on('message', (entries: RootEntry[]) => {
+        settled = true
+        resolve(entries)
+        void worker.terminate()
+      })
+      worker.on('error', (error) => {
+        if (!settled) reject(error)
+      })
+      worker.on('exit', (code) => {
+        if (!settled) reject(new Error(`scan worker exited ${code}`))
+      })
+    })
+
+  try {
+    const lanesOfEntries = await Promise.all(chunks.map(runLane))
+    // Keep the registry's order: the screen lists roots the way the registry does.
+    const byPath = new Map(lanesOfEntries.flat().map((entry) => [entry.root.path, entry]))
+    const entries = live.map((root) => byPath.get(root.path)).filter((entry): entry is RootEntry => Boolean(entry))
+    return {
+      entries,
+      skills: entries.reduce((sum, entry) => sum + entry.skills.length, 0),
+      ms: Date.now() - started
+    }
+  } catch {
+    const serial = scanAllSync(live)
+    return { ...serial, ms: Date.now() - started }
   }
 }

@@ -184,6 +184,8 @@ export function getDb(): DatabaseSync {
     // WAL plus a relaxed sync is the difference between a scan that waits on fsync for
     // every transaction and one that finishes in the time the parser needs.
     database.exec('PRAGMA temp_store = MEMORY;')
+    database.exec('PRAGMA journal_mode = WAL;')
+    database.exec('PRAGMA synchronous = NORMAL;')
     migrate(database)
   }
   return database
@@ -263,6 +265,9 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   )
 
   const idsByReal = new Map<string, number>()
+  // Prepared once: preparing inside the loop was most of the cost of indexing two thousand rows.
+  const createdOf = db.prepare('SELECT CAST(id AS TEXT) AS id FROM skills WHERE real_path = ?')
+  const dropDuplicate = db.prepare('DELETE FROM skills WHERE path = ? AND id <> ?')
   const changedPaths: string[] = []
   for (const skill of entry.skills) {
     const real = skill.realPath ?? skill.path
@@ -292,9 +297,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
       // The id is bound back into SQLite as it came out: node:sqlite hands back a bigint
       // for rowids it cannot represent exactly, and converting it is what crashed first.
       // CAST to TEXT: node:sqlite throws converting a rowid it reads as a big int.
-      const created = db.prepare('SELECT CAST(id AS TEXT) AS id FROM skills WHERE real_path = ?').get(real) as
-        | { id: string }
-        | undefined
+      const created = createdOf.get(real) as { id: string } | undefined
       if (created) {
         idsByReal.set(real, Number(created.id))
         upsertBody.run(created.id as never, skill.text)
@@ -306,7 +309,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     idsByReal.set(real, row.id)
     // Another row could hold this path from an earlier placement round; the real path is
     // the identity, so the duplicate goes before anything else touches the table.
-    db.prepare('DELETE FROM skills WHERE path = ? AND id <> ?').run(skill.path, row.id)
+    dropDuplicate.run(skill.path, row.id)
     if (row.package_hash === skill.packageHash) continue
     const updateResult = update.run(
       skill.name,
@@ -414,24 +417,39 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
 }
 
 /** Rebuild the search index from scratch; used after a full scan. */
+/** Statements are prepared once per connection: a scan indexes two thousand rows in a loop. */
+const statements = new Map<string, ReturnType<DatabaseSync['prepare']>>()
+
+function stmt(sql: string): ReturnType<DatabaseSync['prepare']> {
+  const cached = statements.get(sql)
+  if (cached) return cached
+  const prepared = getDb().prepare(sql)
+  statements.set(sql, prepared)
+  return prepared
+}
+
 function indexedFor(row: { name: string; description: string; tags: string; body: string }, path: string): { rowid: number } | null {
-  const db = getDb()
-  const existing = db.prepare('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
+  const existing = stmt('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
   if (existing) {
-    db.prepare(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`)
-      .run(existing.id, ...docValues(path))
+    stmt(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`).run(
+      existing.id,
+      ...docValues(path)
+    )
   }
-  const stored = db
-    .prepare(`
+  const stored = stmt(`
       INSERT INTO skills_doc (path, name, description, tags, body) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET name = excluded.name, description = excluded.description,
         tags = excluded.tags, body = excluded.body
       RETURNING id
-    `)
-    .get(path, row.name, row.description, row.tags, row.body) as { id: number } | undefined
+    `).get(path, row.name, row.description, row.tags, row.body) as { id: number } | undefined
   if (!stored) return null
-  db.prepare('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)')
-    .run(stored.id, row.name, row.description, row.tags, row.body)
+  stmt('INSERT INTO skills_fts (rowid, name, description, tags, body) VALUES (?, ?, ?, ?, ?)').run(
+    stored.id,
+    row.name,
+    row.description,
+    row.tags,
+    row.body
+  )
   return { rowid: stored.id }
 }
 
@@ -793,10 +811,18 @@ export interface JournalRow {
   undone_at: string | null
 }
 
+/** Set by the server: every mutation writes the lock, so the library stays reproducible. */
+let mutationHook: (() => void) | null = null
+
+export function setMutationHook(hook: (() => void) | null): void {
+  mutationHook = hook
+}
+
 export function addJournal(action: string, payload: unknown): number {
   const result = getDb()
     .prepare('INSERT INTO journal (at, action, payload) VALUES (?, ?, ?)')
     .run(new Date().toISOString(), action, JSON.stringify(payload))
+  mutationHook?.()
   return Number(result.lastInsertRowid)
 }
 

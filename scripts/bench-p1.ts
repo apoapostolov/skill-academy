@@ -65,7 +65,7 @@ const db = dbModule.getDb()
 // 1. cold scan
 const coldStart = performance.now()
 const parseStart = performance.now()
-const coldScan = scanModule.scanAll(roots as never)
+const coldScan = await scanModule.scanAll(roots as never)
 const parseMs = performance.now() - parseStart
 const saveStart = performance.now()
 const coldSaved = dbModule.saveScan(coldScan)
@@ -75,7 +75,7 @@ const coldMs = performance.now() - coldStart
 // 4. second scan of unchanged disk must write nothing
 const changesBefore = (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n
 const warmStart = performance.now()
-const warmScan = scanModule.scanAll(roots as never)
+const warmScan = await scanModule.scanAll(roots as never)
 const warmSaved = dbModule.saveScan(warmScan)
 const warmMs = performance.now() - warmStart
 const changesAfter = (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n

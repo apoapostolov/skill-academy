@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { countTokens } from 'gpt-tokenizer'
-import { scanPackage, type Finding, type Risk } from './safety'
+import { scanAndList, type Finding, type Risk } from './safety'
 
 export interface SkillIssue {
   code:
@@ -354,9 +354,9 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
 
   // The content scan runs on the package as written, so the badge reflects the files the
   // agent would actually read, not the frontmatter's claims about them.
-  const safety = scanPackage(dir)
+  const safety = scanAndList(dir, { 'SKILL.md': raw })
 
-  const files = listPackageFiles(dir)
+  const files = safety.files
   const bytes = files.reduce((sum, entry) => sum + entry.size, 0)
   const hash = crypto.createHash('sha256').update(raw)
   for (const entry of files) hash.update(`${entry.relative}\u0000${entry.size}\u0000`)

@@ -37,7 +37,8 @@ import {
   acknowledgeSourceEvent,  lockRows,  setSourceSkills,
   sourceSkills,  getDb,  archivedByRoot,
   allSkillPaths,
-  removeByPath
+  removeByPath,
+  setMutationHook
 } from './db'
 import {
   archiveSkill,
@@ -64,6 +65,7 @@ import {
 } from './mergeIntoX'
 import { applyImprove, getImproveJob, listImproveJobs, startImprove, undoImprove } from './improveJob'
 import { improveDryRun } from './improve'
+import { diffPackages } from './plandiff'
 import {
   addLink,
   applyIngest,
@@ -71,6 +73,7 @@ import {
   getRun,
   linkById,
   linksOverview,
+  listLinks,
   listRuns,
   planIngest,
   removeLink,
@@ -126,6 +129,19 @@ import { compareVersions, provenanceOf } from './provenance'
 import { deleteKey, getKey, keyStatus, setKey } from './secrets'
 import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
+import {
+  createDraft,
+  draftDirectory,
+  ensureDrafts,
+  generateDraft,
+  improveDraft,
+  listDrafts,
+  readDraft,
+  saveDraft,
+  undoDraftSave,
+  validateDraft,
+  writeDraft
+} from './drafts'
 import { readSkillBody } from './skill'
 import { RootWatcher, type Change } from './watch'
 
@@ -201,10 +217,10 @@ function pruneVanished(): number {
   return removed
 }
 
-function fullScan(): { added: number; changed: number; removed: number; ms: number; skills: number } {
+async function fullScan(): Promise<{ added: number; changed: number; removed: number; ms: number; skills: number }> {
   const registry = loadRegistry()
   if (WATCH_ENABLED) watcher.sync(registry.roots)
-  const outcome = scanAll(registry.roots)
+  const outcome = await scanAll(registry.roots)
   const result = saveScan(outcome)
   // A scan indexes what exists; it must also retire what stopped existing, or a removed duplicate
   // keeps answering searches forever.
@@ -290,7 +306,7 @@ app.post('/api/scan', async (request) => {
   // force=1 re-runs the health checker over every row, which a checker change requires.
   const force = (request.query as { force?: string } | undefined)?.force === '1'
   if (force) forceRecheck()
-  const result = fullScan()
+  const result = await fullScan()
   broadcast({ type: 'library', root: null, ...result, at: lastScanAt })
   return {
     finishedAt: lastScanAt,
@@ -536,8 +552,29 @@ function lockDocument() {
 }
 
 function lockPath(body?: { path?: string }): string {
-  return body?.path ?? process.env.SKILL_ACADEMY_LOCK ?? path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'skill-academy.lock.json')
+  return body?.path ?? process.env.SKILL_ACADEMY_LOCK ?? path.join(DATA_DIR, 'skill-academy.lock.json')
 }
+
+/**
+ * Every mutation rewrites the lock, debounced so a bulk action costs one write rather than fifty.
+ * A library that cannot be reproduced from its lock is not backed up, whatever else is.
+ */
+let lockTimer: ReturnType<typeof setTimeout> | null = null
+function queueLockWrite(): void {
+  if (lockTimer) return
+  lockTimer = setTimeout(() => {
+    lockTimer = null
+    try {
+      const target = lockPath()
+      mkdirSync(path.dirname(target), { recursive: true })
+      writeFileSync(target, JSON.stringify(lockDocument(), null, 2) + '\n')
+    } catch {
+      /* a lock that cannot be written must not fail the mutation that changed the library */
+    }
+  }, 300)
+  lockTimer.unref?.()
+}
+setMutationHook(queueLockWrite)
 
 app.get('/api/lock', async () => lockDocument())
 
@@ -1393,6 +1430,176 @@ app.post('/api/sources/:id/check', async (request, reply) => {
   }
 })
 
+/* --------------------------------- authoring ------------------------------ */
+
+// A draft never lives in an agent folder: it is written under the app's own data directory and
+// reaches an agent only through save, which goes through the placement engine.
+app.get('/api/drafts', async () => {
+  ensureDrafts()
+  return { drafts: listDrafts() }
+})
+
+app.post('/api/drafts', async (request, reply) => {
+  const body = (request.body ?? {}) as { name?: string; intent?: string; text?: string }
+  if (body.intent && !body.name) {
+    // A draft made from an intent is named from it and generated straight away.
+    const created = createDraft({ intent: body.intent, origin: 'generated' })
+    const generated = await generateDraft(created.meta.id, {
+      intent: body.intent,
+      supplied: (request.body as { supplied?: string } | undefined)?.supplied
+    })
+    if ('error' in generated) {
+      reply.code(502)
+      return { error: generated.error, detail: generated.detail, draft: created }
+    }
+    return { draft: generated.draft, repairs: generated.repairs }
+  }
+  return { draft: createDraft(body) }
+})
+
+app.get('/api/drafts/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const draft = readDraft(id)
+  if (!draft) {
+    reply.code(404)
+    return { error: 'not-found', detail: id }
+  }
+  return { draft }
+})
+
+app.put('/api/drafts/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { text?: string }
+  if (typeof body.text !== 'string') {
+    reply.code(400)
+    return { error: 'text-required' }
+  }
+  const saved = writeDraft(id, body.text)
+  if ('error' in saved) {
+    reply.code(404)
+    return saved
+  }
+  return saved
+})
+
+app.post('/api/drafts/:id/validate', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const draft = readDraft(id)
+  if (!draft) {
+    reply.code(404)
+    return { error: 'not-found', detail: id }
+  }
+  const body = (request.body ?? {}) as { text?: string }
+  return { validation: validateDraft(body.text ?? draft.text, { folder: draft.meta.name, dir: draftDirectory(id) ?? undefined }) }
+})
+
+app.post('/api/drafts/:id/generate', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { intent?: string; provider?: string; model?: string; supplied?: string }
+  if (!body.intent?.trim()) {
+    reply.code(400)
+    return { error: 'intent-required' }
+  }
+  const result = await generateDraft(id, body as { intent: string })
+  if ('error' in result) {
+    reply.code(502)
+    return result
+  }
+  return result
+})
+
+app.post('/api/drafts/:id/improve', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { provider?: string; model?: string; supplied?: string; instruction?: string }
+  const result = await improveDraft(id, body)
+  if ('error' in result) {
+    reply.code(502)
+    return result
+  }
+  // The proposal is read against the draft as it stands: the author sees the diff before it lands.
+  const dir = draftDirectory(id)
+  return {
+    ...result,
+    diff: dir ? diffPackages(dir, { files: new Map([['SKILL.md', result.text]]) }) : null
+  }
+})
+
+app.post('/api/drafts/:id/save', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { rootPath?: string; name?: string; replace?: boolean }
+  if (!body.rootPath) {
+    reply.code(400)
+    return { error: 'rootPath-required' }
+  }
+  const root = loadRegistry().roots.find((entry) => entry.path === body.rootPath)
+  if (!root) {
+    reply.code(400)
+    return { error: 'unknown-root', detail: body.rootPath }
+  }
+  const result = saveDraft(id, { rootPath: root.path, name: body.name, replace: body.replace })
+  if ('error' in result) {
+    reply.code(result.error === 'exists' ? 409 : 400)
+    return result
+  }
+  await fullScan()
+  return { result }
+})
+
+app.post('/api/drafts/:id/undo', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { journalId?: number }
+  if (!body.journalId) {
+    reply.code(400)
+    return { error: 'journalId-required' }
+  }
+  const row = getDb().prepare('SELECT payload FROM journal WHERE id = ?').get(body.journalId) as { payload: string } | undefined
+  if (!row) {
+    reply.code(404)
+    return { error: 'journal-missing', detail: body.journalId }
+  }
+  const payload = JSON.parse(row.payload) as { target: string; rootPath: string; snapshot: string | null }
+  const undone = undoDraftSave(body.journalId, payload.snapshot, payload.target, payload.rootPath)
+  await fullScan()
+  return { result: undone, draftId: id }
+})
+
+app.get('/api/drafts/:id/links', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const dir = draftDirectory(id)
+  if (!dir) {
+    reply.code(404)
+    return { error: 'not-found', detail: id }
+  }
+  return { links: listLinks(dir), composite: listLinks(dir).length > 0 }
+})
+
+app.post('/api/drafts/:id/links', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const dir = draftDirectory(id)
+  if (!dir) {
+    reply.code(404)
+    return { error: 'not-found', detail: id }
+  }
+  const body = (request.body ?? {}) as { repo?: string; sourcePath?: string; mode?: string; track?: string }
+  if (!body.repo || !body.sourcePath) {
+    reply.code(400)
+    return { error: 'repo-and-path-required' }
+  }
+  const link = addLink({
+    targetPath: dir,
+    repo: body.repo,
+    sourcePath: body.sourcePath,
+    mode: (body.mode as 'distill' | 'attach' | 'summarize' | undefined) ?? 'distill',
+    track: (body.track as 'commit' | 'release' | undefined) ?? 'commit'
+  })
+  if ('error' in link) {
+    reply.code(link.error === 'duplicate-link' ? 409 : 400)
+    return link
+  }
+  addJournal('draft-link', { id, linkId: link.id })
+  return { link }
+})
+
 app.get('/api/workspaces', async () => ({ workspaces: listWorkspaces() }))
 
 app.post('/api/workspaces', async (request, reply) => {
@@ -1984,7 +2191,7 @@ app.post('/api/skills/:id/move', async (request, reply) => {
   }
 
   addJournal('move', { skillId: skill.id, skill: source, coreRoot, mode: body.mode ?? 'link', results })
-  fullScan()
+  await fullScan()
   broadcast({ type: 'library', root: null, added: 0, changed: 1, removed: 0, at: new Date().toISOString() })
   return { moved: source, core: coreRoot, results, ok: results.every((entry) => entry.ok) }
 })
@@ -2752,18 +2959,20 @@ startPoller()
 
 app
   .listen({ port: API_PORT, host: HOST })
-  .then(() => {
+  .then(async () => {
     console.log(`api listening on http://${HOST}:${API_PORT}`)
-    const result = fullScan()
+    const result = await fullScan()
     console.log(
       `initial scan ${result.ms}ms, ${result.skills} skills, ` +
         (WATCH_ENABLED ? `watching ${watcher.size} roots` : 'watcher off (SKILL_ACADEMY_WATCH=1 to enable)')
     )
     setInterval(() => {
-      const sweep = fullScan()
-      if (sweep.added + sweep.changed + sweep.removed > 0) {
-        broadcast({ type: 'library', root: null, ...sweep, at: lastScanAt })
-      }
+      void (async () => {
+        const sweep = await fullScan()
+        if (sweep.added + sweep.changed + sweep.removed > 0) {
+          broadcast({ type: 'library', root: null, ...sweep, at: lastScanAt })
+        }
+      })().catch(() => undefined)
     }, 5 * 60_000).unref()
   })
   .catch((error) => {

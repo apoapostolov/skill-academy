@@ -54,6 +54,9 @@ Exit: the app opens, detects at least 10 agent roots on this workstation, and li
 
 Full walker, frontmatter parser, file hashing, duplicate folding, drift-free rescan. A watcher per root pushes changes into the running app: a package that appears on disk is a row in under 500 ms, and a removal disappears as fast. The library screen with sidebar, list, detail, and instant filter. Token accounting per skill and per agent set. Health view over the checks curation already computes.
 
+Cold scan runs in parallel across roots (`scanWorker.ts`, one lane per core, serial fallback), the
+parser and the safety scan share one walk, and statements are prepared once per connection.
+
 Exit: 2,000 synthetic skills across 20 roots scan cold in under 1.5s; a skill created on disk appears in the running app in under 500 ms and its removal disappears in the same window; typing in the filter never exceeds 16ms per keystroke; a second scan of unchanged disk produces zero writes; the status bar reports the token cost of every agent's enabled set within 5% of a real tokeniser.
 
 ### P2 — Switches and archives (17 days)
@@ -99,6 +102,7 @@ Built and verified: `docs/versioning-monitor.md` "Built (P3.5)" lists each part 
 ### P3 — Sources and updates (11 days)
 
 Add a GitHub repo, a local git source, a skills.sh entry, or a direct URL/zip. Snapshot its skills, detect per-skill changes at a new commit, notify, apply with snapshot and local-edit guard, schedule per source. Show the registry's own audit verdict beside ours where it exists. Write `skill-academy.lock.json` on every mutation so the library is reproducible on another machine.
+The write follows every journal entry, debounced, and lands in `DATA_DIR` unless `SKILL_ACADEMY_LOCK` says otherwise.
 
 Exit: a real repo (`mattpocock/skills`) reports a new release and a changed skill separately; a locally edited skill is refused with a diff, not overwritten; an auto-update run can be rolled back to the previous bytes; a fresh machine reproduces the same package hashes and placements from the lock alone.
 
@@ -146,11 +150,20 @@ a transactional four-package move with rollback, placements following the trash,
 job with unsupported-claim rejection and per-file accept, and the diff pane's stale-plan guard,
 deletion readability and placement consequence preview.
 
-### P6 — Authoring (9 days)
+### P6 — Authoring (9 days) — built
 
 Generate a draft from intent, start empty, assign sources to a draft and compose a composite from them, CodeMirror editor with the markdown toolbar, outline, preview, validation, autosave, save through the placement engine, improve-with-diff. Tag read and write into frontmatter, with a tag filter in the sidebar.
 
 Exit: a one-sentence prompt yields a draft that validates clean; an empty skill with two assigned links ingests into a composite draft with per-link provenance; opening and saving an unchanged skill returns the same package hash; a draft never appears in an agent directory; every save is restorable from the snapshot.
+
+Built: `server/src/drafts.ts` (draft store under `DATA_DIR/drafts`, validation, generation, improve
+as a proposal, save through `place()`, snapshot and undo) and `web/src/Write.tsx` (the Drafts scope,
+the CodeMirror 6 editor with its toolbar, outline, preview, validation panel, sources and the save
+dialog). `bash scripts/authoring-check.sh` runs 23 checks, all five exit conditions among them.
+Specification and limits: `docs/authoring.md`.
+
+Two parts of the paragraph above are not built and are recorded there: there is no tag chip editor
+(tags are edited in the frontmatter) and a draft cannot be deleted from the screen yet.
 
 ### P7 — Cloud sync (5 days)
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Versioning from './Monitor'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
+import { DraftEditor, DraftList, type DraftRow } from './Write'
 import { highlight } from './highlight'
 import { renderMarkdown } from './markdown'
 
@@ -158,6 +159,7 @@ type Scope =
   | { kind: 'all' }
   | { kind: 'health' }
   | { kind: 'trash' }
+  | { kind: 'drafts' }
   | { kind: 'agent'; agent: string; path: string }
   | { kind: 'tag'; tag: string }
   | { kind: 'category'; category: string }
@@ -709,6 +711,8 @@ export default function App() {
   const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
   const [planGroup, setPlanGroup] = useState<ConsolidateGroupView | null>(null)
   const [trashSelecting, setTrashSelecting] = useState(false)
+  const [drafts, setDrafts] = useState<DraftRow[]>([])
+  const [activeDraft, setActiveDraft] = useState<string | null>(null)
   const [trashWipeAsk, setTrashWipeAsk] = useState(false)
   const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
   const [improveRule, setImproveRule] = useState('')
@@ -1114,6 +1118,26 @@ export default function App() {
     const timer = setTimeout(() => setDebounced(query.trim()), 120)
     return () => clearTimeout(timer)
   }, [query])
+
+  async function loadDrafts() {
+    const response = await fetch('/api/drafts')
+    const data = (await response.json()) as { drafts?: DraftRow[] }
+    setDrafts(data.drafts ?? [])
+  }
+
+  async function newDraft(intent?: string) {
+    const response = await fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(intent ? { intent } : { name: 'untitled-draft' })
+    })
+    const data = (await response.json()) as { draft?: { meta: { id: string } }; error?: string }
+    if (data.draft) {
+      setScope({ kind: 'drafts' })
+      setActiveDraft(data.draft.meta.id)
+      void loadDrafts()
+    }
+  }
 
   async function loadTrash() {
     try {
@@ -1713,6 +1737,7 @@ export default function App() {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
     if (scope.kind === 'trash') return 'Deleted'
+    if (scope.kind === 'drafts') return 'Drafts'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
     if (scope.kind === 'agent') return scope.agent
@@ -2352,6 +2377,15 @@ export default function App() {
           >
             Deleted <span>{trashList.length}</span>
           </button>
+          <button
+            className={`nav ${scope.kind === 'drafts' ? 'active' : ''}`}
+            onClick={() => {
+              setScope({ kind: 'drafts' })
+              void loadDrafts()
+            }}
+          >
+            Drafts <span>{drafts.length}</span>
+          </button>
 
           <div className="group head">
             <span>Agents</span>
@@ -2661,7 +2695,16 @@ export default function App() {
               onWipeHandled={() => setTrashWipeAsk(false)}
             />
           )}
-          {scope.kind !== 'trash' && skills.map((skill) => (
+          {scope.kind === 'drafts' && (
+            <DraftList
+              drafts={drafts}
+              activeId={activeDraft}
+              onOpen={(id) => setActiveDraft(id)}
+              onNew={() => void newDraft()}
+              onGenerate={(intent) => void newDraft(intent)}
+            />
+          )}
+          {scope.kind !== 'trash' && scope.kind !== 'drafts' && skills.map((skill) => (
             <button
               key={skill.id}
               className={`row ${selected === skill.id ? 'selected' : ''}`}
@@ -2742,7 +2785,7 @@ export default function App() {
           ))}
           {loadingMore && <div className="listfoot">Loading…</div>}
           {!hasMore && skills.length > 0 && <div className="listfoot">{fmt.format(total)} total</div>}
-          {skills.length === 0 && !loadingMore && (
+          {scope.kind !== 'drafts' && scope.kind !== 'trash' && skills.length === 0 && !loadingMore && (
             <div className="empty">Nothing matches. Clear the filter or scan.</div>
           )}
           </ScrollPane>
@@ -2994,8 +3037,19 @@ export default function App() {
 
         <aside className="detail" style={widths.detail ? { width: widths.detail, flexBasis: widths.detail } : undefined}>
           <ScrollPane axis={wrap ? 'y' : 'both'} className="detail-scroll">
-          {!detail && <div className="empty">Select a skill to read it.</div>}
-          {detail && (
+          {scope.kind === 'drafts' ? (
+            activeDraft ? (
+              <DraftEditor
+                draftId={activeDraft}
+                onChanged={() => void loadDrafts()}
+                onClose={() => setActiveDraft(null)}
+              />
+            ) : (
+              <div className="empty">Pick a draft, or describe a new one.</div>
+            )
+          ) : null}
+          {scope.kind !== 'drafts' && !detail && <div className="empty">Select a skill to read it.</div>}
+          {scope.kind !== 'drafts' && detail && (
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>

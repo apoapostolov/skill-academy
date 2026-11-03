@@ -169,6 +169,63 @@ export function riskOf(findings: Finding[]): Risk {
 
 const SKIP_DIR = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build', 'target', '.skill-academy'])
 
+/**
+ * The scan and the file listing are the same walk with two collectors. Doing them apart read every
+ * directory twice and re-read `SKILL.md` that the parser had just held in memory, which on a cold
+ * scan of two thousand skills is the difference the exit criterion measures.
+ */
+export function scanAndList(
+  dir: string,
+  known: Record<string, string> = {}
+): { risk: Risk; findings: Finding[]; files: { relative: string; size: number }[] } {
+  const findings: Finding[] = []
+  const files: { relative: string; size: number }[] = []
+  const walk = (current: string, depth: number): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        if (depth < 4 && entry.name !== '.git' && entry.name !== 'node_modules' && files.length < 400) walk(full, depth + 1)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const relative = path.relative(dir, full).split(path.sep).join('/')
+      let size = 0
+      try {
+        size = fs.statSync(full).size
+      } catch {
+        continue
+      }
+      if (files.length < 400) files.push({ relative, size })
+      // Findings keep their own rules: dotfiles are not read, deep folders are not entered.
+      if (findings.length >= MAX_FINDINGS || depth > 3) continue
+      if (entry.name.startsWith('.')) continue
+      if (SKIP_DIR.has(entry.name)) continue
+      if (!SCANNED_EXT.has(path.extname(entry.name).toLowerCase())) continue
+      if (size > MAX_FILE_BYTES) continue
+      const text = known[relative] ?? (() => {
+        try {
+          return fs.readFileSync(full, 'utf8')
+        } catch {
+          return null
+        }
+      })()
+      if (text !== null) findings.push(...scanText(relative, text))
+    }
+  }
+  walk(dir, 0)
+  return {
+    risk: riskOf(findings),
+    findings: findings.slice(0, MAX_FINDINGS),
+    files: files.sort((a, b) => a.relative.localeCompare(b.relative))
+  }
+}
+
 /** Walks a package's own files, never following links out of it. */
 export function scanPackage(dir: string): { risk: Risk; findings: Finding[] } {
   const findings: Finding[] = []
