@@ -5,7 +5,7 @@ import { getDb, addJournal, removeByPath } from './db'
 import { DATA_DIR } from './config'
 import { archiveSkill, restoreTrash } from './lifecycle'
 import { consolidateDryRun } from './consolidate'
-import { foldGroup } from './fold'
+import { foldGroup, rememberFold } from './fold'
 import { placementPreview, type PlacementOutcome } from './promote'
 import { readBody } from './links'
 import { diffPackages, snapshotPackage } from './plandiff'
@@ -42,6 +42,8 @@ export interface MergeIntoXPlan {
   carriedFiles: Array<{ from: string; to: string; bytes: number }>
   /** Per agent root: which copy it holds, and that the copy is leaving. */
   placements: PlacementOutcome[]
+  /** True when the group folds into a skill that already exists rather than a new one. */
+  existing?: boolean
   model: string | null
   audit: { keptRules: number; totalRules: number; droppedRules: string[]; status: string } | null
   ms: number
@@ -303,4 +305,229 @@ export function mergeIntoXPlan(planId: string): MergeIntoXPlan | undefined {
 
 export function forgetPlan(planId: string): void {
   plans.delete(planId)
+}
+
+/**
+ * Fold a group into a skill that already exists.
+ *
+ * The target is not replaced: its frontmatter and its name stay, its body joins the merge as one
+ * more source, and every group member moves to the trash afterwards. Before a byte of the target is
+ * written the whole package is copied aside, so undo puts the previous package back exactly.
+ */
+export interface FoldIntoExistingResult {
+  applied: boolean
+  planId: string
+  name: string
+  directory: string
+  backup: string
+  trashed: Array<{ name: string; path: string; trashId: number | null }>
+  files: number
+  hash: string
+  journalId: number
+  ms: number
+}
+
+function frontmatterOf(text: string): { frontmatter: string; name: string | null } {
+  const match = /^(---\r?\n[\s\S]*?\r?\n---)/.exec(text)
+  const frontmatter = match ? match[1] : '---\n---'
+  const nameMatch = /^name:\s*(.+)$/m.exec(frontmatter)
+  return { frontmatter, name: nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, '') : null }
+}
+
+export async function planFoldIntoExisting(input: {
+  groupKey: string
+  targetPath: string
+  provider: string
+  model: string
+  /** The harness and the audit path supply a body instead of paying for a model call. */
+  suppliedBody?: string
+}): Promise<MergeIntoXPlan | { error: string; detail?: unknown }> {
+  const started = Date.now()
+  const target = path.resolve(input.targetPath)
+  const run = consolidateDryRun()
+  const group = run.groups.find((entry) => entry.key === input.groupKey)
+  if (!group) return { error: 'group-not-found', detail: { key: input.groupKey } }
+  if (!group.plan) return { error: 'not-applicable', detail: { reason: group.blocked ?? 'no plan' } }
+  if (group.members.some((member) => path.resolve(member.path) === target)) {
+    return { error: 'target-in-group', detail: { path: target, note: 'a copy of this group cannot absorb the group; promote a newer copy instead' } }
+  }
+  const targetFile = path.join(target, 'SKILL.md')
+  if (!existsSync(targetFile)) return { error: 'target-not-a-skill', detail: { path: target } }
+  const targetText = readFileSync(targetFile, 'utf8')
+  const identity = frontmatterOf(targetText)
+  const name = identity.name ?? path.basename(target)
+
+  const folded = await foldGroup(input.groupKey, input.provider, input.model, input.suppliedBody, [
+    { name, dir: target }
+  ])
+  if ('error' in folded) return folded
+  if (!('text' in folded)) return { error: 'fold-failed', detail: folded }
+
+  const blockers: string[] = []
+  if (folded.status !== 'clean') {
+    blockers.push(`the fold loses ${folded.droppedRules.length} line(s) the sources carry`)
+  }
+  const composite = readBody(target)
+  if (composite && /^##\s+From\s+/m.test(composite)) {
+    blockers.push('the target is a composite skill; fold into a plain skill or ingest the group instead')
+  }
+
+  const body = folded.text
+  const fullText = `${identity.frontmatter}\n${body}\n`
+
+  const carriedFiles: MergeIntoXPlan['carriedFiles'] = []
+  const after = new Map<string, string | null>()
+  after.set('SKILL.md', fullText)
+  for (const member of group.members) {
+    for (const [relative, file] of snapshotPackage(member.path)) {
+      if (relative === 'SKILL.md') continue
+      const normalisedSource = relative.split(path.sep).join('/')
+      const inner = normalisedSource.startsWith('references/')
+        ? normalisedSource.slice('references/'.length)
+        : normalisedSource
+      const normalised = `references/from-${path.basename(member.path)}/${inner}`
+      if (after.has(normalised)) continue
+      if (file.text !== null) after.set(normalised, file.text)
+      carriedFiles.push({ from: `${member.name}/${relative}`, to: normalised, bytes: file.bytes })
+    }
+  }
+
+  const staging = path.join(DATA_DIR, 'staging', `fold-${randomUUID().slice(0, 8)}`)
+  let diff: PackageDiff
+  try {
+    mkdirSync(staging, { recursive: true })
+    for (const [relative, text] of after) {
+      if (text === null) continue
+      const at = path.join(staging, relative)
+      mkdirSync(path.dirname(at), { recursive: true })
+      writeFileSync(at, text, 'utf8')
+    }
+    diff = diffPackages(target, { dir: staging }, { images: true })
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
+  }
+
+  const members: MergeIntoTarget[] = group.members.map((member) => ({
+    name: member.name,
+    path: member.path,
+    hash: hashOfPackage(member.path),
+    version: member.version ?? null,
+    files: snapshotPackage(member.path).size,
+    bytes: member.chars,
+    protected: false
+  }))
+
+  const plan: MergeIntoXPlan = {
+    planId: randomUUID(),
+    groupKey: input.groupKey,
+    name,
+    directory: target,
+    existing: true,
+    members,
+    survivors: group.members.length,
+    body,
+    frontmatter: identity.frontmatter,
+    diff,
+    blockers,
+    carriedFiles,
+    placements: placementPreview(group.members, group.members.map((member) => member.path)),
+    model: input.model,
+    audit: { keptRules: folded.keptRules, totalRules: folded.totalRules, droppedRules: folded.droppedRules, status: folded.status },
+    ms: Date.now() - started
+  }
+  plans.set(plan.planId, plan)
+  rememberFold(input.groupKey, body)
+  return plan
+}
+
+export function applyFoldIntoExisting(planId: string, ack = false): FoldIntoExistingResult | { error: string; detail?: unknown } {
+  const started = Date.now()
+  const plan = plans.get(planId)
+  if (!plan || !plan.existing) return { error: 'plan-unknown', detail: planId }
+  if (plan.blockers.length && ack !== true) return { error: 'plan-blocked', detail: plan.blockers }
+
+  for (const member of plan.members) {
+    if (!existsSync(member.path)) return { error: 'member-vanished', detail: member.path }
+    if (hashOfPackage(member.path) !== member.hash) {
+      return { error: 'plan-stale', detail: { path: member.path, expected: member.hash, found: hashOfPackage(member.path) } }
+    }
+  }
+  const before = hashOfPackage(plan.directory)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backup = path.join(DATA_DIR, 'consolidate-trash', `merge-into_${path.basename(plan.directory)}`, stamp)
+  mkdirSync(path.dirname(backup), { recursive: true })
+  cpSync(plan.directory, backup, { recursive: true })
+
+  const trashed: FoldIntoExistingResult['trashed'] = []
+  try {
+    for (const entry of plan.carriedFiles) {
+      const member = entry.from.split('/')[0]
+      const relative = entry.from.slice(member.length + 1)
+      const source = path.join(plan.members.find((row) => row.name === member)?.path ?? '', relative)
+      if (!existsSync(source)) continue
+      const at = path.join(plan.directory, entry.to)
+      mkdirSync(path.dirname(at), { recursive: true })
+      cpSync(source, at, { recursive: true })
+    }
+    writeFileSync(path.join(plan.directory, 'SKILL.md'), `${plan.frontmatter}\n${plan.body}\n`, 'utf8')
+
+    for (const member of plan.members) {
+      const row = getDb().prepare('SELECT id FROM skills WHERE path = ? OR real_path = ?').get(member.path, member.path) as { id: number } | undefined
+      const archived = row ? archiveSkill(row.id, 'consolidate-into-existing') : { ok: false, trashId: undefined }
+      trashed.push({ name: member.name, path: member.path, trashId: 'trashId' in archived ? (archived.trashId ?? null) : null })
+      if (!('ok' in archived) || archived.ok !== true) {
+        throw new Error(`could not move ${member.name}: ${'reason' in archived ? archived.reason : 'unknown'}`)
+      }
+    }
+    for (const member of plan.members) removeByPath(member.path)
+
+    const hash = hashOfPackage(plan.directory)
+    const journalId = addJournal('consolidate-into-existing', {
+      planId: plan.planId,
+      groupKey: plan.groupKey,
+      name: plan.name,
+      directory: plan.directory,
+      backup,
+      hashBefore: before,
+      hash,
+      trashed
+    })
+    plans.delete(planId)
+    return {
+      applied: true,
+      planId,
+      name: plan.name,
+      directory: plan.directory,
+      backup,
+      trashed,
+      files: snapshotPackage(plan.directory).size,
+      hash,
+      journalId,
+      ms: Date.now() - started
+    }
+  } catch (error) {
+    // Put the target back byte for byte, then bring every source back out of the trash.
+    rmSync(plan.directory, { recursive: true, force: true })
+    cpSync(backup, plan.directory, { recursive: true })
+    for (const entry of trashed) if (entry.trashId) restoreTrash(entry.trashId)
+    return { error: 'apply-failed', detail: { message: (error as Error).message, restored: trashed.map((entry) => entry.name) } }
+  }
+}
+
+export function undoFoldIntoExisting(journalId: number): { restored: boolean; directory: string; members: string[]; hash: string } | { error: string; detail?: unknown } {
+  const row = getDb().prepare('SELECT payload FROM journal WHERE id = ?').get(journalId) as { payload: string } | undefined
+  if (!row) return { error: 'journal-unknown', detail: journalId }
+  const payload = JSON.parse(row.payload) as {
+    directory: string
+    backup: string
+    trashed?: Array<{ name: string; trashId: number | null }>
+  }
+  if (!existsSync(payload.backup)) return { error: 'backup-missing', detail: payload.backup }
+  rmSync(payload.directory, { recursive: true, force: true })
+  cpSync(payload.backup, payload.directory, { recursive: true })
+  const members: string[] = []
+  for (const entry of payload.trashed ?? []) {
+    if (entry.trashId && restoreTrash(entry.trashId)) members.push(entry.name)
+  }
+  return { restored: true, directory: payload.directory, members, hash: hashOfPackage(payload.directory) }
 }

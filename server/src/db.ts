@@ -502,7 +502,8 @@ function buildMatch(q: string): string {
  * A skill under `<root>/.archive/` belongs to that platform's archive. Derived from the path,
  * so an existing index needs no migration and a moved folder changes category on the next scan.
  */
-export const ARCHIVED_SQL = "path LIKE '%/.archive/%' OR path LIKE '%\\.archive\\%'"
+// Qualified, because a search joins skills_doc, which has a path column of its own.
+export const ARCHIVED_SQL = "s.path LIKE '%/.archive/%' OR s.path LIKE '%\\.archive\\%'"
 
 export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[] } {
   const db = getDb()
@@ -539,6 +540,24 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     'FROM skills s JOIN skills_doc d ON d.path = s.path JOIN skills_fts ON skills_fts.rowid = d.id'
     const where = `WHERE ${filters.join(' AND ')}`
     const total = db.prepare(`SELECT COUNT(*) AS n ${from} ${where}`).get(...params) as { n: number }
+    if ((total?.n ?? 0) === 0) {
+      // Full-text search splits on hyphens, so `zz-revert` matches neither token alone. A name or
+      // path substring is what a person typing a skill's name means, so it answers when FTS cannot.
+      // The MATCH filter belongs to the full-text join and cannot ride along into a plain query.
+      const plain = filters.filter((filter) => filter !== 'skills_fts MATCH ?')
+      const plainParams = params.slice(1)
+      const needle = `%${query.q ?? ''}%`
+      const loose = [...plain, '(s.name LIKE ? OR s.path LIKE ?)']
+      const looseParams = [...plainParams, needle, needle]
+      const looseWhere = `WHERE ${loose.join(' AND ')}`
+      const looseTotal = db
+        .prepare(`SELECT COUNT(*) AS n FROM skills s ${looseWhere}`)
+        .get(...looseParams) as { n: number }
+      const looseRows = db
+        .prepare(`SELECT s.* FROM skills s ${looseWhere} ORDER BY s.name COLLATE NOCASE LIMIT ? OFFSET ?`)
+        .all(...looseParams, limit, offset) as unknown as SkillRow[]
+      return { total: looseTotal?.n ?? 0, rows: looseRows }
+    }
     const rows = db
       .prepare(`SELECT s.* ${from} ${where} ORDER BY bm25(skills_fts) LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as unknown as SkillRow[]
@@ -1049,7 +1068,7 @@ export function sourceSkills(id: number): string[] {
 /** How many skills sit in each root's own `.archive` folder. */
 export function archivedByRoot(): Record<string, number> {
   const rows = getDb()
-    .prepare(`SELECT root_path, COUNT(*) AS n FROM skills WHERE ${ARCHIVED_SQL} GROUP BY root_path`)
+    .prepare(`SELECT s.root_path, COUNT(*) AS n FROM skills s WHERE ${ARCHIVED_SQL} GROUP BY s.root_path`)
     .all() as Array<{ root_path: string; n: number }>
   const out: Record<string, number> = {}
   for (const row of rows) out[row.root_path] = row.n

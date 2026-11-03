@@ -54,7 +54,14 @@ import { applyConsolidation, undoConsolidation } from './consolidateApply'
 import { applyFold, foldGroup } from './fold'
 import { curateDryRun } from './curate'
 import { applyPromote, planPromote, planById as promotePlanById } from './promote'
-import { applyMergeIntoX, planMergeIntoX } from './mergeIntoX'
+import {
+  applyMergeIntoX,
+  applyFoldIntoExisting,
+  mergeIntoXPlan,
+  planFoldIntoExisting,
+  planMergeIntoX,
+  undoFoldIntoExisting
+} from './mergeIntoX'
 import { applyImprove, getImproveJob, listImproveJobs, startImprove, undoImprove } from './improveJob'
 import { improveDryRun } from './improve'
 import {
@@ -2336,15 +2343,37 @@ app.post('/api/promote/apply', async (request, reply) => {
 })
 
 app.post('/api/merge-into-x/plan', async (request, reply) => {
-  const body = (request.body ?? {}) as { groupKey?: string; name?: string; suppliedBody?: string; provider?: string; model?: string }
-  if (!body.groupKey || !body.name) {
+  const body = (request.body ?? {}) as {
+    groupKey?: string
+    name?: string
+    targetPath?: string
+    suppliedBody?: string
+    provider?: string
+    model?: string
+  }
+  if (!body.groupKey || (!body.name && !body.targetPath)) {
     reply.code(400)
     return { error: 'group-and-name-required' }
   }
   const settings = readSettings()
+  // A target is a skill that already exists: it absorbs the group instead of a new package appearing.
+  if (body.targetPath) {
+    const existing = await planFoldIntoExisting({
+      groupKey: body.groupKey,
+      targetPath: body.targetPath,
+      suppliedBody: body.suppliedBody,
+      provider: body.provider ?? settings.mergeProvider,
+      model: body.model ?? settings.mergeModel
+    })
+    if ('error' in existing) {
+      reply.code(existing.error === 'group-not-found' ? 404 : 400)
+      return existing
+    }
+    return { plan: existing }
+  }
   const plan = await planMergeIntoX({
     groupKey: body.groupKey,
-    name: body.name,
+    name: body.name as string,
     suppliedBody: body.suppliedBody,
     provider: body.provider ?? settings.mergeProvider,
     model: body.model ?? settings.mergeModel
@@ -2362,10 +2391,28 @@ app.post('/api/merge-into-x/apply', async (request, reply) => {
     reply.code(400)
     return { error: 'planId-required' }
   }
-  // `failAfter` is the rollback seam the harness uses; the app never sends it.
-  const result = applyMergeIntoX(body.planId, body.ack === true, body.failAfter)
+  const planned = mergeIntoXPlan(body.planId)
+  // `failAfter` is the rollback seam the harness uses; the app never sends it, and an existing
+  // target has no staging to fail in.
+  const result = planned?.existing
+    ? applyFoldIntoExisting(body.planId, body.ack === true)
+    : applyMergeIntoX(body.planId, body.ack === true, body.failAfter)
   if ('error' in result) {
     reply.code(result.error === 'plan-stale' ? 409 : result.error === 'plan-blocked' ? 428 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/merge-into-x/undo', async (request, reply) => {
+  const body = (request.body ?? {}) as { journalId?: number }
+  if (!body.journalId) {
+    reply.code(400)
+    return { error: 'journalId-required' }
+  }
+  const result = undoFoldIntoExisting(Number(body.journalId))
+  if ('error' in result) {
+    reply.code(400)
     return result
   }
   return { result }

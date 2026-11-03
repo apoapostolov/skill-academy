@@ -188,8 +188,23 @@ A request against one skill, run as a job rather than a single call.
   unticking one holds it back, the button reads `Apply 1 of 2 files`, and an empty selection cannot
   be applied.
 
+## Folding into a skill that already exists
+
+The Into X form takes a new name or a skill that is already there: type two letters and pick from the
+installed skills.
+
+- The target is not replaced. Its frontmatter, name and version stay, and its body joins the merge
+  as one more source — so its own rules survive, and a supplied body that drops one is refused with
+  the line count.
+- The diff is read against the target's real bytes, not against a new package.
+- Apply copies the whole target aside before writing a byte, then writes the merged body, carries
+  every source's support files under `references/from-<dir>/`, and moves the sources to the trash.
+  The result names the backup path.
+- `POST /api/merge-into-x/undo` with the journal id puts the target back byte-identically and
+  restores every source from the trash.
+- A copy of the group cannot be the target: that case is a promote, and it answers `target-in-group`.
+
 ## Deferred, and why
 
-- **Fold into an existing X.** A name that already exists is refused with the path; folding into a
-  standing skill changes that skill rather than creating one, so it needs its own diff against the
-  existing bytes and its own undo entry.
+- A target that is itself a **composite** skill is refused rather than folded; its ingested sections
+  belong to its links, and the next ingest would fight the merge.

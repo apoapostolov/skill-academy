@@ -109,7 +109,12 @@ export async function foldGroup(
   providerId: string,
   model: string,
   /** When supplied, this body is audited instead of asking the model again. */
-  supplied?: string
+  supplied?: string,
+  /**
+   * A skill that already exists and is about to absorb the group. Its body joins the merge as one
+   * more source, so folding into a standing skill keeps that skill's own rules.
+   */
+  extraSources?: Array<{ name: string; dir: string }>
 ): Promise<FoldProposal | { error: string; detail?: unknown }> {
   const run = consolidateDryRun()
   const group = run.groups.find((entry) => entry.key === key)
@@ -126,6 +131,11 @@ export async function foldGroup(
 
   const others = group.members.filter((member) => member.name !== survivor.name)
   const sourceBodies = others.map((member) => ({ member, body: bodyOf(member.path) })).filter((entry) => entry.body)
+  // An existing target is a source too, named by its directory so two members never share a label.
+  for (const extra of extraSources ?? []) {
+    const body = bodyOf(extra.dir)
+    if (body) sourceBodies.push({ member: { ...survivorMember, name: path.basename(extra.dir), path: extra.dir }, body })
+  }
 
   const survivorText = bodyText(survivor.dir)
   const otherTexts = sourceBodies.map((entry) => bodyText(entry.body!.dir))

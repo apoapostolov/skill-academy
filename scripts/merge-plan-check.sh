@@ -113,6 +113,53 @@ tags: [fixture, second]
 MD
 printf '%s\n' 'Support note that belongs to the second copy and is carried under references/from-<folder>.' > "$ROOT/zz-group-b/references/extra.md"
 
+# --- absorb pair: a group that folds into a skill that already exists --------------------------
+mkdir -p "$ROOT/zz-absorb-a" "$ROOT/zz-absorb-b" "$ROOT/zz-absorb-target"
+cat > "$ROOT/zz-absorb-a/SKILL.md" <<'MD'
+---
+name: zz-absorb
+description: A placeholder pair used to prove that a group can fold into a skill that already exists.
+version: 1.0.0
+tags: [fixture]
+---
+
+# zz-absorb
+
+## Absorb rules
+
+- Names the owner of every follow-up, because an unowned action is a wish.
+- Keeps the rollback command next to the deploy command.
+MD
+cat > "$ROOT/zz-absorb-b/SKILL.md" <<'MD'
+---
+name: zz-absorb
+description: A placeholder pair used to prove that a group can fold into a skill that already exists.
+version: 1.1.0
+tags: [fixture]
+---
+
+# zz-absorb
+
+## Absorb rules
+
+- Names the owner of every follow-up, because an unowned action is a wish.
+- Keeps the rollback command next to the deploy command.
+- States the constraint before the design.
+MD
+cat > "$ROOT/zz-absorb-target/SKILL.md" <<'MD'
+---
+name: zz-absorb-target
+description: A skill that already exists and is about to take on more rules.
+version: 3.0.0
+---
+
+# zz-absorb-target
+
+## Existing rules
+
+- Publishes the release notes with every version bump, because a silent release cannot be audited.
+MD
+
 # --- rollback pair: a consolidation that fails on its second move -----------------------------
 mkdir -p "$ROOT/zz-rb-a" "$ROOT/zz-rb-b"
 cat > "$ROOT/zz-rb-a/SKILL.md" <<'MD'
@@ -234,6 +281,16 @@ def group_for(fragment):
             return group
     return None
 
+
+def group_of_pair(left, right):
+    """The group that holds exactly these two folders, whatever else sits in the library."""
+    status, run = call('POST', '/api/consolidate/dry-run')
+    for group in run.get('groups') or []:
+        paths = json.dumps(group.get('members', []))
+        if left in paths and right in paths:
+            return group
+    return None
+
 status, scan = call('POST', '/api/scan?force=1')
 check('the placeholder root is indexed', status == 200 and scan.get('skills', 0) >= 8, str(scan)[:120])
 
@@ -339,6 +396,37 @@ check('the moved package came back', (root / 'zz-rb-a' / 'SKILL.md').exists())
 check('the untouched package is still there', (root / 'zz-rb-b' / 'SKILL.md').exists())
 check('no half-written X is left behind', not (root / 'zz-rollback-x').exists())
 check('the restored package is byte-identical', package_hash(root / 'zz-rb-a') == rb_hash_a)
+
+# ---------------------------------------------------------------- 4b. fold into a skill that exists
+absorb = root / 'zz-absorb-target'
+absorb_group = group_of_pair('zz-absorb-a', 'zz-absorb-b')
+check('the absorb pair forms a group', absorb_group is not None, '')
+absorb_hash = package_hash(absorb)
+status, absorb_plan = call('POST', '/api/merge-into-x/plan', {
+    'groupKey': (absorb_group or {}).get('key'),
+    'targetPath': str(absorb),
+    'suppliedBody': '## Absorb rules\n- Names the owner of every follow-up, because an unowned action is a wish.\n- Keeps the rollback command next to the deploy command.\n- States the constraint before the design.\n- Publishes the release notes with every version bump, because a silent release cannot be audited.'
+})
+aplan = absorb_plan.get('plan') or {}
+check('the plan names an existing target', aplan.get('existing') is True, str(absorb_plan)[:160])
+check('the target keeps its own directory', os.path.samefile(str(absorb), str(aplan.get('directory') or '')), str(aplan.get('directory')))
+check('the plan is not blocked', not (aplan.get('blockers') or []), str(aplan.get('blockers'))[:140])
+check('the diff reads the target, not a new package', any(entry['path'] == 'SKILL.md' for entry in ((aplan.get('diff') or {}).get('manifest') or [])))
+status, absorb_applied = call('POST', '/api/merge-into-x/apply', {'planId': aplan.get('planId'), 'ack': True})
+aresult = absorb_applied.get('result') or {}
+check('the fold into an existing skill applies', status == 200 and aresult.get('applied'), str(absorb_applied)[:180])
+absorb_text = (absorb / 'SKILL.md').read_text(encoding='utf-8')
+check('the existing skill gained the group rules', 'rollback command next to the deploy command' in absorb_text)
+check('the existing skill kept its own rule', 'Publishes the release notes' in absorb_text)
+check('the existing skill kept its version', 'version: 3.0.0' in absorb_text)
+check('the group moved to the trash', len(aresult.get('trashed') or []) >= 2, str(aresult.get('trashed'))[:120])
+check('no second package was created', not (root / 'zz-absorb-target.staging').exists() and not (root / 'zz-absorb-target.2').exists())
+check('the target was copied aside before it was written', bool(aresult.get('backup')) and os.path.exists(aresult.get('backup') or ''), str(aresult.get('backup')))
+status, undone = call('POST', '/api/merge-into-x/undo', {'journalId': aresult.get('journalId')})
+check('the fold into an existing skill undoes', status == 200 and (undone.get('result') or {}).get('restored'), str(undone)[:160])
+check('the target is back to its original bytes', package_hash(absorb) == absorb_hash,
+      f"{package_hash(absorb)} vs {absorb_hash}")
+check('the sources are back after undo', (root / 'zz-absorb-a' / 'SKILL.md').exists() and (root / 'zz-absorb-b' / 'SKILL.md').exists())
 
 # ---------------------------------------------------------------- 5. improve as a job
 status, started = call('POST', '/api/improve/job', {

@@ -4278,3 +4278,48 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .mergedriftline.leaving .mergenote {
   color: rgb(196, 160, 156);
 }
+
+/* Folding into a skill that already exists: the picker sits under the name field. */
+.mergeabsorb {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mergeabsorb input {
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: rgb(218, 221, 226);
+  background: rgb(18, 20, 24);
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 7px;
+}
+
+.mergeabsorbrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mergecandidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mergecandidate {
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  color: rgb(214, 217, 222);
+  background: rgb(24, 26, 31);
+  border: 1px solid rgb(46, 50, 57);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.mergecandidate:hover {
+  border-color: rgba(127, 163, 199, 0.6);
+}

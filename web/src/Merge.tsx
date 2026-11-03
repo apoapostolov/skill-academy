@@ -729,6 +729,7 @@ interface MergeXPlanView {
   planId: string
   name: string
   directory: string
+  existing?: boolean
   members: Array<{ name: string; path: string; version: string | null; files: number; bytes: number }>
   diff: PackageDiff
   blockers: string[]
@@ -760,6 +761,9 @@ export function GroupPlanDialog({
   const [name, setName] = useState(group.plan?.survivor ?? ordered[0]?.name ?? '')
   const [promote, setPromote] = useState<PromotePlanView | null>(null)
   const [merged, setMerged] = useState<MergeXPlanView | null>(null)
+  const [target, setTarget] = useState<{ name: string; path: string } | null>(null)
+  const [targetQuery, setTargetQuery] = useState('')
+  const [candidates, setCandidates] = useState<Array<{ id: number; name: string; path: string }>>([])
   const [dropped, setDropped] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [askContradictions, setAskContradictions] = useState(false)
@@ -782,6 +786,18 @@ export function GroupPlanDialog({
     }
   }
 
+  // A target is a skill that already exists: the group joins it instead of a new package appearing.
+  const searchTargets = async (query: string): Promise<void> => {
+    setTargetQuery(query)
+    if (query.trim().length < 2) {
+      setCandidates([])
+      return
+    }
+    const response = await fetch(`/api/skills?q=${encodeURIComponent(query.trim())}&limit=8&status=active`)
+    const data = (await response.json()) as { rows?: Array<{ id: number; name: string; path: string }> }
+    setCandidates(data.rows ?? [])
+  }
+
   const planX = async (): Promise<void> => {
     setBusy(true)
     setMessage('')
@@ -789,7 +805,7 @@ export function GroupPlanDialog({
       const response = await fetch('/api/merge-into-x/plan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ groupKey: group.key, name })
+        body: JSON.stringify(target ? { groupKey: group.key, targetPath: target.path } : { groupKey: group.key, name })
       })
       const data = (await response.json()) as { plan?: MergeXPlanView; error?: string }
       if (data.plan) setMerged(data.plan)
@@ -826,7 +842,11 @@ export function GroupPlanDialog({
         const data = (await response.json()) as { result?: { name?: string; files?: number }; error?: string; detail?: unknown }
         if (data.error) setMessage(`${data.error}: ${JSON.stringify(data.detail ?? '').slice(0, 160)}`)
         else {
-          setMessage(`${data.result?.name} written, ${data.result?.files ?? 0} file(s); sources are in the trash`)
+          setMessage(
+            data.result?.backup
+              ? `${data.result.name} took the rules, ${data.result.files ?? 0} file(s); sources are in the trash and the previous package is kept`
+              : `${data.result?.name} written, ${data.result?.files ?? 0} file(s); sources are in the trash`
+          )
           onApplied()
         }
       }
@@ -903,8 +923,45 @@ export function GroupPlanDialog({
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder="one-skill-to-rule-them" />
             </label>
             <div className="mergesub">The sources go to the trash, not away: each one can be restored or purged.</div>
-            <button className="mergeapply" disabled={busy || !name.trim()} onClick={() => void planX()}>
-              {busy ? 'Folding…' : 'Plan the fold'}
+            <div className="mergeabsorb">
+              {target ? (
+                <div className="mergeabsorbrow">
+                  <span className="mergenote">folding into {target.name}</span>
+                  <button className="ghost small" onClick={() => setTarget(null)}>
+                    use a new name instead
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    value={targetQuery}
+                    onChange={(event) => void searchTargets(event.target.value)}
+                    placeholder="or fold into a skill that already exists…"
+                  />
+                  {candidates.length > 0 && (
+                    <div className="mergecandidates">
+                      {candidates.map((candidate) => (
+                        <button
+                          className="mergecandidate"
+                          key={candidate.id}
+                          onClick={() => {
+                            setTarget({ name: candidate.name, path: candidate.path })
+                            setName(candidate.name)
+                            setCandidates([])
+                            setTargetQuery('')
+                          }}
+                          title={candidate.path}
+                        >
+                          {candidate.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <button className="mergeapply" disabled={busy || (!name.trim() && !target)} onClick={() => void planX()}>
+              {busy ? 'Folding…' : target ? `Plan the fold into ${target.name}` : 'Plan the fold'}
             </button>
           </div>
         )}
@@ -1012,7 +1069,11 @@ export function GroupPlanDialog({
               disabled={busy || !diff || (mode === 'x' && (merged?.blockers?.length ?? 0) > 0)}
               onClick={() => void apply()}
             >
-              {mode === 'promote' ? 'Promote' : `Create ${merged?.name ?? 'X'}`}
+              {mode === 'promote'
+                ? 'Promote'
+                : merged?.existing
+                  ? `Fold into ${merged.name}`
+                  : `Create ${merged?.name ?? 'X'}`}
             </button>
           </div>
         </div>
