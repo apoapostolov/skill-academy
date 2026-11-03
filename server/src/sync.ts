@@ -118,7 +118,14 @@ export function scanForSecrets(root: string): SecretFinding[] {
 }
 
 function git(args: string[], cwd = SYNC_DIR): { ok: boolean; out: string; err: string } {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 120_000 })
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    timeout: 120_000,
+    // A push from a GUI must fail, not wait: without this git can sit on a hidden credential prompt
+    // and the request looks like a hang. Credentials come from git's own configured helper.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: process.env.GIT_ASKPASS ?? '' }
+  })
   return { ok: result.status === 0, out: (result.stdout ?? '').trim(), err: (result.stderr ?? '').trim() || (result.error?.message ?? '') }
 }
 

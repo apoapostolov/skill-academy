@@ -58,6 +58,27 @@ skill in the index again, the same file changed on two machines surfaces as one 
 sides readable, a key-shaped string refuses the push with file and line, and the refused attempt
 leaves no commit behind.
 
+## Against real GitHub
+
+The suite runs against a bare directory because it must be offline and fast. `scripts/live-sync-check.sh`
+is the other half: it drives two throwaway servers against a real private repository through git's
+configured credential helper. It is deliberately not in the suite (network, credentials), and it
+writes to one branch per run (`probe-<stamp>`) so it cannot disturb a real branch.
+
+Run on 2026-11-03 against `apoapostolov/skill-academy-sync-probe`, **16 checks, all passed**:
+
+- machine A pushes and GitHub holds the branch the app named (`420d3ef`);
+- machine B, empty, pulls it back: the package lands, the bytes are identical, and the lock puts the
+  skill back in B's index;
+- both machines edit the same file: A's push wins the shared file, B's text is kept beside it as
+  `SKILL.md.local-<stamp>`, and one conflict is reported;
+- a key-shaped string is refused with `409 secrets-found`, naming `library/alpha-skill/leak.md` line 1,
+  and the branch head on GitHub is byte-identical before and after the refusal.
+
+**git never waits on a hidden prompt.** Every git call runs with `GIT_TERMINAL_PROMPT=0`, so a push
+whose credential helper has nothing to offer fails and says so instead of hanging behind a prompt
+nobody can see.
+
 ## Limits
 
 - Deletions travel as files disappearing from the tree, and a pull does not remove a library package
@@ -66,3 +87,5 @@ leaves no commit behind.
   chooses. There is no three-way text merge and no per-hunk resolution yet.
 - Push and pull are manual. A schedule would need the same care as a source's clock, which is not
   built here.
+- The app stores no credential of its own; authentication is whatever git's configured helper has.
+  A machine with no helper gets `could not read Username`, which is honest but not friendly.
