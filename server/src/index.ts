@@ -217,15 +217,22 @@ function pruneVanished(): number {
   return removed
 }
 
+/** True while a scan is writing rows: the lock would otherwise capture a half-written library. */
+let scanInFlight = false
+
 async function fullScan(): Promise<{ added: number; changed: number; removed: number; ms: number; skills: number }> {
   const registry = loadRegistry()
   if (WATCH_ENABLED) watcher.sync(registry.roots)
+  scanInFlight = true
   const outcome = await scanAll(registry.roots)
   const result = saveScan(outcome)
   // A scan indexes what exists; it must also retire what stopped existing, or a removed duplicate
   // keeps answering searches forever.
   const vanished = pruneVanished()
   lastScanAt = new Date().toISOString()
+  scanInFlight = false
+  // The lock follows the library: a scan is the one place the whole of it is known to be current.
+  queueLockWrite()
   return { ...result, removed: result.removed + vanished, ms: outcome.ms, skills: outcome.skills }
 }
 
@@ -564,12 +571,19 @@ function queueLockWrite(): void {
   if (lockTimer) return
   lockTimer = setTimeout(() => {
     lockTimer = null
+    // A lock written mid-scan names a library that does not exist yet; wait for the scan to finish.
+    if (scanInFlight) {
+      queueLockWrite()
+      return
+    }
     try {
       const target = lockPath()
       mkdirSync(path.dirname(target), { recursive: true })
       writeFileSync(target, JSON.stringify(lockDocument(), null, 2) + '\n')
-    } catch {
-      /* a lock that cannot be written must not fail the mutation that changed the library */
+    } catch (error) {
+      // A lock that cannot be written must not fail the mutation that changed the library, but a
+      // silent failure means nobody learns the library stopped being reproducible.
+      console.error('lock write failed:', (error as Error).message)
     }
   }, 300)
   lockTimer.unref?.()
