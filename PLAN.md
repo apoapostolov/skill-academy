@@ -226,7 +226,9 @@ Screen reader labels: audited in the running app across the main screen, Appeara
 
 **Notification centre** built: a sidebar scope beside Drafts with a count, rows in the middle column, and an acknowledge action (`docs/notifications.md`); four checks in `scripts/sources-check.sh` (now 76) prove the queue and its clearing, and the list was verified in the running app.
 
-Still open in this phase: the onboarding pass.
+**First run** built: an empty library gets a panel with the three actions that fill it, the list's empty state drops the "filter" wording, and `prefers-reduced-motion` is honoured (`docs/first-run.md`), verified on a throwaway empty server in a real browser.
+
+Everything in this phase now has a check or a recorded verification behind it.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 

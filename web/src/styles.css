@@ -5330,3 +5330,52 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   margin: 40px auto;
   text-align: center;
 }
+
+/* First run: an empty library is a starting point, so it offers the three actions that fill it. */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 460px;
+  margin: 64px auto;
+  padding: 22px 24px;
+  border: 1px solid var(--sep);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.onboardtitle {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.onboardsub,
+.onboardnote {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.onboardnote code {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.onboardactions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+
+/* A preference, not a decoration: anything that moves is asked to stop moving. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

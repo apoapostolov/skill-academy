@@ -1994,6 +1994,12 @@ export default function App() {
     }
   }
 
+  /**
+   * First run. An empty library is the one screen where a bare "no skills" line leaves a new user
+   * with nothing to do, so it offers the three actions that actually fill it — and nothing else.
+   */
+  const firstRun = skills.length === 0 && !query && (scope.kind === 'all' || scope.kind === 'health')
+
   const scopeLabel = useMemo(() => {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
@@ -3159,7 +3165,9 @@ export default function App() {
             <div className="listfoot">{fmt.format(total)} total</div>
           )}
           {scope.kind !== 'drafts' && scope.kind !== 'trash' && scope.kind !== 'workspace' && skills.length === 0 && !loadingMore && (
-            <div className="empty">Nothing matches. Clear the filter or scan.</div>
+            <div className="empty">
+              {firstRun ? 'No skills yet. The panel on the right says where they come from.' : 'Nothing matches. Clear the filter or scan.'}
+            </div>
           )}
           </ScrollPane>
           {installOpen && (
@@ -3619,7 +3627,42 @@ export default function App() {
               )}
             </div>
           )}
-          {detail && !openRef && mdMode === 'preview' && (
+          {firstRun && !detail && (
+        <div className="onboarding">
+          <div className="onboardtitle">No skills found yet</div>
+          <div className="onboardsub">
+            This library indexes the folders your agents already read. Pick the first thing to do.
+          </div>
+          <div className="onboardactions">
+            <button
+              className="mergeapply"
+              onClick={() => {
+                void fetch('/api/scan?force=1', { method: 'POST' }).then(() => loadState())
+              }}
+            >
+              Scan the folders again
+            </button>
+            <button className="ghost small" onClick={() => setSourcesOpen(true)}>
+              Add a source
+            </button>
+            <button
+              className="ghost small"
+              onClick={() => {
+                setScope({ kind: 'drafts' })
+                void loadDrafts()
+              }}
+            >
+              Write a draft
+            </button>
+          </div>
+          <div className="onboardnote">
+            A skill is a folder with a <code>SKILL.md</code> in it. Sources bring them from a repository, a
+            checkout or a zip; a draft becomes one without leaving the app.
+          </div>
+        </div>
+      )}
+
+      {detail && !openRef && mdMode === 'preview' && (
             <MarkdownBody text={detail.body || '_Empty body._'} className={`md body${wrap ? ' wrapped' : ''}`} />
           )}
           {detail && !openRef && mdMode === 'raw' && (
