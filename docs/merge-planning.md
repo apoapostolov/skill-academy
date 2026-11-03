@@ -176,12 +176,20 @@ A request against one skill, run as a job rather than a single call.
 | Move across roots with one core | `POST /api/skills/:id/move` | verified in the app: 18 roots listed, one core, Link/Move switch |
 | Deleted, with wipe, select, recover and delete | `web/src/Merge.tsx`, `POST /api/trash/wipe` | verified in the app |
 
+## Now in the screen
+
+- **Placement consequences.** Each plan lists, per agent root, the copy it holds: `+` names the copy
+  that stays and its kind, `−` names a copy that leaves and says that the agent stops seeing the
+  skill unless a link is written there. Read from the registered roots and the copy's own path, so
+  two copies sharing a name in one root are never confused for one placement.
+- **Contradictions on request.** A checkbox in the Promote form asks the model to compare the two
+  bodies and lists every pair that states opposite rules. It costs one call, so it is off by default.
+- **Per-file accept in Improve.** Every proposed file carries a checkbox and starts accepted;
+  unticking one holds it back, the button reads `Apply 1 of 2 files`, and an empty selection cannot
+  be applied.
+
 ## Deferred, and why
 
 - **Fold into an existing X.** A name that already exists is refused with the path; folding into a
-  standing skill needs its own diff and its own undo entry, which is a separate flow.
-- **Placement consequence preview.** The plan names files, not yet which agents gain or lose a path.
-- **Contradiction check in the dialog.** The endpoint takes `contradictions: true` and the model
-  answers; the dialog does not request it yet because every plan would then cost a call.
-- **Per-file accept in Improve.** The server accepts a file list; the dialog applies everything the
-  job proposed.
+  standing skill changes that skill rather than creating one, so it needs its own diff against the
+  existing bytes and its own undo entry.

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { getDb, addJournal, getSkill } from './db'
@@ -7,6 +7,7 @@ import { compareVersions } from './provenance'
 import { readBody } from './links'
 import { insideProtected } from './safety'
 import { chat, providerById } from './providers'
+import { loadRegistry } from './registry'
 import { diffPackages, normaliseLine, snapshotPackage, substantiveLines, kindOf } from './plandiff'
 import type { PackageDiff } from './plandiff'
 
@@ -34,6 +35,51 @@ export interface FrontmatterDrift {
   resolution: string
 }
 
+export interface PlacementOutcome {
+  root: string
+  scope: string
+  name: string
+  path: string
+  kind: 'directory' | 'symlink' | 'other'
+  /** True when this root holds a copy that the plan sends to the trash. */
+  loses: boolean
+}
+
+/**
+ * A merge moves bytes between agent roots without moving the roots themselves, so the plan says,
+ * per root, which copy it holds and whether that copy is the one leaving. A root whose only copy is
+ * a loser stops seeing the skill unless a link is written there.
+ */
+export function placementPreview(copies: Array<{ name: string; path: string }>, losers: string[]): PlacementOutcome[] {
+  const registry = loadRegistry()
+  const losing = new Set(losers.map((entry) => path.resolve(entry).toLowerCase()))
+  const rows: PlacementOutcome[] = []
+  for (const copy of copies) {
+    const at = path.resolve(copy.path)
+    // The copy already knows where it lives; the root is the longest registered path that contains it.
+    const owner = registry.roots
+      .filter((root) => at.toLowerCase().startsWith(path.resolve(root.path).toLowerCase() + path.sep))
+      .sort((a, b) => b.path.length - a.path.length)[0]
+    if (!owner) continue
+    let kind: PlacementOutcome['kind'] = 'other'
+    try {
+      const stat = lstatSync(at)
+      kind = stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'directory' : 'other'
+    } catch {
+      continue
+    }
+    rows.push({
+      root: owner.path,
+      scope: owner.scope,
+      name: copy.name,
+      path: at,
+      kind,
+      loses: losing.has(at.toLowerCase())
+    })
+  }
+  return rows
+}
+
 export interface PromotePlan {
   planId: string
   key: string
@@ -49,6 +95,7 @@ export interface PromotePlan {
   reverted: boolean
   requiresAck: string[]
   diff: PackageDiff
+  placements: PlacementOutcome[]
   carriedHeading: string
   blockers: string[]
   model: string | null
@@ -276,6 +323,8 @@ export async function planPromote(input: PromoteInput): Promise<PromotePlan | { 
   }
   const diff = diffPackages(winner.path, { files: after }, { images: true })
 
+  const placements = placementPreview([winner, loser], [loser.path])
+
   const plan: PromotePlan = {
     planId: randomUUID(),
     key: `promote:${path.basename(winner.path)}~${path.basename(loser.path)}`,
@@ -288,6 +337,7 @@ export async function planPromote(input: PromoteInput): Promise<PromotePlan | { 
     reverted,
     requiresAck,
     diff,
+    placements,
     carriedHeading,
     blockers,
     model,

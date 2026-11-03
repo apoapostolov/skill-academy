@@ -4264,3 +4264,17 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .trashtools {
   margin-left: auto;
 }
+
+/* A placement line names the root first, so the eye can match it to the sidebar. */
+.mergeplacementroot {
+  color: rgb(178, 182, 189);
+  font-size: 11px;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergedriftline.leaving .mergenote {
+  color: rgb(196, 160, 156);
+}

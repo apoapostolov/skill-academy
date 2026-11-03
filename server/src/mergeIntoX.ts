@@ -6,6 +6,7 @@ import { DATA_DIR } from './config'
 import { archiveSkill, restoreTrash } from './lifecycle'
 import { consolidateDryRun } from './consolidate'
 import { foldGroup } from './fold'
+import { placementPreview, type PlacementOutcome } from './promote'
 import { readBody } from './links'
 import { diffPackages, snapshotPackage } from './plandiff'
 import type { PackageDiff } from './plandiff'
@@ -39,6 +40,8 @@ export interface MergeIntoXPlan {
   diff: PackageDiff
   blockers: string[]
   carriedFiles: Array<{ from: string; to: string; bytes: number }>
+  /** Per agent root: which copy it holds, and that the copy is leaving. */
+  placements: PlacementOutcome[]
   model: string | null
   audit: { keptRules: number; totalRules: number; droppedRules: string[]; status: string } | null
   ms: number
@@ -188,6 +191,7 @@ export async function planMergeIntoX(input: MergeIntoXInput): Promise<MergeIntoX
     diff: stagedDiff,
     blockers,
     carriedFiles,
+    placements: placementPreview(group.members, group.members.map((member) => member.path)),
     model: input.suppliedBody ? null : (input.model ?? 'deepseek-v4.1-flash'),
     audit: 'audit' in folded && folded.audit ? (folded.audit as MergeIntoXPlan['audit']) : null,
     ms: Date.now() - started

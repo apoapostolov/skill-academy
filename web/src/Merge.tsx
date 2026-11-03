@@ -293,7 +293,14 @@ export function ImproveDialog({ skill, onClose }: { skill: { id: number; name: s
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [applied, setApplied] = useState<'none' | 'applied' | 'undone'>('none')
+  const [accepted, setAccepted] = useState<Set<string>>(new Set())
   const timer = useRef<number | null>(null)
+
+  // Every proposed file starts accepted; unticking one holds it back from the apply.
+  useEffect(() => {
+    if (!job || job.status !== 'ready') return
+    setAccepted(new Set(job.files.map((file) => file.path)))
+  }, [job?.status, job?.jobId])
 
   useEffect(() => () => {
     if (timer.current) window.clearTimeout(timer.current)
@@ -333,7 +340,11 @@ export function ImproveDialog({ skill, onClose }: { skill: { id: number; name: s
       const response = await fetch('/api/improve/apply', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jobId: job.jobId, confirm: true })
+        body: JSON.stringify({
+          jobId: job.jobId,
+          confirm: true,
+          files: job.files.filter((file) => accepted.has(file.path)).map((file) => file.path)
+        })
       })
       const data = (await response.json()) as { result?: unknown; error?: string }
       if (data.error) setMessage(data.error)
@@ -420,7 +431,22 @@ export function ImproveDialog({ skill, onClose }: { skill: { id: number; name: s
         {job && job.files.length > 0 && (
           <div className="mergewhys">
             {job.files.map((file) => (
-              <div className="mergewhy" key={file.path}>
+              <div className={`mergewhy ${accepted.has(file.path) ? '' : 'off'}`} key={file.path}>
+                <input
+                  type="checkbox"
+                  className="mergewhycheck"
+                  checked={accepted.has(file.path)}
+                  disabled={job.status !== 'ready' || applied !== 'none'}
+                  onChange={() => {
+                    setAccepted((previous) => {
+                      const next = new Set(previous)
+                      if (next.has(file.path)) next.delete(file.path)
+                      else next.add(file.path)
+                      return next
+                    })
+                  }}
+                  title="include this file in the apply"
+                />
                 <span className="mergediffpath">{file.path}</span>
                 <span className="mergenote">{file.why}</span>
                 {file.unsupported.length > 0 && (
@@ -437,8 +463,12 @@ export function ImproveDialog({ skill, onClose }: { skill: { id: number; name: s
           <div className="mergesub">{message}</div>
           <div className="mergeactions">
             {job?.status === 'ready' && applied === 'none' && (
-              <button className="mergeapply" disabled={busy || job.blockers.length > 0} onClick={() => void apply()}>
-                Apply {job.files.length} file{job.files.length === 1 ? '' : 's'}
+              <button
+                className="mergeapply"
+                disabled={busy || job.blockers.length > 0 || accepted.size === 0}
+                onClick={() => void apply()}
+              >
+                Apply {accepted.size} of {job.files.length} file{job.files.length === 1 ? '' : 's'}
               </button>
             )}
             {applied === 'applied' && (
@@ -664,6 +694,15 @@ export function TrashView({
   )
 }
 
+interface PlacementRow {
+  root: string
+  scope: string
+  name: string
+  path: string
+  kind: 'directory' | 'symlink' | 'other'
+  loses: boolean
+}
+
 interface GroupMemberView {
   name: string
   path: string
@@ -682,6 +721,7 @@ interface PromotePlanView {
   reverted: boolean
   requiresAck: string[]
   diff: PackageDiff
+  placements?: PlacementRow[]
   blockers: string[]
 }
 
@@ -692,6 +732,7 @@ interface MergeXPlanView {
   members: Array<{ name: string; path: string; version: string | null; files: number; bytes: number }>
   diff: PackageDiff
   blockers: string[]
+  placements?: PlacementRow[]
   carriedFiles: Array<{ from: string; to: string }>
   audit: { keptRules: number; totalRules: number; droppedRules: string[]; status: string } | null
 }
@@ -721,6 +762,7 @@ export function GroupPlanDialog({
   const [merged, setMerged] = useState<MergeXPlanView | null>(null)
   const [dropped, setDropped] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [askContradictions, setAskContradictions] = useState(false)
   const [message, setMessage] = useState('')
 
   const planPromote = async (): Promise<void> => {
@@ -730,7 +772,7 @@ export function GroupPlanDialog({
       const response = await fetch('/api/promote/plan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ winnerPath: winner, loserPath: loser })
+        body: JSON.stringify({ winnerPath: winner, loserPath: loser, contradictions: askContradictions })
       })
       const data = (await response.json()) as { plan?: PromotePlanView; error?: string }
       if (data.plan) setPromote(data.plan)
@@ -794,6 +836,7 @@ export function GroupPlanDialog({
   }
 
   const diff = mode === 'promote' ? promote?.diff ?? null : merged?.diff ?? null
+  const placements = (mode === 'promote' ? promote?.placements : merged?.placements) ?? []
   const ack = mode === 'promote' ? promote?.requiresAck ?? [] : merged?.blockers ?? []
 
   return (
@@ -840,6 +883,14 @@ export function GroupPlanDialog({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="mergecheck">
+              <input
+                type="checkbox"
+                checked={askContradictions}
+                onChange={(event) => setAskContradictions(event.target.checked)}
+              />
+              check contradictions (one model call)
             </label>
             <button className="mergeapply" disabled={busy || !winner || !loser || winner === loser} onClick={() => void planPromote()}>
               {busy ? 'Reading…' : 'Read the drift'}
@@ -927,6 +978,27 @@ export function GroupPlanDialog({
                 audit {merged.audit.status} · kept {merged.audit.keptRules}/{merged.audit.totalRules}
               </div>
             )}
+          </div>
+        )}
+
+        {placements.length > 0 && (
+          <div className="mergedrift">
+            <div className="mergemanifesthead">
+              Placements · {new Set(placements.map((row) => row.root)).size} agent root(s)
+            </div>
+            {placements.map((row) => (
+              <div className={`mergedriftline ${row.loses ? 'leaving' : 'staying'}`} key={row.path}>
+                <span className={`mergediffmark ${row.loses ? 'removed' : 'added'}`}>{row.loses ? '−' : '+'}</span>
+                <span className="mergeplacementroot" title={row.root}>
+                  {row.root}
+                </span>
+                <span className="mergenote">
+                  {row.loses
+                    ? `holds ${row.name}, which leaves: this agent stops seeing the skill unless a link is written here`
+                    : `holds ${row.name} (${row.kind})`}
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
