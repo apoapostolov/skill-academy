@@ -93,6 +93,30 @@ if [ "$ready" -ne 1 ]; then
   echo "the fixture server did not start on $PORT; log:"; tail -20 "$LOG"; exit 1
 fi
 
+# The scan counts packages, not visits: one folder reachable through two roots is one skill.
+mkdir -p scripts/tmp
+cat > scripts/tmp/count-probe.ts <<'TS'
+import { countPackages } from '../../server/src/scan'
+const record = (path: string, realPath: string) => ({
+  path, realPath, name: 'x', description: '', rootPath: '/r', scope: 'global',
+  bodyChars: 1, tokens: 1, tags: [], category: '', risk: 'low', findings: [],
+  packageHash: 'h', mtime: 0, files: 1, bytes: 1, health: []
+})
+const entries = [
+  { root: { path: 'a', exists: true }, skills: [record('/a/one', '/real/one')], placements: [] },
+  { root: { path: 'b', exists: true }, skills: [record('/b/one', '/real/one'), record('/b/two', '/real/two')], placements: [] }
+] as never
+console.log(countPackages(entries))
+TS
+COUNT=$(npx tsx scripts/tmp/count-probe.ts 2>/dev/null | tr -d '' | tail -1)
+rm -f scripts/tmp/count-probe.ts
+if [ "$COUNT" = "2" ]; then
+  echo "PASS  a folder reachable twice counts one package"
+else
+  echo "FAIL  a folder reachable twice counts one package  (got $COUNT)"
+  exit 1
+fi
+
 python3 - "$PORT" "$ROOT" <<'PY'
 import hashlib, json, pathlib, sys, urllib.request as u
 

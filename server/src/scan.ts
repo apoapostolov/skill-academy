@@ -38,6 +38,18 @@ export interface ScanOutcome {
   ms: number
 }
 
+/**
+ * Packages, not visits. The same folder can be registered under more than one root, and the index
+ * keeps one row per package, so summing per-root counts would report a library larger than it is.
+ */
+export function countPackages(entries: RootEntry[]): number {
+  const seen = new Set<string>()
+  for (const entry of entries) {
+    for (const skill of entry.skills) seen.add((skill.realPath ?? skill.path).toLowerCase())
+  }
+  return seen.size
+}
+
 function findPackages(dir: string, depth: number, out: string[]): void {
   if (out.length >= MAX_SKILLS_PER_ROOT) return
   let entries: fs.Dirent[]
@@ -151,7 +163,7 @@ export function scanAllSync(roots: AgentRoot[]): ScanOutcome {
   const entries = roots.filter((root) => root.exists).map(scanOne)
   return {
     entries,
-    skills: entries.reduce((sum, entry) => sum + entry.skills.length, 0),
+    skills: countPackages(entries),
     ms: Date.now() - started
   }
 }
@@ -204,7 +216,7 @@ export async function scanAll(roots: AgentRoot[]): Promise<ScanOutcome> {
     const entries = live.map((root) => byPath.get(root.path)).filter((entry): entry is RootEntry => Boolean(entry))
     return {
       entries,
-      skills: entries.reduce((sum, entry) => sum + entry.skills.length, 0),
+      skills: countPackages(entries),
       ms: Date.now() - started
     }
   } catch {
