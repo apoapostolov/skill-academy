@@ -1,7 +1,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, unlinkSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync
+} from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
@@ -923,16 +935,69 @@ app.post('/api/providers/:id/test', async (request, reply) => {
 app.get('/api/sources', async () => ({ sources: listSources() }))
 
 app.post('/api/sources', async (request, reply) => {
-  const body = request.body as { repo?: string } | undefined
-  const repo = (body?.repo ?? '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '')
+  const body = (request.body ?? {}) as { repo?: string; path?: string; kind?: string }
+  if (body.kind === 'local' || body.path) {
+    const given = (body.path ?? '').trim()
+    if (!given) {
+      reply.code(400)
+      return { error: 'path is required for a local source' }
+    }
+    const checkout = path.resolve(given)
+    if (!existsSync(checkout)) {
+      reply.code(400)
+      return { error: 'that path does not exist' }
+    }
+    // A checkout is a directory with .git in it; a worktree keeps .git as a file, so both count.
+    if (!existsSync(path.join(checkout, '.git'))) {
+      reply.code(400)
+      return { error: 'not-a-checkout', detail: 'the folder has no .git' }
+    }
+    const head = gitOutput(checkout, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    return { source: saveSource(checkout, 'local'), branch: head.trim() || null }
+  }
+  const repo = (body.repo ?? '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '')
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
     reply.code(400)
     return { error: 'repo must look like owner/name' }
   }
-  return { source: saveSource(repo) }
+  return { source: saveSource(repo, 'github') }
 })
 
-async function checkSource(source: { id: number; repo: string; last_commit: string | null; last_release: string | null; checked_at: string | null }) {
+/** Runs git in a checkout and returns its stdout, or an empty string when it fails. */
+function gitOutput(checkout: string, args: string[]): string {
+  const result = spawnSync('git', ['-C', checkout, ...args], { encoding: 'utf8', timeout: 15_000 })
+  if (result.error || result.status !== 0) return ''
+  return result.stdout ?? ''
+}
+
+async function checkSource(source: {
+  id: number
+  repo: string
+  kind?: 'github' | 'local'
+  last_commit: string | null
+  last_release: string | null
+  checked_at: string | null
+}) {
+  if (source.kind === 'local') {
+    const commit = gitOutput(source.repo, ['rev-parse', 'HEAD']).trim().slice(0, 12) || null
+    if (!commit) {
+      return { repo: source.repo, error: 'git could not read that checkout' }
+    }
+    const tag = gitOutput(source.repo, ['describe', '--tags', '--abbrev=0']).trim()
+    const release = tag || null
+    const seenBefore = source.checked_at !== null
+    if (seenBefore && commit !== source.last_commit) recordSourceEvent(source.repo, 'commit', commit)
+    if (seenBefore && release && release !== source.last_release) recordSourceEvent(source.repo, 'release', release)
+    recordSourceCheck(source.repo, commit, release)
+    return {
+      repo: source.repo,
+      commit,
+      release,
+      changed: seenBefore && (commit !== source.last_commit || release !== source.last_release),
+      previous: { commit: source.last_commit, release: source.last_release },
+      kind: 'local' as const
+    }
+  }
   const headers: Record<string, string> = { accept: 'application/vnd.github+json', 'user-agent': 'skill-academy' }
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
   if (token) headers.authorization = `Bearer ${token}`
@@ -1264,7 +1329,28 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
 
   const mapped = sourceSkills(source.id)
   const files: Array<{ path: string; status: number; hash: string | null; bytes: number }> = []
-  if (mapped.length) {
+  if (mapped.length && source.kind === 'local') {
+    for (const filePath of mapped) {
+      const entry = path.join(source.repo, filePath)
+      if (existsSync(entry) && statSync(entry).isDirectory()) {
+        const inside = readdirSync(entry, { recursive: true }) as string[]
+        const blobs = inside.filter((relative) => statSync(path.join(entry, relative)).isFile())
+        files.push({ path: filePath, status: 200, hash: null, bytes: blobs.length })
+        continue
+      }
+      if (!existsSync(entry)) {
+        files.push({ path: filePath, status: 404, hash: null, bytes: 0 })
+        continue
+      }
+      const text = readFileSync(entry)
+      files.push({
+        path: filePath,
+        status: 200,
+        hash: createHash('sha256').update(text).digest('hex').slice(0, 16),
+        bytes: text.byteLength
+      })
+    }
+  } else if (mapped.length) {
     const ref = fresh.commit ?? fresh.release ?? 'HEAD'
     for (const filePath of mapped) {
       // A mapping is either a file or a whole skill directory, and a directory answers 404 to a
@@ -1329,7 +1415,42 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
   const mapped = source ? sourceSkills(source.id) : []
   const staged: string[] = []
   const replaced: Array<{ name: string; path: string; files: number }> = []
-  if (source && mapped.length) {
+  if (source && mapped.length && source.kind === 'local') {
+    // A checkout on this machine needs no fetch: the files are already there, and git has already
+    // told us which commit they belong to.
+    const root = path.join(DATA_DIR, 'staging', `${source.id}-${(plan.commit ?? 'local').slice(0, 12)}`)
+    for (const filePath of mapped) {
+      const entry = path.join(source.repo, filePath)
+      if (!existsSync(entry)) continue
+      const target = path.join(root, filePath.replace(/^\/+/, ''))
+      mkdirSync(path.dirname(target), { recursive: true })
+      cpSync(entry, target, { recursive: true })
+      if (statSync(entry).isDirectory()) {
+        const inside = readdirSync(entry, { recursive: true }) as string[]
+        for (const relative of inside) staged.push(path.join(target, relative))
+      } else {
+        staged.push(target)
+      }
+    }
+    addJournal('source-fetch', { repo: source.repo, ref: plan.commit, staged, kind: 'local' })
+
+    if (body.replace === true) {
+      for (const skillPath of mapped) {
+        const entry = path.join(source.repo, skillPath.replace(/\/+$/, ''))
+        if (!existsSync(entry) || !statSync(entry).isDirectory()) continue
+        const name = path.basename(entry)
+        const target = path.join(LIBRARY_DIR, name)
+        if (existsSync(target)) unplace(target, TRASH_DIR)
+        cpSync(entry, target, { recursive: true })
+        const files = (readdirSync(target, { recursive: true }) as string[]).filter((relative) =>
+          statSync(path.join(target, relative)).isFile()
+        )
+        parseAndIndexPackage(target, name)
+        replaced.push({ name, path: target, files: files.length })
+      }
+      addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, kind: 'local' })
+    }
+  } else if (source && mapped.length) {
     const ref = plan.commit ?? plan.release ?? 'HEAD'
     const root = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'staging', `${source.id}-${ref.slice(0, 12)}`)
     for (const filePath of mapped) {
@@ -1690,6 +1811,13 @@ function workspaceSkillDirs(workspacePath: string): string[] {
     }
   }
   return found
+}
+
+/** Indexes a package the app wrote itself; the library is not a scanned root. */
+function parseAndIndexPackage(dir: string, name: string): void {
+  const record = parseSkill(dir, LIBRARY_DIR, 'library')
+  if (record) saveOne(LIBRARY_DIR, 'library', record)
+  else console.error('wrote a package that does not parse:', name, dir)
 }
 
 app.post('/api/workspaces/:id/promote', async (request, reply) => {

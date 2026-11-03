@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Versioning from './Monitor'
+import { SourcesDialog } from './Sources'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
 import { DraftEditor, DraftList, type DraftRow } from './Write'
 import {
@@ -716,6 +717,7 @@ export default function App() {
   const [copiedCode, setCopiedCode] = useState('')
   const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<{ id: number; name: string; path: string } | null>(null)
   const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
   const [planGroup, setPlanGroup] = useState<ConsolidateGroupView | null>(null)
@@ -1854,6 +1856,9 @@ export default function App() {
           <button className="mb-item" onClick={() => setMonitorOpen(true)}>
             Versioning
           </button>
+          <button className="mb-item" onClick={() => setSourcesOpen(true)}>
+            Sources
+          </button>
         </div>
         <div className="searchwrap">
           <input
@@ -1922,6 +1927,7 @@ export default function App() {
       </div>
 
       {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
+      {sourcesOpen && <SourcesDialog onClose={() => setSourcesOpen(false)} />}
       {moveTarget && <MoveDialog skill={moveTarget} onClose={() => setMoveTarget(null)} />}
       {improveTarget && <ImproveDialog skill={improveTarget} onClose={() => setImproveTarget(null)} />}
       {planGroup && (

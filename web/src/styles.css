@@ -4910,3 +4910,105 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .wsdclose {
   align-self: flex-start;
 }
+
+/* Sources: repositories and checkouts the library learns from. */
+.sourcesdlg {
+  position: fixed;
+  inset: 6vh 8vw;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  overflow-y: auto;
+  background: rgb(16, 18, 21);
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.sdhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sdadd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sdadd input,
+.sdmap input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: rgb(214, 217, 222);
+  background: rgb(20, 22, 26);
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 7px;
+  outline: none;
+}
+
+.sdcard,
+.sdplan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgb(40, 44, 50);
+  border-radius: 10px;
+}
+
+.sdrowtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sdname {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: rgb(224, 227, 232);
+}
+
+.sdmeta {
+  font-size: 11px;
+  color: rgb(140, 144, 152);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.sdactions,
+.sdmap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sdchange {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+}
+
+.sdbytes {
+  color: rgb(130, 134, 142);
+  font-size: 11px;
+}
+
+.sdevents {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(36, 40, 46);
+}

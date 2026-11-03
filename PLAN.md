@@ -116,6 +116,10 @@ The write follows every journal entry, debounced, and lands in `DATA_DIR` unless
 
 Exit: a real repo (`mattpocock/skills`) reports a new release and a changed skill separately; a locally edited skill is refused with a diff, not overwritten; an auto-update run can be rolled back to the previous bytes; a fresh machine reproduces the same package hashes and placements from the lock alone.
 
+Built so far: **GitHub repositories and local git checkouts**, with a screen (top menu → Sources) that checks, maps, plans, stages and replaces. The `sources` table carries a `kind`, and a local checkout is read through git and from disk instead of the GitHub API. `bash scripts/sources-check.sh` runs 25 checks against a real temporary repository. Specification and limits: `docs/sources.md`.
+
+Still open in this phase: skills.sh entries and direct URL/zip sources, per-source scheduling, and the local-edit guard on apply.
+
 ### P4 — Providers and curation (7 days)
 
 Port the provider layer, settings UI with key and OAuth sign-in, model catalogue fetch, cost display. Then the deterministic curation pass, then the LLM consolidation pass with dry-run reports and approval.

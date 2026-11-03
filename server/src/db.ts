@@ -973,9 +973,17 @@ export function deleteWorkspace(id: number): boolean {
   return Number(info.changes) > 0
 }
 
+/**
+ * A source is where skills come from. `github` names an `owner/name` repository and is read over the
+ * API; `local` names a checkout on this machine and is read from disk. The column holds both: for a
+ * local source it is the absolute path.
+ */
+export type SourceKind = 'github' | 'local'
+
 export interface SourceRow {
   id: number
   repo: string
+  kind: SourceKind
   added_at: string
   last_commit: string | null
   last_release: string | null
@@ -988,6 +996,7 @@ function ensureSources(): void {
       `CREATE TABLE IF NOT EXISTS sources (
          id INTEGER PRIMARY KEY AUTOINCREMENT,
          repo TEXT NOT NULL UNIQUE,
+         kind TEXT NOT NULL DEFAULT 'github',
          added_at TEXT NOT NULL,
          last_commit TEXT,
          last_release TEXT,
@@ -995,6 +1004,11 @@ function ensureSources(): void {
        )`
     )
     .run()
+  // The table predates the second kind, and a database that already exists needs the column.
+  const columns = getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'kind')) {
+    getDb().prepare("ALTER TABLE sources ADD COLUMN kind TEXT NOT NULL DEFAULT 'github'").run()
+  }
 }
 
 export function listSources(): SourceRow[] {
@@ -1002,11 +1016,14 @@ export function listSources(): SourceRow[] {
   return getDb().prepare('SELECT * FROM sources ORDER BY repo').all() as unknown as SourceRow[]
 }
 
-export function saveSource(repo: string): SourceRow {
+export function saveSource(repo: string, kind: SourceKind = 'github'): SourceRow {
   ensureSources()
   getDb()
-    .prepare('INSERT INTO sources (repo, added_at) VALUES (?, ?) ON CONFLICT(repo) DO NOTHING')
-    .run(repo, new Date().toISOString())
+    .prepare(
+      `INSERT INTO sources (repo, kind, added_at) VALUES (?, ?, ?)
+       ON CONFLICT(repo) DO UPDATE SET kind = excluded.kind`
+    )
+    .run(repo, kind, new Date().toISOString())
   return listSources().find((row) => row.repo === repo)!
 }
 
