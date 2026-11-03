@@ -32,14 +32,38 @@ A plan consumes the delta it measures: it checks the source itself, so asking **
 then **Plan update** shows no commit change — the change was already recorded. That is deliberate;
 the plan is the thing that reports a move.
 
+## The local-edit guard
+
+Every replace records a **baseline**: the hash of each file the source wrote, plus one digest over
+the set. On the next replace the library copy is compared with that baseline.
+
+- Identical — the copy is still what the source left, so the replace proceeds.
+- Different — you edited it here. The request answers **409 `local-edit`** with the package, the file
+  and what happened to it (`edited here`, `added here`, `removed here`), and **nothing is written**.
+  The screen shows the card "The library copy changed here" with **Replace anyway** and **Keep my
+  copy**. The refusal does not spend the plan, so **Replace anyway** works on the same plan.
+- Forced — the bytes are overwritten, then a new baseline is recorded, so the guard is quiet next
+  time.
+
+The guard runs once over every mapped package *before* the first write: a half-replaced set is worse
+than a refusal.
+
+**A package with no baseline is not guarded.** That only affects a library written before baselines
+existed; the first replace records one, and every replace after that is protected. This was observed,
+not assumed: the probe library's `demo-skill` was replaced once without a guard, and the very next
+edit was refused.
+
 ## Proven by
 
-`bash scripts/sources-check.sh` — 25 checks against a real temporary git repository: registration and
+`bash scripts/sources-check.sh` — 34 checks against a real temporary git repository: registration and
 kind, branch, commit and tag read from git, mapping, a plan that reads the folder from disk and
 counts its files, staging that leaves the library alone, a replace that writes the package and its
 support file into the library, the package answering a search afterwards, the `source-replace`
 journal entry, a second commit reported as a change with the previous commit named, the event, the
-plan naming both commits, and both refusals (`that path does not exist`, `not-a-checkout`).
+plan naming both commits, and both refusals (`that path does not exist`, `not-a-checkout`). The last nine cover the guard: an
+edit in the library stops a replace with `local-edit`, the package and the changed file are named, the
+edited copy and its text survive, forcing with the same plan is accepted and writes the upstream text,
+and the following replace is quiet because the forced write became the baseline.
 
 ## Known limits
 

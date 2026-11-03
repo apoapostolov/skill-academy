@@ -47,7 +47,11 @@ import {
   deleteSource,  recordSourceEvent,
   listSourceEvents,
   acknowledgeSourceEvent,  lockRows,  setSourceSkills,
-  sourceSkills,  getDb,  archivedByRoot,
+  sourceSkills,
+  getDb,
+  getSourceBaseline,
+  setSourceBaseline,
+  archivedByRoot,
   allSkillPaths,
   removeByPath,
   saveOne,
@@ -1399,7 +1403,7 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
 
 app.post('/api/sources/:id/apply-update', async (request, reply) => {
   const { id } = request.params as { id: string }
-  const body = (request.body ?? {}) as { planId?: string; confirm?: boolean; replace?: boolean }
+  const body = (request.body ?? {}) as { planId?: string; confirm?: boolean; replace?: boolean; force?: boolean }
   const plan = body.planId ? updatePlans.get(body.planId) : undefined
   if (!plan || plan.sourceId !== Number(id)) {
     reply.code(404)
@@ -1409,10 +1413,33 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
     reply.code(409)
     return { error: 'confirmation-required', plan }
   }
-  updatePlans.delete(body.planId!)
-
   const source = listSources().find((row) => row.id === Number(id))
   const mapped = source ? sourceSkills(source.id) : []
+
+  // One guard pass before anything is written: a half-replaced set is worse than a refusal.
+  if (source && body.replace === true && body.force !== true) {
+    const edited: Array<{ name: string; path: string; changed: Array<{ file: string; state: string }> }> = []
+    for (const skillPath of mapped) {
+      const name = path.basename(skillPath.replace(/\/+$/, ''))
+      if (!name || !skillPath.includes('/')) continue
+      const target = path.join(LIBRARY_DIR, name)
+      if (!existsSync(target)) continue
+      const changed = localEdits(source.id, name, target)
+      if (changed.length) edited.push({ name, path: target, changed })
+    }
+    if (edited.length) {
+      reply.code(409)
+      return {
+        error: 'local-edit',
+        edited,
+        note: 'The library copy changed since the source wrote it. Replacing would overwrite that work.'
+      }
+    }
+  }
+
+  // The plan is spent once work begins, not when it is refused: a refusal must leave a way forward.
+  updatePlans.delete(body.planId!)
+
   const staged: string[] = []
   const replaced: Array<{ name: string; path: string; files: number }> = []
   if (source && mapped.length && source.kind === 'local') {
@@ -1446,6 +1473,8 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
           statSync(path.join(target, relative)).isFile()
         )
         parseAndIndexPackage(target, name)
+        const written = packageFiles(target)
+        setSourceBaseline(source.id, name, packageDigest(written), written)
         replaced.push({ name, path: target, files: files.length })
       }
       addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, kind: 'local' })
@@ -1487,6 +1516,8 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
           mkdirSync(path.dirname(destination), { recursive: true })
           writeFileSync(destination, raw.text)
         }
+        const written = packageFiles(target)
+        setSourceBaseline(source.id, name, packageDigest(written), written)
         replaced.push({ name, path: target, files: files.length })
       }
       addJournal('source-replace', { repo: source.repo, ref, replaced })
@@ -1811,6 +1842,51 @@ function workspaceSkillDirs(workspacePath: string): string[] {
     }
   }
   return found
+}
+
+/** Every file in a package with its hash, keyed by its path inside the package. */
+function packageFiles(dir: string): Record<string, string> {
+  const files: Record<string, string> = {}
+  const walk = (relative: string): void => {
+    const here = relative ? path.join(dir, relative) : dir
+    for (const entry of readdirSync(here, { withFileTypes: true })) {
+      // The import manifest describes the copy, not the skill, and an update rewrites it.
+      if (entry.name === '.skill-academy.json') continue
+      const next = relative ? `${relative}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(next)
+      else files[next] = createHash('sha256').update(readFileSync(path.join(here, entry.name))).digest('hex')
+    }
+  }
+  walk('')
+  return files
+}
+
+function packageDigest(files: Record<string, string>): string {
+  const lines = Object.keys(files)
+    .sort()
+    .map((name) => `${name}\u0000${files[name]}`)
+    .join('\n')
+  return createHash('sha256').update(lines).digest('hex')
+}
+
+/**
+ * What you changed in a library copy since the source last wrote it. Empty means the copy is still
+ * what the source left, so an update can overwrite it without losing anything.
+ */
+function localEdits(sourceId: number, name: string, target: string): Array<{ file: string; state: string }> {
+  const baseline = getSourceBaseline(sourceId, name)
+  if (!baseline || !existsSync(target)) return []
+  const current = packageFiles(target)
+  if (packageDigest(current) === baseline.hash) return []
+  const changed: Array<{ file: string; state: string }> = []
+  for (const file of new Set([...Object.keys(current), ...Object.keys(baseline.files)])) {
+    const now = current[file]
+    const was = baseline.files[file]
+    if (now && !was) changed.push({ file, state: 'added here' })
+    else if (!now && was) changed.push({ file, state: 'removed here' })
+    else if (now !== was) changed.push({ file, state: 'edited here' })
+  }
+  return changed
 }
 
 /** Indexes a package the app wrote itself; the library is not a scanned root. */

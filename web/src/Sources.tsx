@@ -48,6 +48,9 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [mapping, setMapping] = useState<Record<number, string>>({})
   const [plan, setPlan] = useState<{ sourceId: number; plan: Plan } | null>(null)
+  const [conflict, setConflict] = useState<{
+    edited: Array<{ name: string; path: string; changed: Array<{ file: string; state: string }> }>
+  } | null>(null)
 
   const load = async (): Promise<void> => {
     const [sourceResponse, eventResponse] = await Promise.all([fetch('/api/sources'), fetch('/api/sources/events')])
@@ -138,7 +141,7 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const apply = async (replace: boolean): Promise<void> => {
+  const apply = async (replace: boolean, force = false): Promise<void> => {
     if (!plan) return
     setBusy(true)
     setNote('')
@@ -146,15 +149,28 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
       const response = await fetch(`/api/sources/${plan.sourceId}/apply-update`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ planId: plan.plan.planId, confirm: true, replace })
+        body: JSON.stringify({ planId: plan.plan.planId, confirm: true, replace, force })
       })
-      const data = (await response.json()) as { staged?: string[]; replaced?: unknown[]; error?: string }
+      const data = (await response.json()) as {
+        staged?: string[]
+        replaced?: unknown[]
+        error?: string
+        edited?: Array<{ name: string; path: string; changed: Array<{ file: string; state: string }> }>
+      }
+      if (data.error === 'local-edit') {
+        setConflict({ edited: data.edited ?? [] })
+        setNote('')
+        return
+      }
       setNote(
         data.error
           ? data.error
           : `${data.staged?.length ?? 0} file(s) staged${replace ? `, ${data.replaced?.length ?? 0} package(s) replaced` : ''}`
       )
-      if (replace) setPlan(null)
+      if (replace) {
+        setPlan(null)
+        setConflict(null)
+      }
       await load()
     } finally {
       setBusy(false)
@@ -215,6 +231,30 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       {note && <div className="draftstatus">{note}</div>}
+
+      {conflict && (
+        <div className="sdconflict">
+          <div className="mergetitle">The library copy changed here</div>
+          <div className="mergesub">
+            These files are not what the source left behind. Replacing now would overwrite that work, so it is refused until
+            you say otherwise.
+          </div>
+          {conflict.edited.map((entry) => (
+            <div className="sdconflictrow" key={entry.name}>
+              <span className="sdname">{entry.name}</span>
+              <span className="sdbytes">{entry.changed.map((change) => `${change.file} ${change.state}`).join(' · ')}</span>
+            </div>
+          ))}
+          <div className="sdactions">
+            <button className="mergeapply" disabled={busy} onClick={() => void apply(true, true)}>
+              Replace anyway
+            </button>
+            <button className="ghost small" onClick={() => setConflict(null)}>
+              Keep my copy
+            </button>
+          </div>
+        </div>
+      )}
 
       {sources.length === 0 && <div className="empty">No sources yet.</div>}
 

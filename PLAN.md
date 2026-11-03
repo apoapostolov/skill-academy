@@ -118,7 +118,9 @@ Exit: a real repo (`mattpocock/skills`) reports a new release and a changed skil
 
 Built so far: **GitHub repositories and local git checkouts**, with a screen (top menu → Sources) that checks, maps, plans, stages and replaces. The `sources` table carries a `kind`, and a local checkout is read through git and from disk instead of the GitHub API. `bash scripts/sources-check.sh` runs 25 checks against a real temporary repository. Specification and limits: `docs/sources.md`.
 
-Still open in this phase: skills.sh entries and direct URL/zip sources, per-source scheduling, and the local-edit guard on apply.
+The **local-edit guard** is built: a replace compares the library copy with the baseline the source last wrote, refuses with 409 `local-edit` naming each changed file, and yields only to an explicit `force` — which becomes the new baseline. `docs/sources.md` has the detail.
+
+Still open in this phase: skills.sh entries and direct URL/zip sources, and per-source scheduling.
 
 ### P4 — Providers and curation (7 days)
 

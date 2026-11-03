@@ -1037,7 +1037,59 @@ export function recordSourceCheck(repo: string, commit: string | null, release: 
 export function deleteSource(id: number): boolean {
   ensureSources()
   const info = getDb().prepare('DELETE FROM sources WHERE id = ?').run(id)
+  ensureSourceBaselines()
+  getDb().prepare('DELETE FROM source_baselines WHERE source_id = ?').run(id)
   return Number(info.changes) > 0
+}
+
+/**
+ * A baseline is the package as the source last wrote it. Without one there is no way to tell an
+ * edit you made here from an update upstream, and replacing would quietly throw your work away.
+ */
+export interface SourceBaseline {
+  source_id: number
+  name: string
+  hash: string
+  files: string
+  at: string
+}
+
+function ensureSourceBaselines(): void {
+  getDb()
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS source_baselines (
+         source_id INTEGER NOT NULL,
+         name TEXT NOT NULL,
+         hash TEXT NOT NULL,
+         files TEXT NOT NULL,
+         at TEXT NOT NULL,
+         PRIMARY KEY (source_id, name)
+       )`
+    )
+    .run()
+}
+
+export function setSourceBaseline(sourceId: number, name: string, hash: string, files: Record<string, string>): void {
+  ensureSourceBaselines()
+  getDb()
+    .prepare(
+      `INSERT INTO source_baselines (source_id, name, hash, files, at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(source_id, name) DO UPDATE SET hash = excluded.hash, files = excluded.files, at = excluded.at`
+    )
+    .run(sourceId, name, hash, JSON.stringify(files), new Date().toISOString())
+}
+
+export function getSourceBaseline(sourceId: number, name: string): { hash: string; files: Record<string, string> } | null {
+  ensureSourceBaselines()
+  const row = getDb()
+    .prepare('SELECT hash, files FROM source_baselines WHERE source_id = ? AND name = ?')
+    .get(sourceId, name) as { hash: string; files: string } | undefined
+  if (!row) return null
+  try {
+    return { hash: row.hash, files: JSON.parse(row.files) as Record<string, string> }
+  } catch {
+    return { hash: row.hash, files: {} }
+  }
 }
 
 export interface SourceEvent {

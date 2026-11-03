@@ -134,6 +134,42 @@ status, after = call('POST', f'/api/sources/{sid}/check', {})
 check('a check after the plan reports no further change', after.get('changed') is False and after.get('commit') == new_head,
       str(after)[:150])
 
+# An edit made in the library must stop an update, name the file, and yield only when forced.
+(repo / 'skills' / 'from-checkout' / 'SKILL.md').write_text(
+    (repo / 'skills' / 'from-checkout' / 'SKILL.md').read_text(encoding='utf-8') + '\n- A third rule, upstream.\n',
+    encoding='utf-8')
+git('add', '-A')
+git('commit', '-qm', 'third')
+
+library_file = library / 'from-checkout' / 'SKILL.md'
+library_file.write_text(library_file.read_text(encoding='utf-8') + '\n- A local note that must not be lost.\n',
+                        encoding='utf-8')
+
+status, guarded_plan = call('POST', f'/api/sources/{sid}/plan-update', {})
+status, guarded = call('POST', f'/api/sources/{sid}/apply-update',
+                       {'planId': guarded_plan.get('planId'), 'confirm': True, 'replace': True})
+check('an edited library copy stops the update', status == 409 and guarded.get('error') == 'local-edit', str(guarded)[:160])
+edited = (guarded.get('edited') or [{}])[0]
+check('the refusal names the package', edited.get('name') == 'from-checkout', str(edited)[:120])
+check('the refusal names the file that changed', any(
+    entry.get('file') == 'SKILL.md' and entry.get('state') == 'edited here' for entry in edited.get('changed') or []),
+    str(edited.get('changed'))[:160])
+check('the edited copy is still there', 'must not be lost' in library_file.read_text(encoding='utf-8'))
+check('the source files were not written over it', 'A third rule, upstream' not in library_file.read_text(encoding='utf-8'))
+
+status, forced = call('POST', f'/api/sources/{sid}/apply-update',
+                      {'planId': guarded_plan.get('planId'), 'confirm': True, 'replace': True, 'force': True})
+check('forcing with the same plan is accepted, so a refusal keeps the plan', status == 200 and forced.get('applied') is True,
+      str(forced)[:160])
+check('forcing writes the upstream text', 'A third rule, upstream' in library_file.read_text(encoding='utf-8'))
+check('forcing is what discards the local note', 'must not be lost' not in library_file.read_text(encoding='utf-8'))
+# The forced write became the new baseline, so the same package updates again without a refusal.
+status, quiet_plan = call('POST', f'/api/sources/{sid}/plan-update', {})
+status, quiet = call('POST', f'/api/sources/{sid}/apply-update',
+                     {'planId': quiet_plan.get('planId'), 'confirm': True, 'replace': True})
+check('the guard clears once the source rewrote the package', status == 200 and quiet.get('applied') is True,
+      str(quiet)[:160])
+
 status, refused = call('POST', '/api/sources', {'path': str(data / 'not-a-repo')})
 check('a folder that is not a checkout is refused', status == 400 and refused.get('error') in ('that path does not exist', 'not-a-checkout'), str(refused)[:140])
 
