@@ -181,6 +181,39 @@ status, listing = call('GET', '/api/skills?limit=500')
 names = {row.get('name') for row in (listing.get('rows') or [])}
 check('the drafts are not skills in the library', 'release-notes' not in names, str(sorted(names))[:160])
 
+# 8. tags live in the draft's frontmatter, and the rest of the block survives the edit.
+status, tagged = call('PATCH', f'/api/drafts/{draft_id}/tags', {'tags': ['writing', 'release-notes', 'Writing']})
+tagged_text = (tagged.get('draft') or {}).get('text') or ''
+check('tags are written into the frontmatter', 'tags: [writing, release-notes]' in tagged_text, tagged_text.split('---')[1][:120] if tagged_text.count('---') >= 2 else tagged_text[:120])
+check('the tag list is deduplicated', 'Writing' not in tagged_text.split('---')[1] if tagged_text.count('---') >= 2 else False)
+check('the name and description survive the edit',
+      'name:' in tagged_text.split('---')[1] and 'description:' in tagged_text.split('---')[1],
+      tagged_text.split('---')[1][:120] if tagged_text.count('---') >= 2 else '')
+check('tags sit under the description', tagged_text.split('---')[1].strip().splitlines()[-1].startswith('tags:'),
+      str(tagged_text.split('---')[1].strip().splitlines())[:140])
+
+status, cleared = call('PATCH', f'/api/drafts/{draft_id}/tags', {'tags': []})
+check('an empty list leaves an empty tags line', 'tags: []' in ((cleared.get('draft') or {}).get('text') or ''),
+      str((cleared.get('draft') or {}).get('text'))[:80].replace(chr(10), ' '))
+
+status, bad_tags = call('PATCH', f'/api/drafts/{draft_id}/tags', {'tags': 'writing'})
+check('a tag list that is not a list is refused', status == 400, str(bad_tags)[:100])
+
+status, no_draft = call('PATCH', '/api/drafts/no-such-draft/tags', {'tags': ['x']})
+check('tags on a draft that is not there answer 404', status == 404, str(no_draft)[:100])
+
+# 9. deleting a draft moves its folder to the trash instead of unlinking it.
+status, deleted = call('DELETE', f'/api/drafts/{empty_id}', {})
+check('a draft can be deleted', status == 200 and deleted.get('deleted') == empty_id, str(deleted)[:140])
+moved = deleted.get('movedTo') or ''
+check('the folder is moved, not unlinked', bool(moved) and pathlib.Path(moved).exists(), moved)
+status, listing_after = call('GET', '/api/drafts')
+check('the deleted draft is gone from the list',
+      empty_id not in {row.get('id') for row in (listing_after.get('drafts') or [])},
+      str(sorted(row.get('id') for row in (listing_after.get('drafts') or [])))[:160])
+status, twice = call('DELETE', f'/api/drafts/{empty_id}', {})
+check('deleting it twice answers 404', status == 404, str(twice)[:100])
+
 print('')
 print('authoring checks:', 'all passed' if not failures else f'{len(failures)} failed: {failures}')
 sys.exit(1 if failures else 0)

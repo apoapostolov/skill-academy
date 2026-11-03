@@ -76,7 +76,7 @@ and a **Take it** / **Discard** pair. Nothing is written until the author takes 
 
 ## Proven by
 
-`bash scripts/authoring-check.sh` runs 23 checks in a temporary data directory and a temporary agent
+`bash scripts/authoring-check.sh` runs 34 checks in a temporary data directory and a temporary agent
 root, with the model supplied so the run costs nothing:
 
 - a sentence becomes a draft, and that draft validates clean;
@@ -87,10 +87,25 @@ root, with the model supplied so the run costs nothing:
   restores;
 - a draft with no description is refused at save;
 - an improvement returns a proposal and a diff without writing;
-- drafts never appear as library skills.
+- drafts never appear as library skills;
+- tags are written into the frontmatter and the rest of the block survives;
+- deleting a draft moves its folder rather than unlinking it, and a second delete answers 404.
+
+## Tags
+
+The editor head carries the draft's tags as chips. A chip's `×` removes it, typing in the dashed field
+adds one on Enter, and Backspace on an empty field takes the last one off. Every change goes to
+`PATCH /api/drafts/:id/tags`, which rewrites the `tags:` line **in the draft's own frontmatter** and
+leaves every other line exactly as it was: a tag that lived in a sidecar would vanish the moment the
+draft became a skill. Tags are trimmed, lower-cased, de-duplicated and capped at 24. A draft with no
+frontmatter gains one, and an empty list leaves `tags: []` rather than removing the line.
+
+## Deleting a draft
+
+The `×` on a draft row asks twice, on the same four-second lapse as every other destructive control.
+`DELETE /api/drafts/:id` moves the draft's folder to `DATA_DIR/trash/drafts/<id>-<stamp>` and
+journals `draft-delete` with where it went; nothing is unlinked. A second delete answers **404**.
 
 ## Not built
 
-- Tag *editing* is done in the frontmatter itself; there is no chip editor yet, and the sidebar tag
-  filter is the existing facet list.
-- A draft cannot be deleted from the screen yet; the file goes when its folder is removed.
+- The sidebar tag filter is the existing facet list; the chip editor does not add a new filter.

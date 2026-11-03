@@ -180,8 +180,9 @@ the CodeMirror 6 editor with its toolbar, outline, preview, validation panel, so
 dialog). `bash scripts/authoring-check.sh` runs 23 checks, all five exit conditions among them.
 Specification and limits: `docs/authoring.md`.
 
-Two parts of the paragraph above are not built and are recorded there: there is no tag chip editor
-(tags are edited in the frontmatter) and a draft cannot be deleted from the screen yet.
+Both parts that were missing are built: the tag chip editor writes the `tags:` line in the draft's
+frontmatter (`PATCH /api/drafts/:id/tags`), and a draft can be deleted from the screen, which moves
+its folder into the app's trash rather than unlinking it. `scripts/authoring-check.sh` runs 34 checks.
 
 ### P7 — Cloud sync (5 days)
 

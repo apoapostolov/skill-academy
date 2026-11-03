@@ -2775,6 +2775,10 @@ export default function App() {
               onOpen={(id) => setActiveDraft(id)}
               onNew={() => void newDraft()}
               onGenerate={(intent) => void newDraft(intent)}
+              onDeleted={(id) => {
+                if (activeDraft === id) setActiveDraft(null)
+                void loadDrafts()
+              }}
             />
           )}
           {scope.kind !== 'trash' && scope.kind !== 'drafts' && scope.kind !== 'workspace' && skills.map((skill) => (

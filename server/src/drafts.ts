@@ -478,3 +478,71 @@ export function undoDraftSave(journalId: number, snapshot: string | null, target
 export function draftDirectory(id: string): string | null {
   return readMeta(id) ? dirOf(id) : null
 }
+
+/**
+ * Deletes a draft by moving its folder into the app's own trash. A draft never reached a library, so
+ * this is not an archive, but nothing is unlinked either: the folder is still on disk under a stamp.
+ */
+export function deleteDraft(id: string): { ok: boolean; movedTo?: string; reason?: string } {
+  const meta = readMeta(id)
+  if (!meta) return { ok: false, reason: 'not-found' }
+  const from = dirOf(id)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const to = path.join(DATA_DIR, 'trash', 'drafts', `${path.basename(from)}-${stamp}`)
+  try {
+    fs.mkdirSync(path.dirname(to), { recursive: true })
+    fs.renameSync(from, to)
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message }
+  }
+  addJournal('draft-delete', { id, name: meta.name, movedTo: to })
+  return { ok: true, movedTo: to }
+}
+
+/**
+ * Writes the tag list into the draft's frontmatter, leaving every other line exactly as it was.
+ *
+ * The tags live in the file, not beside it: a saved skill's frontmatter is what an agent reads, so a
+ * tag that only existed in a sidecar would disappear the moment the draft became a skill.
+ */
+export function writeDraftTags(id: string, tags: string[]): DraftView | { error: string } {
+  const meta = readMeta(id)
+  if (!meta) return { error: 'not-found' }
+  const clean = Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.trim().toLowerCase().replace(/[,\n#]/g, ''))
+        .filter((tag) => tag.length > 0 && tag.length <= 40)
+    )
+  ).slice(0, 24)
+  const text = readText(id)
+  const withTags = applyTags(text, clean)
+  fs.writeFileSync(skillPath(id), withTags, 'utf8')
+  meta.updated = new Date().toISOString()
+  writeMeta(meta)
+  return { meta, text: withTags, validation: validateDraft(withTags, { dir: dirOf(id) }), links: countLinks(dirOf(id)), savedTo: meta.savedTo ?? null }
+}
+
+/** The frontmatter edit behind `writeDraftTags`, kept separate so it can be tested on text alone. */
+export function applyTags(text: string, tags: string[]): string {
+  const line = tags.length ? `tags: [${tags.join(', ')}]` : 'tags: []'
+  if (!text.startsWith('---')) {
+    // A draft with no frontmatter gains one: tags have nowhere else to live.
+    return `---\n${line}\n---\n\n${text}`
+  }
+  const end = text.indexOf('\n---', 3)
+  if (end === -1) return `---\n${line}\n${text.slice(3)}`
+  const block = text.slice(3, end)
+  const lines = block.split(/\r?\n/)
+  const at = lines.findIndex((candidate) => /^tags\s*:/.test(candidate))
+  if (at >= 0) lines[at] = line
+  else {
+    // Keep `name` and `description` first: they are what every reader looks for.
+    const lastNamed = Math.max(
+      lines.findIndex((candidate) => /^name\s*:/.test(candidate)),
+      lines.findIndex((candidate) => /^description\s*:/.test(candidate))
+    )
+    lines.splice(lastNamed + 1 > 0 ? lastNamed + 1 : lines.length, 0, line)
+  }
+  return `---${lines.join('\n')}${text.slice(end)}`
+}

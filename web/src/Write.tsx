@@ -97,15 +97,33 @@ export function DraftList({
   activeId,
   onOpen,
   onNew,
-  onGenerate
+  onGenerate,
+  onDeleted
 }: {
   drafts: DraftRow[]
   activeId: string | null
   onOpen: (id: string) => void
   onNew: () => void
   onGenerate: (intent: string) => void
+  onDeleted: (id: string) => void
 }) {
   const [intent, setIntent] = useState('')
+  // Deleting a draft asks twice, on the same four-second lapse every other destructive control uses.
+  const [arming, setArming] = useState<string | null>(null)
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const removeDraft = async (id: string): Promise<void> => {
+    if (arming !== id) {
+      setArming(id)
+      if (armTimer.current) clearTimeout(armTimer.current)
+      armTimer.current = setTimeout(() => setArming(null), 4000)
+      return
+    }
+    if (armTimer.current) clearTimeout(armTimer.current)
+    setArming(null)
+    await fetch(`/api/drafts/${id}`, { method: 'DELETE' })
+    onDeleted(id)
+  }
   return (
     <div className="draftlist">
       <div className="draftnew">
@@ -131,16 +149,22 @@ export function DraftList({
         </button>
       </div>
       {drafts.map((draft) => (
-        <button
-          key={draft.id}
-          className={`draftrow ${activeId === draft.id ? 'selected' : ''}`}
-          onClick={() => onOpen(draft.id)}
-        >
-          <span className="draftname">{draft.name}</span>
-          <span className="draftmeta">
-            {draft.clean ? 'valid' : 'needs work'} · {draft.chars} chars · {draft.links} source{draft.links === 1 ? '' : 's'}
-          </span>
-        </button>
+        <div key={draft.id} className={`draftrow ${activeId === draft.id ? 'selected' : ''}`}>
+          <button className="draftopen" onClick={() => onOpen(draft.id)}>
+            <span className="draftname">{draft.name}</span>
+            <span className="draftmeta">
+              {draft.clean ? 'valid' : 'needs work'} · {draft.chars} chars · {draft.links} source{draft.links === 1 ? '' : 's'}
+            </span>
+          </button>
+          <button
+            className={`draftdel ${arming === draft.id ? 'armed' : ''}`}
+            title={arming === draft.id ? 'Press again to delete' : 'Delete this draft'}
+            aria-label={arming === draft.id ? `Confirm deleting ${draft.name}` : `Delete ${draft.name}`}
+            onClick={() => void removeDraft(draft.id)}
+          >
+            {arming === draft.id ? 'Delete?' : '×'}
+          </button>
+        </div>
       ))}
       {!drafts.length && <div className="empty trashempty">No drafts yet. Describe a skill above, or start empty.</div>}
     </div>
@@ -171,13 +195,46 @@ export function DraftEditor({
   const [linkRepo, setLinkRepo] = useState('')
   const [linkPath, setLinkPath] = useState('')
   const [busy, setBusy] = useState(false)
+  const [tags, setTags] = useState<string[]>([])
+  const [tagDraft, setTagDraft] = useState('')
   const pending = useRef<string | null>(null)
+
+  /** Reads the tag list out of the draft's own frontmatter. */
+  const readTags = (text: string): string[] => {
+    const block = text.startsWith('---') ? text.slice(3, Math.max(3, text.indexOf('\n---', 3))) : ''
+    const line = block.split(/\r?\n/).find((candidate) => /^tags\s*:/.test(candidate))
+    if (!line) return []
+    const raw = line.slice(line.indexOf(':') + 1).trim().replace(/^\[|\]$/g, '')
+    return raw
+      .split(',')
+      .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean)
+  }
+
+  /** Writes the list back into the frontmatter, then shows what the server wrote. */
+  const saveTags = async (next: string[]): Promise<void> => {
+    const response = await fetch(`/api/drafts/${draftId}/tags`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tags: next })
+    })
+    const data = (await response.json()) as { draft?: DraftDetail }
+    if (data.draft) {
+      setTags(readTags(data.draft.text))
+      setDraft(data.draft)
+      if (view.current && view.current.state.doc.toString() !== data.draft.text) {
+        view.current.dispatch({ changes: { from: 0, to: view.current.state.doc.length, insert: data.draft.text } })
+      }
+      setSavedAt(data.draft.meta.updated)
+    }
+  }
 
   const load = async (): Promise<void> => {
     const response = await fetch(`/api/drafts/${draftId}`)
     const data = (await response.json()) as { draft?: DraftDetail }
     if (data.draft) {
       setDraft(data.draft)
+      setTags(readTags(data.draft.text))
       setSavedAt(data.draft.meta.updated)
       if (view.current && view.current.state.doc.toString() !== data.draft.text) {
         view.current.dispatch({ changes: { from: 0, to: view.current.state.doc.length, insert: data.draft.text } })
@@ -375,6 +432,29 @@ export function DraftEditor({
             {draft.meta.origin} draft · {savedAt ? `saved ${new Date(savedAt).toLocaleTimeString()}` : 'not saved'}
             {draft.savedTo ? ` · placed at ${draft.savedTo}` : ''}
           </div>
+        </div>
+        <div className="drafttags" role="group" aria-label="Tags">
+          {tags.map((tag) => (
+            <span className="tagchip" key={tag}>
+              {tag}
+              <button className="tagx" aria-label={`Remove ${tag}`} onClick={() => void saveTags(tags.filter((value) => value !== tag))}>
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            className="taginput"
+            value={tagDraft}
+            placeholder={tags.length ? 'add a tag' : 'no tags'}
+            onChange={(event) => setTagDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && tagDraft.trim()) {
+                void saveTags([...tags, tagDraft])
+                setTagDraft('')
+              }
+              if (event.key === 'Backspace' && !tagDraft && tags.length) void saveTags(tags.slice(0, -1))
+            }}
+          />
         </div>
         <div className="drafttools">
           <button className={`ghost small ${preview ? 'on' : ''}`} onClick={() => setPreview((value) => !value)}>

@@ -156,6 +156,7 @@ import { loadRegistry } from './registry'
 import { scanAll, scanOne } from './scan'
 import {
   createDraft,
+  deleteDraft,
   draftDirectory,
   ensureDrafts,
   generateDraft,
@@ -165,7 +166,8 @@ import {
   saveDraft,
   undoDraftSave,
   validateDraft,
-  writeDraft
+  writeDraft,
+  writeDraftTags
 } from './drafts'
 import { readSkillBody } from './skill'
 import { RootWatcher, type Change } from './watch'
@@ -1950,6 +1952,33 @@ app.post('/api/drafts', async (request, reply) => {
     return { draft: generated.draft, repairs: generated.repairs }
   }
   return { draft: createDraft(body) }
+})
+
+app.delete('/api/drafts/:id', async (request, reply) => {
+  // A draft never reached a library, so this is not an archive, but it is a move: the folder goes to
+  // the app's trash under a stamp, and the journal records where it went.
+  const { id } = request.params as { id: string }
+  const removed = deleteDraft(id)
+  if (!removed.ok) {
+    reply.code(removed.reason === 'not-found' ? 404 : 500)
+    return { error: removed.reason }
+  }
+  return { deleted: id, movedTo: removed.movedTo }
+})
+
+app.patch('/api/drafts/:id/tags', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { tags?: unknown }
+  if (!Array.isArray(body.tags)) {
+    reply.code(400)
+    return { error: 'tags must be a list' }
+  }
+  const updated = writeDraftTags(id, body.tags.map((tag) => String(tag)))
+  if ('error' in updated) {
+    reply.code(404)
+    return { error: updated.error }
+  }
+  return { draft: updated }
 })
 
 app.get('/api/drafts/:id', async (request, reply) => {
