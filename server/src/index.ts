@@ -578,12 +578,29 @@ function lockDocument() {
   const rows = lockRows().map((row) => ({
     name: row.name,
     version: row.version ?? null,
+    // The folder the package is in, and the root it was found under. Both are needed: the first
+    // to find it again, the second to know which agent it arrived from.
+    path: row.path,
     root: row.root_path,
     hash: row.package_hash ?? null,
     category: row.category ?? null,
-    tags: row.tags ? (JSON.parse(row.tags) as string[]) : []
+    tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+    // Where it is switched on. A lock without placements can rebuild a library but not the
+    // arrangement, and the arrangement is what a second machine needs to look like this one.
+    placements: placementsForName(row.name)
   }))
   return { lockVersion: 1, skills: rows }
+}
+
+/** Placements for every row sharing a name: the name is what the lock identifies a skill by. */
+function placementsForName(name: string): Array<{ root: string; mode: string; target: string }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT s.name, p.root_path, p.target_path, p.mode FROM placements p
+       JOIN skills s ON s.id = p.skill_id WHERE s.name = ? ORDER BY p.root_path`
+    )
+    .all(name) as Array<{ root_path: string; target_path: string; mode: string }>
+  return rows.map((row) => ({ root: row.root_path, mode: row.mode, target: row.target_path }))
 }
 
 function lockPath(body?: { path?: string }): string {
@@ -655,6 +672,95 @@ app.post('/api/lock/check', async (request, reply) => {
   const drifted = added.length + removed.length + changed.length
   if (drifted) reply.code(409)
   return { ok: drifted === 0, path: target, added, removed, changed }
+})
+
+/**
+ * Rebuilds an index from a lock file rather than from a scan: the packages are taken to be on disk
+ * already, and each one is verified against the hash the lock recorded.
+ *
+ * This is the second-machine path. It writes only rows the lock names, reports every package whose
+ * bytes disagree with the lock, and refuses to pretend a missing package is installed.
+ */
+app.post('/api/lock/restore', async (request, reply) => {
+  const body = (request.body ?? {}) as { path?: string; apply?: boolean; prune?: boolean }
+  const target = lockPath(body)
+  if (!existsSync(target)) {
+    reply.code(404)
+    return { error: 'no-lockfile', path: target }
+  }
+  const document = JSON.parse(readFileSync(target, 'utf8')) as {
+    lockVersion?: number
+    skills?: Array<{
+      name: string
+      version?: string | null
+      path?: string
+      root: string
+      hash?: string | null
+      category?: string | null
+      tags?: string[]
+      placements?: Array<{ root: string; mode: string; target: string }>
+    }>
+  }
+  const entries = document.skills ?? []
+  const matched: string[] = []
+  const missing: string[] = []
+  const diverged: Array<{ name: string; root: string; expected: string | null; actual: string }> = []
+  let placementsWritten = 0
+
+  for (const entry of entries) {
+    // A lock written before the path was recorded named only the root, and the package is the one
+    // named after the skill inside it.
+    const dir = entry.path ?? path.join(entry.root, entry.name)
+    if (!existsSync(path.join(dir, 'SKILL.md'))) {
+      missing.push(`${entry.name}@${dir}`)
+      continue
+    }
+    // The same read the scan performs, so the hash compared is the hash the lock recorded.
+    const record = parseSkill(dir, path.dirname(dir), 'lock')
+    if (!record) {
+      missing.push(`${entry.name}@${dir}`)
+      continue
+    }
+    if (entry.hash && record.packageHash !== entry.hash) {
+      diverged.push({ name: entry.name, root: dir, expected: entry.hash, actual: record.packageHash })
+      continue
+    }
+    matched.push(`${entry.name}@${dir}`)
+    if (body.apply === true) {
+      saveOne(path.dirname(dir), 'lock', record)
+      for (const placement of entry.placements ?? []) {
+        const skill = getDb().prepare('SELECT id FROM skills WHERE path = ?').get(dir) as { id: number } | undefined
+        if (!skill) continue
+        getDb()
+          .prepare(
+            `INSERT INTO placements (skill_id, root_path, target_path, mode, seen_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(skill_id, root_path) DO UPDATE SET target_path = excluded.target_path, mode = excluded.mode, seen_at = excluded.seen_at`
+          )
+          .run(skill.id, placement.root, placement.target, placement.mode, new Date().toISOString())
+        placementsWritten += 1
+      }
+    }
+  }
+
+  const unlisted = body.prune === true
+    ? (getDb().prepare('SELECT name, path FROM skills').all() as Array<{ name: string; path: string }>).filter(
+        (row) => !entries.some((entry) => entry.root === row.path)
+      )
+    : []
+  for (const row of unlisted) removeByPath(row.path)
+
+  if (missing.length || diverged.length) reply.code(409)
+  return {
+    path: target,
+    lockVersion: document.lockVersion ?? null,
+    skills: entries.length,
+    matched,
+    missing,
+    diverged,
+    placementsWritten,
+    pruned: unlisted.map((row) => row.name),
+    applied: body.apply === true
+  }
 })
 
 app.post('/api/github/key', async (request, reply) => {

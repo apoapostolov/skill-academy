@@ -120,7 +120,9 @@ Built so far: **GitHub repositories and local git checkouts**, with a screen (to
 
 The **local-edit guard** is built: a replace compares the library copy with the baseline the source last wrote, refuses with 409 `local-edit` naming each changed file, and yields only to an explicit `force` — which becomes the new baseline. `docs/sources.md` has the detail.
 
-Still open in this phase: skills.sh entries and direct URL/zip sources, and per-source scheduling.
+Built since: **zip sources** (`kind='zip'`, the archive's bytes are the commit, unpacked per commit and read from its tree), **skills.sh entries** (`kind='skillssh'`, the registry's own audit verdict beside ours), **per-source scheduling** (an interval and a notify/auto mode, with `POST /api/sources/tick`), and **lock reproduction** (`POST /api/lock/restore`, `scripts/lock-check.sh`).
+
+Sources carry a snapshot of everything they overwrite, so an automatic update is reversible; `undoJournal` handles `source-replace`. `scripts/sources-check.sh` runs 67 checks and `scripts/lock-check.sh` 14. Every exit criterion of this phase now has a check behind it except the live-network one, which `scripts/live-source-check.sh` proves by hand.
 
 ### P4 — Providers and curation (7 days)
 

@@ -48,6 +48,38 @@ The catalog endpoints (`/api/v1/skills`, `/api/v1/skills/:source/:skill`, `/api/
 require a Vercel OIDC token, which this app does not have, so the leaderboard cannot be browsed from
 here. `/api/v1/skills/audit/:source/:skill` is public, and the app uses only that.
 
+## A source keeps its own clock
+
+Each source carries an interval and a mode. **Notify** records what a check found and stops there;
+**Auto** also applies it. The interval is stored on the source (`check_every_minutes`, zero for off)
+and a tick every minute checks the sources whose interval has run out.
+
+An automatic update goes through the same two routes the screen calls, so it cannot behave
+differently from a confirmed one: the local-edit guard refuses it exactly as it refuses a person,
+and the refusal is journalled as `source-auto-blocked` with the files that changed. Everything it
+writes is journalled as `source-replace` **with a snapshot of what it overwrote**, so `u` puts the
+previous bytes back — an update that cannot be taken back is not an update.
+
+`POST /api/sources/tick` runs one pass by hand; a harness sets `SKILL_ACADEMY_SCHEDULE=0` and calls
+it, which is how the schedule is tested without waiting a minute.
+
+## Reproducing a library from its lock
+
+`skill-academy.lock.json` records, per skill: name, version, **path** (the package folder), root,
+package hash, category, tags, and its placements (`root`, `mode`, `target`). The path matters:
+without it a lock names a root, not a package, and a second machine cannot find it.
+
+`POST /api/lock/restore { path, apply, prune }` rebuilds an index from that file rather than from a
+scan. It reads each package with the same parser the scan uses, compares the package hash the lock
+recorded, and answers three lists: `matched`, `missing` (no `SKILL.md` there), `diverged` (the bytes
+moved). A missing or diverged package answers **409**; nothing is reported as installed because a
+lock said so.
+
+`bash scripts/lock-check.sh` proves it on two servers sharing one library: the first scans, writes a
+lock and checks it; the second starts with an empty index and a root with nothing in it, restores
+from the lock alone, and is then shown holding the same package hashes and the same placements, with
+a tampered package reported as `diverged` and a deleted one as `missing`.
+
 ## The four steps
 
 1. **Check** records the commit (twelve characters) and the nearest tag for the source. The first
@@ -112,6 +144,9 @@ and the following replace is quiet because the forced write became the baseline.
   changes on every re-upload even when the content is identical. The commit hash is the reliable
   comparison.
 - Only zip is accepted. A `.tar.gz` URL answers with a download error rather than being unpacked.
+- `scripts/live-source-check.sh` reads a real repository (`mattpocock/skills`) against GitHub. It is
+  kept out of the suite because it needs the network and can be rate limited; the last run reported
+  commit `4ae2317ddb22` and release `v1.3.2` as separate signals.
 - A skills.sh entry gives no way to browse the catalog: without a Vercel OIDC token only the audit
   endpoint is readable. Mapping stays typed, and an entry the registry has never indexed shows no
   verdict rather than an assumed one.
