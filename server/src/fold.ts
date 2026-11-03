@@ -1,4 +1,4 @@
-import { cpSync, readFileSync, rmSync } from 'node:fs'
+import fs, { cpSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { bodyOf, consolidateDryRun } from './consolidate'
 import type { Body } from './consolidate'
@@ -61,6 +61,47 @@ function bodyText(dir: string): string {
   const source = readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
   const fm = frontmatterBlock(source)
   return source.slice(fm.length)
+}
+
+/**
+ * A fold that was read must be the fold that is written. The model is not asked twice for the same
+ * key: the clean body it produced is kept, stamped with what the group looked like at that moment,
+ * and reused on apply. A group that changed underneath the reader answers `proposal-stale` rather
+ * than writing a body nobody read.
+ */
+interface Remembered {
+  text: string
+  stamp: string
+  at: string
+}
+
+const remembered = new Map<string, Remembered>()
+
+function stampOf(key: string): string {
+  const run = consolidateDryRun()
+  const group = run.groups.find((entry) => entry.key === key)
+  if (!group) return 'missing'
+  return group.members
+    .map((member) => {
+      try {
+        const stat = fs.statSync(path.join(member.path, 'SKILL.md'))
+        return `${member.path}:${stat.mtimeMs}:${stat.size}`
+      } catch {
+        return `${member.path}:gone`
+      }
+    })
+    .sort()
+    .join('|')
+}
+
+export function rememberedFold(key: string): { text: string; stale: boolean } | null {
+  const held = remembered.get(key)
+  if (!held) return null
+  return { text: held.text, stale: held.stamp !== stampOf(key) }
+}
+
+export function rememberFold(key: string, text: string): void {
+  remembered.set(key, { text, stamp: stampOf(key), at: new Date().toISOString() })
 }
 
 export async function foldGroup(
@@ -155,6 +196,8 @@ export async function foldGroup(
     text
   }
   if (dropped.length) proposal.message = `${dropped.length} line(s) from the sources are missing from the merge`
+  // A clean body is what apply must write, so it is kept against the state the group was in.
+  if (!dropped.length && !supplied) rememberFold(key, text)
   return proposal
 }
 
@@ -174,9 +217,10 @@ export async function applyFold(input: {
   text?: string
 }): Promise<Record<string, unknown>> {
   const { archiveFile, pointerText, writeBody } = await import('./consolidateApply')
-  const proposal = input.text
-    ? await foldGroup(input.key, input.provider, input.model, input.text)
-    : await foldGroup(input.key, input.provider, input.model)
+  // What was read is what gets written: the remembered body, audited again without a model call.
+  const held = input.text ? null : rememberedFold(input.key)
+  if (held?.stale) return { error: 'proposal-stale', detail: { key: input.key, note: 'the group changed after the merge was read' } }
+  const proposal = await foldGroup(input.key, input.provider, input.model, input.text ?? held?.text)
   if ('error' in proposal) return { error: proposal.error, detail: proposal.detail }
   if (proposal.status !== 'clean') {
     return { error: 'lossy-merge', detail: { dropped: proposal.droppedRules.length, sample: proposal.droppedRules.slice(0, 5) } }
