@@ -218,9 +218,11 @@ Rules: no shortcut fires while focus is in a text field or a menu is open; the t
 
 Exit: keyboard-only run of the five main flows; contrast check on every surface; screen reader labels on every control; no layout shift on scan; the key map covers every action that has a button.
 
-Built: the whole map in one handler in `web/src/App.tsx`, the `?` overlay, and `docs/keyboard.md`. Every acting key calls the function its button calls, so the journal and undo are identical; a dialog owns the keyboard; the typing guard is on the focused element; two-stage keys share the buttons' four-second lapse. Verified by driving the running app in a browser: `j/k`, `gg/G`, `/` with the typing guard holding, `Escape`, `?` opening fourteen rows, `v`, `w`, `Space`/`Shift+Space` scrolling the real pane, and `a` arming without removing a row.
+Built: **twelve themes with a contrast gate** — `web/src/themes.ts`, the Appearance picker, `t` to cycle, and `npm run contrast` (`scripts/contrast-check.ts`) which computes WCAG ratios for every theme and fails the build below 7:1 for body text and 4.5:1 for secondary text and marks (`docs/appearance.md`). It caught a real failure: Day's tertiary text read 4.3:1 and was fixed to 4.98:1.
 
-Still open in this phase: the twelve themed accents with a contrast gate, the notification centre, the onboarding pass, and screen reader labels on every remaining control.
+The whole map in one handler in `web/src/App.tsx`, the `?` overlay, and `docs/keyboard.md`. Every acting key calls the function its button calls, so the journal and undo are identical; a dialog owns the keyboard; the typing guard is on the focused element; two-stage keys share the buttons' four-second lapse. Verified by driving the running app in a browser: `j/k`, `gg/G`, `/` with the typing guard holding, `Escape`, `?` opening fourteen rows, `v`, `w`, `Space`/`Shift+Space` scrolling the real pane, and `a` arming without removing a row.
+
+Still open in this phase: the notification centre, the onboarding pass, and screen reader labels on every remaining control.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 

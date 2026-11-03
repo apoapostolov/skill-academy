@@ -21,7 +21,8 @@
     "typecheck": "npm -w @skill-academy/server run typecheck && npm -w @skill-academy/web run typecheck",
     "seed": "node scripts/seed.mjs",
     "bench:p1": "npx tsx scripts/bench-p1.ts",
-    "fixtures": "bash scripts/fixture-check.sh"
+    "fixtures": "bash scripts/fixture-check.sh",
+    "contrast": "tsx scripts/contrast-check.ts"
   },
   "engines": {
     "node": ">=22.5"

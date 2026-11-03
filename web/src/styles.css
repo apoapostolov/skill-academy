@@ -5198,3 +5198,60 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   border-radius: 4px;
   background: var(--surface, transparent);
 }
+
+/* Appearance: twelve palettes shown as palettes. The card is drawn in its own colours, so a theme
+   cannot look one way in the picker and another way in the app. */
+.appearancedlg {
+  width: 720px;
+  max-height: 76vh;
+  overflow: auto;
+  padding: 18px 20px 20px;
+  background: var(--bg);
+  border: 1px solid var(--sep);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.themecard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  text-align: left;
+  font: inherit;
+  border: 1px solid;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.themecard.on {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.themeswatch {
+  display: flex;
+  height: 26px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.themeswatch span {
+  flex: 1;
+}
+
+.themename {
+  font-size: 12px;
+}
+
+.thememeta {
+  font-size: 10px;
+  font-family: var(--mono);
+}

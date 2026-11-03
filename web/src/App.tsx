@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Versioning from './Monitor'
 import { SourcesDialog } from './Sources'
 import { SyncDialog } from './Sync'
+import { AppearanceDialog } from './Appearance'
+import { THEMES, applyTheme, themeById, type Theme } from './themes'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
 import { DraftEditor, DraftList, type DraftRow } from './Write'
 import {
@@ -721,6 +723,18 @@ export default function App() {
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   const [keysOpen, setKeysOpen] = useState(false)
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [themeId, setThemeId] = useState<string>(() => localStorage.getItem('skill-academy.theme') ?? THEMES[0].id)
+
+  const pickTheme = useCallback((theme: Theme): void => {
+    applyTheme(theme)
+    localStorage.setItem('skill-academy.theme', theme.id)
+    setThemeId(theme.id)
+  }, [])
+
+  useEffect(() => {
+    applyTheme(themeById(themeId))
+  }, [themeId])
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [moveTarget, setMoveTarget] = useState<{ id: number; name: string; path: string } | null>(null)
   const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
@@ -1501,8 +1515,19 @@ export default function App() {
           ;(target as HTMLElement).blur()
           return
         }
+        // Escape closes whatever is on top, in the order a person would expect: a menu first, then the
+        // dialog behind it. A dialog that only some keys can close is a dialog that traps you.
         setRowMenu(null)
         setKeysOpen(false)
+        setAppearanceOpen(false)
+        setSyncOpen(false)
+        setSourcesOpen(false)
+        setMonitorOpen(false)
+        setProvidersOpen(false)
+        setSettingsOpen(false)
+        setReviewOpen(null)
+        setCompareOpen(false)
+        setInstallOpen(false)
         return
       }
       // A dialog owns the keyboard while it is open; Escape has already had its chance above.
@@ -1591,6 +1616,10 @@ export default function App() {
           setError('Press a again to archive.')
           setTimeout(() => setError(null), 4000)
         }
+      } else if (key === 't') {
+        event.preventDefault()
+        const at = THEMES.findIndex((theme) => theme.id === themeId)
+        pickTheme(THEMES[(at + 1) % THEMES.length])
       } else if (key === 'u') {
         event.preventDefault()
         void undoLast()
@@ -1601,7 +1630,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
     // The handler reads current state through these values; a stale closure would act on a skill
     // that is no longer selected.
-  }, [skills, selected, rowMenu, keysOpen, selectMode, checked, query])
+  }, [skills, selected, rowMenu, keysOpen, selectMode, checked, query, themeId, pickTheme])
 
   /** Opens the folder of a skill by its own path, which is what `o` does. */
   async function revealPath(skillPath: string): Promise<void> {
@@ -2052,6 +2081,9 @@ export default function App() {
           <button className="mb-item" onClick={() => setSyncOpen(true)}>
             Sync
           </button>
+          <button className="mb-item" onClick={() => setAppearanceOpen(true)}>
+            Appearance
+          </button>
         </div>
         <div className="searchwrap">
           <input
@@ -2123,6 +2155,9 @@ export default function App() {
       {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
       {sourcesOpen && <SourcesDialog onClose={() => setSourcesOpen(false)} />}
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
+      {appearanceOpen && (
+        <AppearanceDialog current={themeId} onPick={pickTheme} onClose={() => setAppearanceOpen(false)} />
+      )}
       {keysOpen && (
         <div className="modal-backdrop" role="dialog" aria-label="Keyboard map" onClick={() => setKeysOpen(false)}>
           <div className="keysdlg" onClick={(event) => event.stopPropagation()}>
@@ -2148,6 +2183,7 @@ export default function App() {
                 ['Shift+A', 'archive the selection'],
                 ['/', 'focus search'],
                 ['v / w', 'preview or raw / wrap'],
+                ['t', 'next theme'],
                 ['u', 'undo the last entry'],
                 ['?', 'this map'],
                 ['Escape', 'close a menu, clear search']

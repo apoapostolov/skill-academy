@@ -16,16 +16,18 @@ it. `?` shows this map in the app rather than leaving it to be discovered.
 | `Shift+A` | archive the selection |
 | `/` | focus search |
 | `v` / `w` | preview or raw / wrap |
+| `t` | next theme |
 | `u` | undo the last journal entry |
 | `?` | this map |
-| `Escape` | close a menu or the map, clear search and return focus to the list |
+| `Escape` | close a menu, close the dialog on top, clear search and return focus to the list |
 
 ## What the map guarantees
 
 - **No key fires while focus is in a text field.** Typing a `j` into search types a `j`; the guard is
   on the focused element, so a test has to dispatch on `document.activeElement` to prove it.
 - **A dialog owns the keyboard while it is open.** The handler refuses when any `.modal-backdrop` is
-  in the document; `Escape` is the exception and closes it.
+  in the document; `Escape` is the exception and closes whatever is on top — a menu first, then the
+  dialog behind it. A dialog only some keys can close is a dialog that traps you.
 - **A key that acts calls the same function its button calls**, so the journal entry, the undo and the
   snapshot are the same whichever way the action was taken. `u` is the last entry in the journal,
   whatever made it.
@@ -43,9 +45,11 @@ Driven in the running app in a real browser, not read off the source:
 - `j` selects a row, `j` again moves on, `k` returns, `G` reaches the last, `g g` the first;
 - `/` focuses search, and a `j` dispatched **on the focused input** leaves the selection where it was;
 - `Escape` clears the field and returns focus to the body;
-- `?` opens the map (fourteen rows) and `Escape` closes it;
+- `?` opens the map (fifteen rows) and `Escape` closes it;
 - `v` flips raw ↔ preview and back; `w` writes `skill-academy.wrap=1`;
 - `Space` calls `scrollBy({ top: 666 })` on the detail pane and `Shift+Space` calls `{ top: -666 }`,
   with the selection unchanged;
 - `a` once arms the archive, says so, and removes no row — the second press was deliberately never
-  made against the live library.
+  made against the live library;
+- `Escape` closes the Appearance dialog, and `t` then cycles `slate → carbon` with `--accent`
+  following and the choice written to `localStorage`.
