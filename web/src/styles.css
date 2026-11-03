@@ -4343,3 +4343,92 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   font-size: 12px;
   color: rgb(138, 142, 150);
 }
+
+/* Move dialog: roots in two columns, each a card with a switch and a core chip. */
+.mergelist {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-content: start;
+  padding: 10px;
+}
+
+.mergeroot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 9px 10px;
+  border: 1px solid rgb(34, 37, 43);
+  border-radius: 8px;
+  background: rgb(19, 21, 25);
+}
+
+.mergeroot.on {
+  border-color: rgba(127, 163, 199, 0.42);
+  background: rgb(22, 25, 30);
+}
+
+.mergeroot.iscore {
+  border-color: rgba(110, 158, 138, 0.6);
+}
+
+.mergeroothead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mergeroothead .mergerootmeta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mergerootname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergerootpath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergeroot .switch {
+  margin-top: 1px;
+  cursor: pointer;
+}
+
+.mergecoreradio {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-3);
+  border: 1px solid rgb(38, 42, 48);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.mergecoreradio.on {
+  color: rgb(200, 220, 210);
+  border-color: rgba(110, 158, 138, 0.55);
+  background: rgba(110, 158, 138, 0.12);
+}
+
+.mergecoreradio input {
+  margin: 0;
+  width: 11px;
+  height: 11px;
+  accent-color: var(--signal-on, #6e9e8a);
+}
+
+.mergecoreradio:has(input:disabled) {
+  opacity: 0.4;
+  cursor: default;
+}

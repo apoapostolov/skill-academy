@@ -213,13 +213,35 @@ export function MoveDialog({ skill, onClose }: { skill: { id: number; name: stri
 
         <div className="mergelist">
           {roots.map((root) => (
-            <div className={`mergeroot ${checked.has(root.path) ? 'on' : ''}`} key={root.path}>
-              <button className={`pick ${checked.has(root.path) ? 'on' : ''}`} onClick={() => toggle(root.path)} role="checkbox" aria-checked={checked.has(root.path)} />
-              <div className="mergerootmeta">
-                <div className="mergerootname">{label(root)}</div>
-                <div className="mergerootpath">{root.path}</div>
+            <div
+              className={`mergeroot ${checked.has(root.path) ? 'on' : ''} ${core === root.path ? 'iscore' : ''}`}
+              key={root.path}
+            >
+              <div className="mergeroothead">
+                <div className="mergerootmeta">
+                  <div className="mergerootname">{label(root)}</div>
+                  <div className="mergerootpath" title={root.path}>
+                    {root.path}
+                  </div>
+                </div>
+                <span
+                  className={`switch ${checked.has(root.path) ? 'on' : ''}`}
+                  role="switch"
+                  aria-checked={checked.has(root.path)}
+                  tabIndex={0}
+                  title={checked.has(root.path) ? 'This root takes the skill' : 'This root is left alone'}
+                  onClick={() => toggle(root.path)}
+                  onKeyDown={(event) => {
+                    if (event.key === ' ' || event.key === 'Enter') {
+                      event.preventDefault()
+                      toggle(root.path)
+                    }
+                  }}
+                >
+                  <span className="knob" />
+                </span>
               </div>
-              <label className="mergecoreradio" title="The real package lives here">
+              <label className={`mergecoreradio ${core === root.path ? 'on' : ''}`} title="The real package lives here">
                 <input
                   type="radio"
                   name="core-root"
