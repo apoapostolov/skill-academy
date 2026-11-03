@@ -246,11 +246,15 @@ Each exit clause, and what closed it:
 
 What is closed: the whole key map, twelve themes with a contrast gate that caught a real failure, the accessible-name audit (1,137 controls, none unnamed), the notification centre, first run, and reduced motion.
 
-### P9 — Parity: MCP, then CLI (6 days, after v1)
+### P9 — Parity: MCP, then CLI (6 days, after v1) — complete
 
 An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` first, because an agent asking for a skill is the likelier caller; then a thin `ska` CLI over the same local API for scripts and SSH. Deferred because the service is the source of truth and both add reach, not capability.
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
+
+Built: `mcp/server.ts` (stdio MCP, six tools, tool errors that do not drop the session), `cli/api.ts` and `cli/ska.ts` (one HTTP client, exact-name resolution, exit codes 0/1/2), `scripts/parity-check.sh` with **26 checks**. Detail and limits: `docs/parity.md`.
+
+Two defects came out of it. `POST /api/skills/:id/switch` moved the package but never re-indexed, so a second switch in a row acted on a stale path; the route now rescans that root after both moves. And `lock --check` against the live lock can only ever agree, because the service keeps its own lock current after every scan, so CI needs `--file` with a published baseline.
 
 Total: about 75 working days for v1. With the parity pass, 81. P0-P3 is a usable product; linking, authoring, sync and curation are amplifiers, not prerequisites.
 

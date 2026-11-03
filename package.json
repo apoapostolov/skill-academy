@@ -22,9 +22,15 @@
     "seed": "node scripts/seed.mjs",
     "bench:p1": "npx tsx scripts/bench-p1.ts",
     "fixtures": "bash scripts/fixture-check.sh",
-    "contrast": "tsx scripts/contrast-check.ts"
+    "contrast": "tsx scripts/contrast-check.ts",
+    "ska": "tsx cli/ska.ts",
+    "mcp": "tsx mcp/server.ts",
+    "parity": "bash scripts/parity-check.sh"
   },
   "engines": {
     "node": ">=22.5"
+  },
+  "bin": {
+    "ska": "cli/ska.ts"
   }
 }

@@ -2533,6 +2533,9 @@ app.post('/api/skills/:id/switch', async (request, reply) => {
       /* a read-only package still archives, it just restores flat */
     }
     addJournal('platform-archive', { agent: body.agent, from: live, to: parked, relative })
+    // The row still points at the path the package just left: a script that switches the same skill
+    // twice in a row would otherwise act on a stale path.
+    rescanRoot(row.root_path)
     return { on: false, agent: body.agent, movedTo: parked, from: live }
   }
 
@@ -2565,6 +2568,7 @@ app.post('/api/skills/:id/switch', async (request, reply) => {
     /* leaving the manifest behind is harmless */
   }
   addJournal('platform-restore', { agent: body.agent, from: parked, to: live })
+  rescanRoot(row.root_path)
   return { on: true, agent: body.agent, movedTo: live }
 })
 
