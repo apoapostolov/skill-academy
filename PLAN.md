@@ -84,7 +84,7 @@ Fringe cases are settled here so the code has one answer each, rather than a pro
 
 **Recovery.** Restoring a trashed copy whose name is taken offers replace or rename. Replace sends the current occupant to the trash first, so no copy is ever deleted outright. Trash entries record their origin (manual archive, or a source install with `repo@commit`), and a restore that would land with under three days left warns before it starts.
 
-### P3.5 — Versioning monitor (17 days)
+### P3.5 — Versioning monitor (17 days) — complete
 
 Every installed repository gets a monitor view, reachable from the top menu, that answers four questions per installation: is upstream ahead, what exactly changed, has my copy drifted, and what happens if I accept.
 
@@ -93,6 +93,8 @@ Scope: one installation record per installed skill rather than per repository, a
 Full specification, including the data model, the classification table, twenty power-user functions, nineteen edge cases with decided behaviour, and five open decisions: `docs/versioning-monitor.md`.
 
 Seventeen days added rather than absorbed, because a monitor that mostly works teaches the user to trust a blank screen.
+
+Built and verified: `docs/versioning-monitor.md` "Built (P3.5)" lists each part with the check that proves it, and `bash scripts/monitor-check.sh` runs those 31 checks against a real repository in a temporary library.
 
 ### P3 — Sources and updates (11 days)
 

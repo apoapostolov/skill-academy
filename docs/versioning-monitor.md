@@ -244,3 +244,33 @@ Seventeen days added to the plan time rather than absorbed, because a monitor th
 ## 12. Interaction with the rest of the plan
 
 The monitor sits between P3 and P4. It consumes the source registry and the update plan gate, and it produces the provenance data that P4's compare panel and P6's curation both need. Building it before the provider layer means the LLM passes later get a trustworthy "what changed" input instead of reimplementing diffing for a second time.
+
+## Built (P3.5)
+
+Verified end to end against `mattpocock/skills` in a temporary library:
+`bash scripts/monitor-check.sh` → 31 checks.
+
+| Part | Where | Evidence |
+| --- | --- | --- |
+| One record per installation, keyed by repository and path | `installations` | `an installation is recorded` |
+| Per-file baseline as a git blob sha, computed locally | `installation_files`, `gitBlobSha()` | `the baseline names the commit it came from`, `nothing differs at the ref it came from` |
+| Baseline written at install time, before anything can change | `/api/install/apply` | the same two checks |
+| One tree fetch per repository, cached by ETag | `repo_snapshots`, `fetchTree()` | `conditional` count in the check summary |
+| Three diff levels plus local against remote | `/api/monitor/installation/:id/diff` | `a file diff answers with lines`, `a locally edited file diffs against upstream` |
+| Classification: content, silent change, version regression, local drift, conflict, gone upstream, unreachable | `classify()` | `the state is up to date after a clean install`, `the local edit shows as drift` |
+| Update plan with a gate on file count, line count and a major version jump | `planUpdate()` | `a plan can be read`, gate reasons in the plan |
+| A local edit is never discarded without a decision | `applyUpdate()` | `an update refuses to discard a local edit`, `an explicit choice applies the update` |
+| The replaced package is copied to the trash before the write | `trashPackage()` | `the previous copy is in the trash` |
+| Rollback restores the bytes and the baseline they belonged to | `rollbackInstallation()` | `rollback returns the local edit`, `rollback keeps the original baseline` |
+| Pin, channel policy, events with acknowledgement | `/pin`, `/policy`, `/events` | `pin answers`, `policy answers`, `events acknowledge` |
+| Export of the whole record as NDJSON | `/api/monitor/export` | `export answers with ndjson` |
+| Library copies installed before the monitor existed are listed and adoptable | `unrecordedSkills()`, `/api/monitor/adopt` | the "Without a baseline" group in the screen |
+| Check runs as a job with progress, and the source poller runs it | `POST /api/monitor/check`, `startPoller()` | `the check job starts`, `the check finishes` |
+| Auto-update policies refuse local edits, a required gate, a major jump and a silent change | `checkInstallation()` | policy is stored per installation; the refusal path writes an event |
+
+## Deferred, and why
+
+- **Per-repository schedules in the screen.** The poller interval is one environment setting. A per-repo schedule needs a scheduler with persisted windows, which belongs with P3's source scheduling rather than as a second timer.
+- **Notification delivery.** Events are recorded and acknowledged in the app; pushing them to Discord or mail is the same delivery path the sources already use and is not built here.
+- **Baseline import from another machine.** The lockfile carries placements; the monitor's per-file baseline is machine-local. Export produces NDJSON, import is not written yet.
+- **Semver ranking across a channel switch.** Version comparison parses `major.minor.patch`; a calendar-versioned or date-versioned skill is reported as a content change with no regression judgement.

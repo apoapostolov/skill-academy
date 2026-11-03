@@ -5,7 +5,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync
 import { spawn } from 'node:child_process'
 import type { ServerResponse } from 'node:http'
 import Fastify from 'fastify'
-import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, REPO_ROOT, WATCH_ENABLED } from './config'
+import { API_PORT, APP_VERSION, DATA_DIR, DB_PATH, HOST, LIBRARY_DIR, REPO_ROOT, WATCH_ENABLED } from './config'
 import {
   addJournal,
   categoryFacets,
@@ -69,6 +69,35 @@ import {
 } from './oauth'
 import { copyDrift, MANIFEST, place, unplace } from './placement'
 import { applyChange } from './apply'
+import {
+  acknowledgeEvents,
+  recordInstallation as recordMonitorInstallation,
+  applyUpdate,
+  checkInstallation,
+  ensureMonitorTables,
+  exportMonitor,
+  fileDiff,
+  installationById,
+  listEvents,
+  listInstallations,
+  localDrift,
+  monitorOverview,
+  packageDiff,
+  planUpdate,
+  fetchTree,
+  repoMeta,
+  latestRelease,
+  rollbackInstallation,
+  runCheck,
+  setPin,
+  setPolicy,
+  subtree,
+  resolveRef,
+  adoptLibrarySkill,
+  unrecordedSkills,
+  type AutoPolicy,
+  type Channel
+} from './monitor'
 import { readPackage, readPackageFile, readPackageImageData } from './package'
 import { compareVersions, provenanceOf } from './provenance'
 import { deleteKey, getKey, keyStatus, setKey } from './secrets'
@@ -881,8 +910,17 @@ async function pollSources(): Promise<{ checked: number; events: number }> {
 
 function startPoller(): void {
   if (process.env.SKILL_ACADEMY_POLL !== '1' || pollTimer) return
+  // One timer drives both sweeps: source events first, then the versioning monitor, which is the
+  // pass that can act on an auto-update policy.
   pollTimer = setInterval(() => {
-    void pollSources()
+    void (async () => {
+      await pollSources()
+      try {
+        await runCheck({})
+      } catch (error) {
+        console.error('monitor check failed:', (error as Error).message)
+      }
+    })()
   }, pollMinutes() * 60 * 1000)
   pollTimer.unref?.()
 }
@@ -937,7 +975,7 @@ app.post('/api/install/apply', async (request, reply) => {
   const missingRoots = agents.filter((agent) => !roots.some((entry) => entry.agent === agent))
 
   const policy = (readSettings() as { install_replace_policy?: string }).install_replace_policy ?? 'trash'
-  const libraryRoot = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'library')
+  const libraryRoot = LIBRARY_DIR
   mkdirSync(libraryRoot, { recursive: true })
   const ref = body.ref ?? 'HEAD'
   const forceCopy = body.mode === 'copy'
@@ -989,6 +1027,22 @@ app.post('/api/install/apply', async (request, reply) => {
         }
       })
       addJournal('install', { repo, ref, path: skillPath, name, files: files.length, replaced, mode: body.mode ?? 'symlink' })
+      // The baseline is written here, while the bytes are known to be exactly what upstream sent.
+      const placedAgents = roots
+        .filter((entry) => placements.some((row) => row.agent === entry.agent && row.ok))
+        .map((entry) => ({ agent: entry.agent, mode: forceCopy ? 'copy' : 'symlink', targetPath: path.join(entry.root.path, name) }))
+      try {
+        recordMonitorInstallation({
+          repo,
+          remotePath: skillPath,
+          ref: await resolveRef(repo, ref),
+          refKind: 'commit',
+          libraryPath: localDir,
+          agents: placedAgents
+        })
+      } catch (error) {
+        addJournal('monitor-baseline-failed', { repo, skillPath, error: (error as Error).message })
+      }
       results.push({ path: skillPath, installed: true, replaced, placements })
     } catch (error) {
       results.push({ path: skillPath, installed: false, error: (error as Error).message })
@@ -1216,7 +1270,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
     // previous copy is moved to the trash first. Placement links point at the library folder, so
     // they keep working after the bytes underneath them change.
     if (body.replace === true) {
-      const libraryRoot = path.join(process.env.HOME ?? process.cwd(), '.skill-academy', 'library')
+      const libraryRoot = LIBRARY_DIR
       for (const skillPath of mapped) {
         if (!skillPath.includes('/')) continue
         const name = path.basename(skillPath.replace(/\/+$/, ''))
@@ -1885,6 +1939,268 @@ app.post('/api/journal/:id/undo', async (request, reply) => {
     return { error: result.reason }
   }
   return { state: 'undone', action: result.action }
+})
+
+/* ------------------------------ versioning monitor ------------------------------ */
+
+interface CheckJob {
+  id: string
+  startedAt: string
+  finishedAt: string | null
+  status: 'running' | 'done' | 'failed'
+  scope: string
+  checked: number
+  total: number
+  events: number
+  requests: number
+  error?: string
+}
+
+const checkJobs = new Map<string, CheckJob>()
+
+app.post('/api/monitor/check', async (request, reply) => {
+  const body = (request.body ?? {}) as { repo?: string; installationId?: number; all?: boolean }
+  ensureMonitorTables()
+  const rows = listInstallations()
+  const total = body.installationId ? 1 : body.repo ? rows.filter((row) => row.repo === body.repo).length : rows.length
+  if (!total) {
+    reply.code(409)
+    return { error: 'nothing-installed', detail: 'no installation is recorded yet; install a skill first' }
+  }
+  const job: CheckJob = {
+    id: crypto.randomUUID(),
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    status: 'running',
+    scope: body.repo ?? (body.installationId ? 'installation ' + body.installationId : 'all'),
+    checked: 0,
+    total,
+    events: 0,
+    requests: 0
+  }
+  checkJobs.set(job.id, job)
+  void (async () => {
+    try {
+      const summary = await runCheck(body)
+      job.checked = summary.outcomes.length
+      job.events = summary.events
+      job.requests = summary.requests
+      job.status = 'done'
+    } catch (error) {
+      job.status = 'failed'
+      job.error = (error as Error).message
+    } finally {
+      job.finishedAt = new Date().toISOString()
+    }
+  })()
+  reply.code(202)
+  return { job }
+})
+
+app.get('/api/monitor/job/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const job = checkJobs.get(id)
+  if (!job) {
+    reply.code(404)
+    return { error: 'job-not-found' }
+  }
+  return { job }
+})
+
+app.get('/api/monitor', async () => monitorOverview())
+
+app.get('/api/monitor/installation/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const installation = installationById(Number(id))
+  if (!installation) {
+    reply.code(404)
+    return { error: 'installation-not-found' }
+  }
+  return {
+    installation,
+    drift: localDrift(installation),
+    events: listEvents(true).filter((event) => event.installation_id === installation.id)
+  }
+})
+
+app.post('/api/monitor/installation/:id/check', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const installation = installationById(Number(id))
+  if (!installation) {
+    reply.code(404)
+    return { error: 'installation-not-found' }
+  }
+  const outcome = await checkInstallation(installation, { allowCache: false })
+  return { outcome }
+})
+
+/** Tree, package to package and file to file, all three from the one comparison. */
+app.get('/api/monitor/installation/:id/diff', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const query = request.query as { level?: string; path?: string; source?: string }
+  const installation = installationById(Number(id))
+  if (!installation) {
+    reply.code(404)
+    return { error: 'installation-not-found' }
+  }
+  const meta = await repoMeta(installation.repo)
+  if (meta.unreachable) {
+    reply.code(409)
+    return { error: 'unreachable', detail: meta.error }
+  }
+  const release = await latestRelease(installation.repo)
+  const target = installation.pin_ref
+    ? installation.pin_ref
+    : installation.policy_channel === 'head'
+      ? meta.defaultBranch
+      : release.tag ?? meta.defaultBranch
+  const tree = await fetchTree(installation.repo, target, false)
+  if (tree.error) {
+    reply.code(409)
+    return { error: 'tree-unavailable', detail: tree.error }
+  }
+  const remote = subtree(tree.files, installation.remote_path)
+  const diff = packageDiff(installation, remote)
+  if ((query.level ?? 'package') === 'tree') {
+    // The list has to carry the user's own edits as well: upstream changing nothing and the local
+    // copy having been rewritten are both reasons a file needs reading.
+    const drift = localDrift(installation)
+    // A file upstream left alone but the user edited is the one case that matters most, so it is
+    // listed even though it is not an upstream change.
+    const upstreamChanged = new Set(
+      diff.files.filter((file) => file.status !== 'same').map((file) => file.path)
+    )
+    const localRows = [
+      ...drift.localChanged
+        .filter((entry) => !upstreamChanged.has(entry))
+        .map((entry) => ({ path: entry, status: 'local-changed' })),
+      ...drift.localAdded.map((entry) => ({ path: entry, status: 'local-added' })),
+      ...drift.localRemoved.map((entry) => ({ path: entry, status: 'local-removed' }))
+    ]
+    return { level: 'tree', target, treeSha: tree.treeSha, truncated: tree.truncated, files: diff.files, local: localRows }
+  }
+  const requested = query.path ?? ''
+  let wanted = diff.files.find((file) => file.path === requested)
+  if (!wanted) {
+    // A path the user edited, which upstream did not touch, still deserves a line diff.
+    const remoteEntry = remote.find((file) => file.path === requested)
+    const drift = localDrift(installation)
+    const knowsIt =
+      drift.localChanged.includes(requested) || drift.localAdded.includes(requested) || drift.localRemoved.includes(requested)
+    if (!knowsIt) {
+      reply.code(404)
+      return { error: 'file-not-in-comparison', detail: query.path }
+    }
+    wanted = {
+      path: requested,
+      remotePath: remoteEntry?.path ?? null,
+      status: remoteEntry ? 'changed' : drift.localAdded.includes(requested) ? 'added' : 'removed',
+      installedBlob: null,
+      remoteBlob: remoteEntry?.blob ?? null,
+      installedBytes: null,
+      remoteBytes: remoteEntry?.bytes ?? null
+    }
+  }
+  const detail = await fileDiff(installation, wanted, query.source === 'local' ? 'local' : 'remote')
+  return { level: 'file', target, diff: detail }
+})
+
+app.post('/api/monitor/installation/:id/plan', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const plan = await planUpdate(Number(id))
+  if ('error' in plan) {
+    reply.code(plan.error === 'installation-not-found' ? 404 : 409)
+    return plan
+  }
+  return { plan }
+})
+
+app.post('/api/monitor/installation/:id/update', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { planId?: string; choice?: 'refuse' | 'take-upstream'; confirm?: boolean }
+  if (!body.confirm) {
+    reply.code(428)
+    return { error: 'confirmation-required', detail: 'send confirm: true after reading the plan' }
+  }
+  const result = await applyUpdate({ installationId: Number(id), planId: body.planId, choice: body.choice })
+  if ('error' in result) {
+    reply.code(result.error === 'installation-not-found' ? 404 : 409)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/monitor/installation/:id/rollback', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { trashPath?: string }
+  if (!body.trashPath) {
+    reply.code(400)
+    return { error: 'trashPath is required' }
+  }
+  const result = rollbackInstallation(Number(id), body.trashPath)
+  if (!result.restored) {
+    reply.code(409)
+    return { error: result.error }
+  }
+  return result
+})
+
+app.post('/api/monitor/installation/:id/pin', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { ref?: string | null; note?: string }
+  const ok = setPin(Number(id), body.ref ?? null, body.note)
+  if (!ok) {
+    reply.code(404)
+    return { error: 'installation-not-found' }
+  }
+  return { installation: installationById(Number(id)) }
+})
+
+app.post('/api/monitor/installation/:id/policy', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { channel?: Channel; auto?: AutoPolicy }
+  if (!body.channel || !body.auto) {
+    reply.code(400)
+    return { error: 'channel and auto are required' }
+  }
+  const ok = setPolicy(Number(id), body.channel, body.auto)
+  if (!ok) {
+    reply.code(404)
+    return { error: 'installation-not-found' }
+  }
+  return { installation: installationById(Number(id)) }
+})
+
+app.get('/api/monitor/events', async (request) => {
+  const query = request.query as { all?: string }
+  return { events: listEvents(query.all === '1') }
+})
+
+app.post('/api/monitor/events/ack', async (request) => {
+  const body = (request.body ?? {}) as { ids?: number[] }
+  return { acknowledged: acknowledgeEvents(body.ids ?? []) }
+})
+
+app.get('/api/monitor/unrecorded', async () => ({ rows: unrecordedSkills() }))
+
+app.post('/api/monitor/adopt', async (request, reply) => {
+  const body = (request.body ?? {}) as { path?: string; repo?: string; remotePath?: string; ref?: string }
+  if (!body.path) {
+    reply.code(400)
+    return { error: 'path is required' }
+  }
+  const result = adoptLibrarySkill({ path: body.path, repo: body.repo, remotePath: body.remotePath, ref: body.ref })
+  if ('error' in result) {
+    reply.code(result.error === 'not-a-skill' ? 404 : 409)
+    return result
+  }
+  return result
+})
+
+app.get('/api/monitor/export', async (_request, reply) => {
+  reply.header('content-type', 'application/x-ndjson')
+  reply.header('content-disposition', 'attachment; filename="skill-academy.monitor.ndjson"')
+  return exportMonitor()
 })
 
 app.get('/api/settings', async () => ({ settings: readSettings() }))

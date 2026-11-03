@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Versioning from './Monitor'
 import { highlight } from './highlight'
 import { renderMarkdown } from './markdown'
 
@@ -701,6 +702,7 @@ export default function App() {
   const [oauthBusy, setOauthBusy] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState('')
   const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
+  const [monitorOpen, setMonitorOpen] = useState(false)
   const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
   const [improveRule, setImproveRule] = useState('')
   const [consolidateGroups, setConsolidateGroups] = useState<ConsolidateGroupView[]>([])
@@ -1777,6 +1779,9 @@ export default function App() {
           <button className="mb-item" onClick={openProviders}>
             Providers
           </button>
+          <button className="mb-item" onClick={() => setMonitorOpen(true)}>
+            Versioning
+          </button>
         </div>
         <div className="searchwrap">
           <input
@@ -1843,6 +1848,8 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
 
       {reviewOpen === 'improve' && (
         <div className="installscrim" onClick={() => setReviewOpen(null)}>
