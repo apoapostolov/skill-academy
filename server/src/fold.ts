@@ -66,7 +66,9 @@ function bodyText(dir: string): string {
 export async function foldGroup(
   key: string,
   providerId: string,
-  model: string
+  model: string,
+  /** When supplied, this body is audited instead of asking the model again. */
+  supplied?: string
 ): Promise<FoldProposal | { error: string; detail?: unknown }> {
   const run = consolidateDryRun()
   const group = run.groups.find((entry) => entry.key === key)
@@ -119,13 +121,15 @@ export async function foldGroup(
     ...sourceBodies.flatMap((entry) => [`Second copy (${entry.member.name}):`, '', bodyText(entry.body!.dir), ''])
   ].join('\n')
 
-  const result = await chat(provider, { system, user, model, temperature: 0.1, maxTokens: 4000, timeoutMs: 90_000 })
-  if ('kind' in result) {
-    const message = result.kind === 'http' ? `HTTP ${result.status}: ${result.body.slice(0, 200)}` : result.kind === 'no-key' ? 'no key saved' : result.message
+  const generated = supplied
+    ? { text: supplied }
+    : await chat(provider, { system, user, model, temperature: 0.1, maxTokens: 4000, timeoutMs: 90_000 })
+  if ('kind' in generated) {
+    const message = generated.kind === 'http' ? `HTTP ${generated.status}: ${generated.body.slice(0, 200)}` : generated.kind === 'no-key' ? 'no key saved' : generated.message
     return { error: 'provider-failed', detail: { message } }
   }
 
-  const text = result.text.trim().replace(/^```(?:markdown)?\n/, '').replace(/\n```$/, '')
+  const text = generated.text.trim().replace(/^```(?:markdown)?\n/, '').replace(/\n```$/, '')
   if (!text) return { error: 'empty-answer', detail: { model } }
 
   // Audit: nothing from either source may vanish, and anything new is named.
@@ -140,8 +144,8 @@ export async function foldGroup(
     key,
     mode: routerMode ? 'router' : 'merge',
     survivor: survivor.name,
-    model: result.model,
-    ms: result.ms,
+    model,
+    ms: supplied ? 0 : ('ms' in generated ? generated.ms : 0),
     chars: text.length,
     keptRules: sources.length - dropped.length,
     totalRules: sources.length,
@@ -166,9 +170,13 @@ export async function applyFold(input: {
   read: boolean
   confirm: boolean
   dryRun: boolean
+  /** The exact body that was read in the panel. What was read is what gets written. */
+  text?: string
 }): Promise<Record<string, unknown>> {
   const { archiveFile, pointerText, writeBody } = await import('./consolidateApply')
-  const proposal = await foldGroup(input.key, input.provider, input.model)
+  const proposal = input.text
+    ? await foldGroup(input.key, input.provider, input.model, input.text)
+    : await foldGroup(input.key, input.provider, input.model)
   if ('error' in proposal) return { error: proposal.error, detail: proposal.detail }
   if (proposal.status !== 'clean') {
     return { error: 'lossy-merge', detail: { dropped: proposal.droppedRules.length, sample: proposal.droppedRules.slice(0, 5) } }

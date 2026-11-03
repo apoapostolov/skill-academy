@@ -560,6 +560,7 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
     read?: boolean
     confirm?: boolean
     dryRun?: boolean
+    text?: string
   }
   if (!body.key) {
     reply.code(400)
@@ -568,6 +569,7 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
   const settings = readSettings()
   const result = await applyFold({
     key: body.key,
+    text: typeof body.text === 'string' && body.text.trim() ? body.text : undefined,
     provider: body.provider ?? settings.mergeProvider,
     model: body.model ?? settings.mergeModel,
     read: !!body.read,

@@ -962,6 +962,8 @@ export default function App() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         key: fold.key,
+        // The body on screen is the body that gets written and audited, not a fresh sample.
+        text: fold.text,
         read: foldRead,
         confirm: true,
         dryRun: false

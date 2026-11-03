@@ -54,7 +54,26 @@ interface Section {
   text: string
 }
 
-/** Split a body into its h2/h3 sections, keeping the text under each heading verbatim. */
+/**
+ * A rewritten body is a new version of that skill. The skill's own frontmatter carries the number,
+ * so the bump happens there and nowhere else.
+ */
+export function bumpVersion(frontmatter: string): string {
+  const match = frontmatter.match(/^(\s*version:\s*)(["']?)(\d+)\.(\d+)\.(\d+)\2\s*$/m)
+  if (!match) return frontmatter
+  const [, prefix, quote, major, minor, patch] = match
+  const next = `${prefix}${quote}${major}.${minor}.${Number(patch) + 1}${quote}`
+  return frontmatter.slice(0, match.index) + next + frontmatter.slice((match.index ?? 0) + match[0].length)
+}
+
+/** The support-file table a router keeps, because those files still live in this skill's package. */
+function referencesSection(body: string): string | null {
+  const section = sectionsOf(body).find((entry) =>
+    /^(references|reference files|support files)$/i.test(entry.heading.trim())
+  )
+  return section ? `## ${section.heading}\n${section.text.trimEnd()}\n` : null
+}
+
 export function sectionsOf(body: string): Section[] {
   const out: Section[] = []
   const lines = body.split(/\r?\n/)
@@ -104,11 +123,19 @@ export function routerText(loser: Body, survivor: Body): { text: string; kept: s
   const body = source.slice(fm.length)
   const sections = sectionsOf(body)
   const survivorHeadings = new Set(survivor.headings.map((heading) => heading.toLowerCase()))
-  const unique = sections.filter((section) => !survivorHeadings.has(section.heading.toLowerCase()))
+  // The support-file table is emitted once, at the end, so it is not counted as a lane of its own.
+  const isReferences = (heading: string) => /^(references|reference files|support files)$/i.test(heading.trim())
+  const unique = sections.filter(
+    (section) => !survivorHeadings.has(section.heading.toLowerCase()) && !isReferences(section.heading)
+  )
   const dropped = sections.filter((section) => survivorHeadings.has(section.heading.toLowerCase())).map((section) => section.heading)
 
+  // The support-file table is copied from this body, never written fresh: the files are still here,
+  // and a placeholder sentence would be content nobody asked for.
+  const refs = referencesSection(body)
+
   const text = [
-    fm,
+    bumpVersion(fm),
     '',
     `# ${loser.name}`,
     '',
@@ -119,10 +146,7 @@ export function routerText(loser: Body, survivor: Body): { text: string; kept: s
     '',
     `- \`${survivor.name}\``,
     '',
-    '## References',
-    '',
-    'Every support file this skill owns stays here and is still indexed by the table above.',
-    ''
+    ...(refs ? [refs] : [])
   ].join('\n')
 
   return { text, kept: unique.map((section) => section.heading), dropped }
@@ -225,6 +249,16 @@ export function applyConsolidation(key: string): ApplyResult | { error: string; 
 /** Restoring is the same move backwards: the archived SKILL.md wins. */
 export function undoConsolidation(archivePath: string, originalPath: string): { restored: boolean; error?: string } {
   if (!existsSync(archivePath)) return { restored: false, error: 'archive missing' }
+  // A restore writes a whole body over a path, so the archive must be the body that belongs there.
+  // Without this, a wrong pair silently replaces one skill with another skill's text.
+  const archived = readFileSync(archivePath, 'utf8')
+  const archivedName = (archived.match(/^name:\s*["']?([^"'\n]+)["']?\s*$/m) ?? [])[1]?.trim()
+  const target = path.basename(path.resolve(originalPath)) === 'SKILL.md'
+    ? path.basename(path.dirname(path.resolve(originalPath)))
+    : path.basename(path.resolve(originalPath))
+  if (archivedName && target && archivedName.toLowerCase() !== target.toLowerCase()) {
+    return { restored: false, error: `archive holds \`${archivedName}\`, not \`${target}\`` }
+  }
   copyFileSync(archivePath, originalPath)
   log({ action: 'undo', archivePath, originalPath })
   return { restored: true }
