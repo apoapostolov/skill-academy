@@ -134,8 +134,11 @@ Built: `server/src/plandiff.ts` (the shared package diff with a frontmatter regi
 manifest), `promote.ts` (drift carry with an acknowledgement gate), `mergeIntoX.ts` (a staged,
 rollback-safe fold that sends every source to the trash) and `improveJob.ts` (a five-step job with
 per-file proposals). The screen adds a right-click Move and Improve, a Plan dialog on every group,
-and a Deleted row over the trash with select, recover, delete and wipe. `bash scripts/merge-plan-check.sh`
-runs 50 checks, including a forced failure that proves the rollback.
+and a Deleted row over the trash with select, recover, delete and wipe. The screen adds a fold into a skill that already exists (its body joins the merge as a source, its
+bytes are copied aside before the write, and undo restores both sides), per-agent-root placement
+consequences, an on-request contradiction pass, and per-file accept in Improve.
+`bash scripts/merge-plan-check.sh` runs 65 checks, including a forced failure that proves the
+rollback and an undo that returns the absorbed skill to its original bytes.
 
 The spec now also covers the cases a first sketch misses: three-copy groups and reverts, frontmatter
 and file-level drift, moves versus losses, contradictions and deliberate removals, link re-pointing,
