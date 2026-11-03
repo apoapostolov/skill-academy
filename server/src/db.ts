@@ -493,15 +493,41 @@ export function indexSkill(path: string): void {
   indexedFor({ name: values[0], description: values[1], tags: values[2], body: values[3] }, path)
 }
 
-/** Removes one package from the search index. */
+/**
+ * Removes one package from the search index.
+ *
+ * FTS5 only removes a row when it is handed the values it indexed, so they are read back from
+ * `skills_doc`, the table the insert came from. Reading them from `skill_body` (via `docValues`)
+ * leaves the row behind and, worse, corrupts the index.
+ */
 export function dropFromIndex(path: string): void {
   const db = getDb()
-  const existing = db.prepare('SELECT id FROM skills_doc WHERE path = ?').get(path) as { id: number } | undefined
+  const existing = db
+    .prepare('SELECT id, name, description, tags, body FROM skills_doc WHERE path = ?')
+    .get(path) as { id: number; name: string; description: string; tags: string; body: string } | undefined
   if (existing) {
     db.prepare(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`)
-      .run(existing.id, ...docValues(path))
+      .run(existing.id, existing.name, existing.description, existing.tags, existing.body)
   }
   db.prepare('DELETE FROM skills_doc WHERE path = ?').run(path)
+}
+
+/**
+ * Search documents whose skill no longer exists. A removal that missed its document leaves a row
+ * that no search can reach (every query joins `skills`) but every later insert for the same path
+ * can collide with. Swept after a scan, when the set of packages is known.
+ */
+export function dropOrphanDocs(): number {
+  const db = getDb()
+  const orphans = db
+    .prepare('SELECT d.id, d.path, d.name, d.description, d.tags, d.body FROM skills_doc d LEFT JOIN skills s ON s.path = d.path WHERE s.id IS NULL')
+    .all() as Array<{ id: number; path: string; name: string; description: string; tags: string; body: string }>
+  for (const row of orphans) {
+    db.prepare(`INSERT INTO skills_fts(skills_fts, rowid, name, description, tags, body) VALUES('delete', ?, ?, ?, ?, ?)`)
+      .run(row.id, row.name, row.description, row.tags, row.body)
+    db.prepare('DELETE FROM skills_doc WHERE id = ?').run(row.id)
+  }
+  return orphans.length
 }
 
 export function rebuildIndex(): void {

@@ -108,7 +108,8 @@ const entries = [
 ] as never
 console.log(countPackages(entries))
 TS
-COUNT=$(npx tsx scripts/tmp/count-probe.ts 2>/dev/null | tr -d '' | tail -1)
+COUNT=$(npx tsx scripts/tmp/count-probe.ts 2>/dev/null | tr -d '
+' | tail -1)
 rm -f scripts/tmp/count-probe.ts
 if [ "$COUNT" = "2" ]; then
   echo "PASS  a folder reachable twice counts one package"
@@ -117,10 +118,10 @@ else
   exit 1
 fi
 
-python3 - "$PORT" "$ROOT" <<'PY'
-import hashlib, json, pathlib, sys, urllib.request as u
+python3 - "$PORT" "$ROOT" "$DATA" <<'PY'
+import hashlib, json, pathlib, sqlite3, sys, urllib.request as u
 
-port, root = sys.argv[1], pathlib.Path(sys.argv[2])
+port, root, data = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
 A = f'http://127.0.0.1:{port}'
 
 def get(path):
@@ -231,6 +232,17 @@ if pointer_archive:
     check('the refusal leaves the file alone', narrow.exists())
 
 print('')
+# A removal that leaves its search document behind is invisible until a later insert collides with
+# it; the counts are the cheapest proof that every removal took its document with it.
+db = sqlite3.connect(str(data / 'index.db'))
+skills_rows = db.execute('SELECT COUNT(*) FROM skills').fetchone()[0]
+doc_rows = db.execute('SELECT COUNT(*) FROM skills_doc').fetchone()[0]
+fts_rows = db.execute('SELECT COUNT(*) FROM skills_fts').fetchone()[0]
+db.close()
+check('every skill has exactly one search document', skills_rows == doc_rows,
+      f'{skills_rows} skills, {doc_rows} documents')
+check('every skill has exactly one indexed row', skills_rows == fts_rows, f'{skills_rows} skills, {fts_rows} indexed')
+
 print('fixture checks:', 'all passed' if not failures else f'{len(failures)} failed: {failures}')
 sys.exit(1 if failures else 0)
 PY

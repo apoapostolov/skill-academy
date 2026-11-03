@@ -52,6 +52,7 @@ import {
   getSourceBaseline,
   setSourceBaseline,
   archivedByRoot,
+  dropOrphanDocs,
   allSkillPaths,
   removeByPath,
   saveOne,
@@ -247,6 +248,9 @@ async function fullScan(): Promise<{ added: number; changed: number; removed: nu
   // A scan indexes what exists; it must also retire what stopped existing, or a removed duplicate
   // keeps answering searches forever.
   const vanished = pruneVanished()
+  // A removal that missed its search document is cleaned up here, where the whole library is known.
+  const orphans = dropOrphanDocs()
+  if (orphans) console.log('dropped', orphans, 'search documents with no skill')
   lastScanAt = new Date().toISOString()
   scanInFlight = false
   // The lock follows the library: a scan is the one place the whole of it is known to be current.
