@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Versioning from './Monitor'
+import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
 import { highlight } from './highlight'
 import { renderMarkdown } from './markdown'
 
@@ -156,6 +157,7 @@ interface Facets {
 type Scope =
   | { kind: 'all' }
   | { kind: 'health' }
+  | { kind: 'trash' }
   | { kind: 'agent'; agent: string; path: string }
   | { kind: 'tag'; tag: string }
   | { kind: 'category'; category: string }
@@ -703,6 +705,11 @@ export default function App() {
   const [copiedCode, setCopiedCode] = useState('')
   const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
+  const [moveTarget, setMoveTarget] = useState<{ id: number; name: string; path: string } | null>(null)
+  const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
+  const [planGroup, setPlanGroup] = useState<ConsolidateGroupView | null>(null)
+  const [trashSelecting, setTrashSelecting] = useState(false)
+  const [trashWipeAsk, setTrashWipeAsk] = useState(false)
   const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
   const [improveRule, setImproveRule] = useState('')
   const [consolidateGroups, setConsolidateGroups] = useState<ConsolidateGroupView[]>([])
@@ -1001,7 +1008,6 @@ export default function App() {
     setProviderNotes((notes) => ({ ...notes, [id]: payload.error ?? `address saved: ${payload.base}` }))
     await refreshProviders()
   }
-
 
   async function saveGithubToken() {
     const token = githubToken.trim()
@@ -1447,6 +1453,8 @@ export default function App() {
   }
 
   async function fetchPage(offset: number, replace: boolean) {
+    // The trash is a list of its own, not a page of the library.
+    if (scope.kind === 'trash') return
     const requestId = ++requestRef.current
     loadingRef.current = true
     setLoadingMore(true)
@@ -1704,6 +1712,7 @@ export default function App() {
   const scopeLabel = useMemo(() => {
     if (scope.kind === 'all') return 'All skills'
     if (scope.kind === 'health') return 'Needs attention'
+    if (scope.kind === 'trash') return 'Deleted'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
     if (scope.kind === 'agent') return scope.agent
@@ -1850,6 +1859,28 @@ export default function App() {
       </div>
 
       {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
+      {moveTarget && <MoveDialog skill={moveTarget} onClose={() => setMoveTarget(null)} />}
+      {improveTarget && <ImproveDialog skill={improveTarget} onClose={() => setImproveTarget(null)} />}
+      {planGroup && (
+        <GroupPlanDialog
+          group={{
+            key: planGroup.key,
+            members: planGroup.members.map((member) => ({
+              name: member.name,
+              path: member.path,
+              version: member.version,
+              chars: member.chars
+            })),
+            plan: planGroup.plan ? { survivor: planGroup.plan.survivor } : null,
+            liveRoot: planGroup.liveRoot
+          }}
+          onClose={() => setPlanGroup(null)}
+          onApplied={() => {
+            void openConsolidate()
+          }}
+        />
+      )}
+
 
       {reviewOpen === 'improve' && (
         <div className="installscrim" onClick={() => setReviewOpen(null)}>
@@ -1943,6 +1974,11 @@ export default function App() {
                           </div>
                         ))}
                         {group.blocked && <div className="reviewnote">{group.blocked}</div>}
+                        <div className="cgplan">
+                          <button className="ghost small planbtn" onClick={() => setPlanGroup(group)}>
+                            Plan promote or fold…
+                          </button>
+                        </div>
                         {group.plan && (
                           <div className="cgplan">
                             survivor <b>{group.plan.survivor}</b> · pointer {group.plan.pointerize.length} · router{' '}
@@ -2310,30 +2346,12 @@ export default function App() {
           >
             Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
           </button>
-          {trashList.length > 0 && <div className="group">Trash</div>}
-          {trashList.map((entry) => (
-            <div className="nav trash-row" key={entry.id} title={`Archived to ${entry.moved_to}`}>
-              <span className="name">{entry.name}</span>
-              <div className="head-actions">
-                <button
-                  className="ghost iconbtn"
-                  title="Restore"
-                  aria-label={`Restore ${entry.name}`}
-                  onClick={() => void restoreFromTrash(entry.id)}
-                >
-                  <RestoreGlyph />
-                </button>
-                <button
-                  className="ghost iconbtn"
-                  title="Delete permanently"
-                  aria-label={`Delete ${entry.name}`}
-                  onClick={() => void purgeFromTrash(entry.id)}
-                >
-                  <TrashGlyph />
-                </button>
-              </div>
-            </div>
-          ))}
+          <button
+            className={`nav ${scope.kind === 'trash' ? 'active' : ''}`}
+            onClick={() => setScope({ kind: 'trash' })}
+          >
+            Deleted <span>{trashList.length}</span>
+          </button>
 
           <div className="group head">
             <span>Agents</span>
@@ -2482,7 +2500,7 @@ export default function App() {
 
         <section className="list">
           <ScrollPane bodyRef={pageRef} onScroll={onPageScroll}>
-          <div className="listhead">
+          <div className={`listhead ${scope.kind === 'trash' ? 'trashmode' : ''}`}>
             {selectMode && (
               <span
                 className={`pick all ${checked.size > 0 && checked.size === skills.length ? 'on' : ''}`}
@@ -2528,13 +2546,16 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <span className="count">
-              {fmt.format(total)} {total === 1 ? 'skill' : 'skills'}
-              {checked.size > 0
-                ? ` · ${checked.size}/${fmt.format(skills.length)} selected`
-                : skills.length < total
-                  ? ` · ${fmt.format(skills.length)} loaded`
-                  : ''}
+            <span className={`count ${scope.kind === 'trash' ? 'trashcount' : ''}`}>
+              {scope.kind === 'trash'
+                ? `${fmt.format(trashList.length)} ${trashList.length === 1 ? 'entry' : 'entries'}`
+                : `${fmt.format(total)} ${total === 1 ? 'skill' : 'skills'}`}
+              {scope.kind !== 'trash' &&
+                (checked.size > 0
+                  ? ` · ${checked.size}/${fmt.format(skills.length)} selected`
+                  : skills.length < total
+                    ? ` · ${fmt.format(skills.length)} loaded`
+                    : '')}
             </span>
             {checked.size > 0 && (
               <div className="headactions">
@@ -2594,6 +2615,20 @@ export default function App() {
                 </button>
               </div>
             )}
+            {scope.kind === 'trash' && (
+              <div className="headactions trashtools">
+                <button className="bulkbtn" onClick={() => setTrashSelecting((value) => !value)}>
+                  {trashSelecting ? 'Done' : 'Select'}
+                </button>
+                <button
+                  className="bulkbtn danger"
+                  disabled={trashList.length === 0}
+                  onClick={() => setTrashWipeAsk(true)}
+                >
+                  Wipe all
+                </button>
+              </div>
+            )}
             <button
               className={`listedit ${selectMode ? 'on' : ''}`}
               title={selectMode ? 'Done selecting' : 'Select skills'}
@@ -2617,7 +2652,16 @@ export default function App() {
               </svg>
             </button>
           </div>
-          {skills.map((skill) => (
+          {scope.kind === 'trash' && (
+            <TrashView
+              onChanged={() => void loadTrash()}
+              selecting={trashSelecting}
+              onSelectingChange={setTrashSelecting}
+              wipeAsk={trashWipeAsk}
+              onWipeHandled={() => setTrashWipeAsk(false)}
+            />
+          )}
+          {scope.kind !== 'trash' && skills.map((skill) => (
             <button
               key={skill.id}
               className={`row ${selected === skill.id ? 'selected' : ''}`}
@@ -2888,6 +2932,24 @@ export default function App() {
               style={{ left: rowMenu.x, top: rowMenu.y }}
               onClick={(event) => event.stopPropagation()}
             >
+              <button
+                className="rowmenu-item"
+                onClick={() => {
+                  setMoveTarget({ id: rowMenu.skill.id, name: rowMenu.skill.name, path: rowMenu.skill.path })
+                  setRowMenu(null)
+                }}
+              >
+                Move…
+              </button>
+              <button
+                className="rowmenu-item"
+                onClick={() => {
+                  setImproveTarget({ id: rowMenu.skill.id, name: rowMenu.skill.name })
+                  setRowMenu(null)
+                }}
+              >
+                Improve…
+              </button>
               <button
                 className="rowmenu-item"
                 onClick={() => {

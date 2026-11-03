@@ -53,6 +53,9 @@ import { consolidateDryRun } from './consolidate'
 import { applyConsolidation, undoConsolidation } from './consolidateApply'
 import { applyFold, foldGroup } from './fold'
 import { curateDryRun } from './curate'
+import { applyPromote, planPromote, planById as promotePlanById } from './promote'
+import { applyMergeIntoX, planMergeIntoX } from './mergeIntoX'
+import { applyImprove, getImproveJob, listImproveJobs, startImprove, undoImprove } from './improveJob'
 import { improveDryRun } from './improve'
 import {
   addLink,
@@ -1909,6 +1912,93 @@ app.post('/api/placements', async (request, reply) => {
   return { state: 'off', mode: result.mode, target, trashed: result.trashed }
 })
 
+/**
+ * Move: one skill, several agent roots. One root keeps the real package ("core"); the others get a
+ * link, or a copy when the footer switch says move.
+ */
+app.post('/api/skills/:id/move', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { coreRoot?: string; roots?: string[]; mode?: 'link' | 'move' }
+  const skill = getSkill(Number(id))
+  if (!skill) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  const registry = loadRegistry()
+  const known = new Map(registry.roots.filter((root) => root.exists).map((root) => [path.resolve(root.path).toLowerCase(), root]))
+  const coreRoot = body.coreRoot ? path.resolve(body.coreRoot) : path.dirname(path.resolve(skill.path))
+  if (!known.has(coreRoot.toLowerCase())) {
+    reply.code(400)
+    return { error: 'unknown-root', detail: body.coreRoot }
+  }
+  const wanted = (body.roots ?? []).map((entry) => path.resolve(entry)).filter((entry) => entry.toLowerCase() !== coreRoot.toLowerCase())
+  for (const entry of wanted) {
+    if (!known.has(entry.toLowerCase())) {
+      reply.code(400)
+      return { error: 'unknown-root', detail: entry }
+    }
+  }
+
+  let source = path.resolve((skill as { real_path?: string }).real_path ?? skill.path)
+  const results: Array<{ root: string; action: string; ok: boolean; mode?: string; target?: string; reason?: string }> = []
+
+  // The core root owns the bytes: if the package lives elsewhere it moves, it is not copied.
+  const currentRoot = path.dirname(source).toLowerCase()
+  if (currentRoot !== coreRoot.toLowerCase()) {
+    const destination = path.join(coreRoot, path.basename(source))
+    try {
+      fs.renameSync(source, destination)
+    } catch {
+      try {
+        cpSync(source, destination, { recursive: true })
+        fs.rmSync(source, { recursive: true, force: true })
+      } catch (error) {
+        reply.code(409)
+        return { error: 'move-failed', detail: (error as Error).message, results }
+      }
+    }
+    results.push({ root: coreRoot, action: 'moved-package', ok: true, target: destination })
+    source = destination
+  } else {
+    results.push({ root: coreRoot, action: 'kept-package', ok: true, target: source })
+  }
+
+  for (const root of wanted) {
+    const placed = place(source, root, { forceCopy: body.mode === 'move' })
+    results.push({
+      root,
+      action: body.mode === 'move' ? 'copied' : 'linked',
+      ok: placed.ok,
+      mode: placed.mode,
+      target: placed.target,
+      reason: placed.reason
+    })
+    if (!placed.ok && placed.reason !== 'linked-elsewhere') continue
+  }
+
+  addJournal('move', { skillId: skill.id, skill: source, coreRoot, mode: body.mode ?? 'link', results })
+  fullScan()
+  broadcast({ type: 'library', root: null, added: 0, changed: 1, removed: 0, at: new Date().toISOString() })
+  return { moved: source, core: coreRoot, results, ok: results.every((entry) => entry.ok) }
+})
+
+/** Wipe the whole trash. Every entry goes to the operating system's Recycle Bin, never unlinked. */
+app.post('/api/trash/wipe', async (request, reply) => {
+  const body = (request.body ?? {}) as { confirm?: boolean; onlyExpired?: boolean }
+  if (body.confirm !== true) {
+    reply.code(428)
+    return { error: 'confirm-required', detail: { note: 'wiping the trash is irreversible inside the app' } }
+  }
+  const entries = body.onlyExpired ? expiredTrash() : listTrash()
+  const results: Array<{ id: number; name: string; ok: boolean; reason?: string }> = []
+  for (const entry of entries) {
+    const purged = purgeTrash(entry.id)
+    results.push({ id: entry.id, name: entry.name, ok: purged.ok, reason: purged.reason })
+  }
+  addJournal('trash-wipe', { wiped: results.filter((row) => row.ok).length, failed: results.filter((row) => !row.ok).length })
+  return { wiped: results.filter((row) => row.ok).length, failed: results.filter((row) => !row.ok), results }
+})
+
 app.post('/api/skills/:id/archive', async (request, reply) => {
   const { id } = request.params as { id: string }
   const body = (request.body ?? {}) as { reason?: string }
@@ -2179,6 +2269,179 @@ app.get('/api/ingest/runs/:runId', async (request, reply) => {
     return { error: 'not-found' }
   }
   return { run }
+})
+
+/* ------------------------- merge planning (P4.5) ------------------------- */
+
+function pathOfSkillId(id: number | undefined): { path: string; name: string } | null {
+  if (!id) return null
+  const row = getSkill(Number(id))
+  if (!row) return null
+  return { path: (row as { real_path?: string }).real_path ?? row.path, name: row.name }
+}
+
+app.post('/api/promote/plan', async (request, reply) => {
+  const body = (request.body ?? {}) as {
+    winnerPath?: string
+    loserPath?: string
+    winnerId?: number
+    loserId?: number
+    contradictions?: boolean
+    provider?: string
+    model?: string
+  }
+  const settings = readSettings()
+  const winnerPath = body.winnerPath ?? pathOfSkillId(body.winnerId)?.path
+  const loserPath = body.loserPath ?? pathOfSkillId(body.loserId)?.path
+  if (!winnerPath || !loserPath) {
+    reply.code(400)
+    return { error: 'winner-and-loser-required' }
+  }
+  const plan = await planPromote({
+    winnerPath,
+    loserPath,
+    contradictions: body.contradictions === true,
+    provider: body.provider ?? settings.mergeProvider,
+    model: body.model ?? settings.mergeModel
+  })
+  if ('error' in plan) {
+    reply.code(plan.error.includes('missing') ? 404 : 400)
+    return plan
+  }
+  return { plan }
+})
+
+app.get('/api/promote/plan/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const plan = promotePlanById(id)
+  if (!plan) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  return { plan }
+})
+
+app.post('/api/promote/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as { planId?: string; drop?: string[]; add?: string[]; ack?: boolean }
+  if (!body.planId) {
+    reply.code(400)
+    return { error: 'planId-required' }
+  }
+  const result = applyPromote({ planId: body.planId, drop: body.drop, add: body.add, ack: body.ack === true })
+  if ('error' in result) {
+    reply.code(result.error === 'plan-stale' ? 409 : result.error === 'ack-required' ? 428 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/merge-into-x/plan', async (request, reply) => {
+  const body = (request.body ?? {}) as { groupKey?: string; name?: string; suppliedBody?: string; provider?: string; model?: string }
+  if (!body.groupKey || !body.name) {
+    reply.code(400)
+    return { error: 'group-and-name-required' }
+  }
+  const settings = readSettings()
+  const plan = await planMergeIntoX({
+    groupKey: body.groupKey,
+    name: body.name,
+    suppliedBody: body.suppliedBody,
+    provider: body.provider ?? settings.mergeProvider,
+    model: body.model ?? settings.mergeModel
+  })
+  if ('error' in plan) {
+    reply.code(plan.error === 'group-not-found' ? 404 : 400)
+    return plan
+  }
+  return { plan }
+})
+
+app.post('/api/merge-into-x/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as { planId?: string; ack?: boolean; failAfter?: number }
+  if (!body.planId) {
+    reply.code(400)
+    return { error: 'planId-required' }
+  }
+  // `failAfter` is the rollback seam the harness uses; the app never sends it.
+  const result = applyMergeIntoX(body.planId, body.ack === true, body.failAfter)
+  if ('error' in result) {
+    reply.code(result.error === 'plan-stale' ? 409 : result.error === 'plan-blocked' ? 428 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/improve/job', async (request, reply) => {
+  const body = (request.body ?? {}) as { skillId?: number; path?: string; instruction?: string; provider?: string; model?: string }
+  const target = body.path ?? pathOfSkillId(body.skillId)?.path
+  if (!target) {
+    reply.code(400)
+    return { error: 'skill-required' }
+  }
+  if (!body.instruction || body.instruction.trim().length < 8) {
+    reply.code(400)
+    return { error: 'instruction-required' }
+  }
+  const settings = readSettings()
+  const job = await startImprove({
+    skillPath: target,
+    instruction: body.instruction.trim(),
+    provider: body.provider ?? settings.mergeProvider,
+    model: body.model ?? settings.mergeModel
+  })
+  if ('error' in job) {
+    reply.code(job.error === 'not-a-skill' ? 404 : 400)
+    return job
+  }
+  return { job }
+})
+
+app.get('/api/improve/job/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const job = getImproveJob(Number(id))
+  if (!job) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  return { job }
+})
+
+app.get('/api/improve/jobs', async (request) => {
+  const query = request.query as { skillId?: string; path?: string }
+  const target = query.path ?? pathOfSkillId(query.skillId ? Number(query.skillId) : undefined)?.path
+  return { jobs: listImproveJobs(target) }
+})
+
+app.post('/api/improve/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as { jobId?: number; files?: string[]; confirm?: boolean }
+  if (!body.jobId) {
+    reply.code(400)
+    return { error: 'jobId-required' }
+  }
+  if (body.confirm !== true) {
+    reply.code(428)
+    return { error: 'confirm-required', detail: { note: 'apply needs confirm: true after the diff was read' } }
+  }
+  const result = applyImprove(Number(body.jobId), body.files)
+  if ('error' in result) {
+    reply.code(result.error === 'plan-stale' ? 409 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/improve/undo', async (request, reply) => {
+  const body = (request.body ?? {}) as { jobId?: number }
+  if (!body.jobId) {
+    reply.code(400)
+    return { error: 'jobId-required' }
+  }
+  const result = undoImprove(Number(body.jobId))
+  if ('error' in result) {
+    reply.code(result.error === 'not-applied' ? 409 : 400)
+    return result
+  }
+  return { result }
 })
 
 app.get('/api/monitor', async () => monitorOverview())

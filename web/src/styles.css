@@ -3631,3 +3631,636 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .monempty { padding: 14px 10px; font-size: 11.5px; color: #8d9096; }
 .monmuted { color: #8d9096; }
 .warn { color: #d3a877; }
+
+/* ------------------------------- merge planning ------------------------------- */
+
+.modal-backdrop.inner {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 11, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.mergedialog {
+  position: relative;
+  width: 940px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 12px;
+  background: var(--card, #14161a);
+  border: 1px solid var(--border, #2a2d33);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.mergedialog.wide {
+  width: 1180px;
+}
+
+.mergehead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mergeheadactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mergetitle {
+  font-size: 14px;
+  color: rgb(226, 228, 232);
+}
+
+.mergesub {
+  font-size: 12px;
+  color: rgb(150, 154, 162);
+  line-height: 1.45;
+}
+
+.mergeinstruct {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.mergeinstruct textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 44px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: rgb(222, 224, 228);
+  background: rgb(18, 20, 24);
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 7px;
+}
+
+.mergelist {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid rgb(34, 37, 43);
+  border-radius: 8px;
+}
+
+.mergeroot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgb(30, 33, 38);
+  min-height: 44px;
+}
+
+.mergeroot:last-child {
+  border-bottom: none;
+}
+
+.mergeroot.on {
+  background: rgb(22, 25, 29);
+}
+
+.mergerootmeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.mergerootname {
+  font-size: 12.5px;
+  color: rgb(214, 217, 222);
+}
+
+.mergerootpath {
+  font-size: 11.5px;
+  color: rgb(132, 137, 145);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergecoreradio {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: rgb(150, 154, 162);
+}
+
+.mergeexpiry {
+  font-size: 11.5px;
+  color: rgb(132, 137, 145);
+}
+
+.mergefoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.mergeactions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mergeswitch {
+  display: inline-flex;
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.mergeswitch button {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  color: rgb(160, 164, 172);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.mergeswitch button.on {
+  color: rgb(216, 219, 224);
+  background: rgb(30, 34, 39);
+}
+
+.mergeapply {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: rgb(20, 22, 25);
+  background: var(--signals-enabled, #6e9e8a);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mergeapply:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dangerbtn {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  color: rgb(220, 160, 156);
+  background: transparent;
+  border: 1px solid rgba(184, 92, 87, 0.45);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.dangerbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.recoverbtn {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  color: rgba(110, 158, 138, 0.95);
+  background: transparent;
+  border: 1px solid rgba(110, 158, 138, 0.4);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.rowmenu-item.recoveritem {
+  color: rgba(110, 158, 138, 0.95);
+}
+
+.nav.deleted span {
+  color: rgb(150, 154, 162);
+}
+
+.confirmbox {
+  width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--card, #14161a);
+  border: 1px solid rgb(48, 52, 59);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.mergeresults {
+  border-top: 1px solid rgb(32, 35, 40);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mergeresult {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+  color: rgb(160, 164, 172);
+}
+
+.mergeresult.ok span:first-child {
+  color: rgba(110, 158, 138, 0.95);
+}
+
+.mergeresult.bad span:first-child {
+  color: rgba(184, 92, 87, 0.95);
+}
+
+.mergesteps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgb(32, 35, 40);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.mergestep {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 11.5px;
+  color: rgb(150, 154, 162);
+}
+
+.mergestepname {
+  width: 66px;
+  color: rgb(196, 200, 206);
+}
+
+.mergestepms {
+  width: 60px;
+  color: rgb(132, 137, 145);
+}
+
+.mergestepnote {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergestep.failed .mergestepname {
+  color: rgba(184, 92, 87, 1);
+}
+
+.mergeerrors {
+  font-size: 11.5px;
+  color: rgba(184, 92, 87, 0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mergenote {
+  font-size: 11.5px;
+  color: rgb(140, 145, 153);
+}
+
+.mergediff {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 10px;
+  min-height: 220px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.mergedifflist {
+  overflow-y: auto;
+  border: 1px solid rgb(32, 35, 40);
+  border-radius: 8px;
+}
+
+.mergedifftotals {
+  padding: 7px 9px;
+  font-size: 11.5px;
+  color: rgb(150, 154, 162);
+  border-bottom: 1px solid rgb(30, 33, 38);
+}
+
+.mergediffrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  color: rgb(190, 194, 200);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgb(28, 31, 36);
+  cursor: pointer;
+  text-align: left;
+}
+
+.mergediffrow.on {
+  background: rgb(26, 29, 34);
+}
+
+.mergediffmark {
+  width: 12px;
+  text-align: center;
+  color: rgb(150, 154, 162);
+}
+
+.mergediffmark.added,
+.mergediffmark.local-added,
+.mergediffmark.local-changed {
+  color: rgba(110, 158, 138, 0.95);
+}
+
+.mergediffmark.removed,
+.mergediffmark.local-removed {
+  color: rgba(184, 92, 87, 0.95);
+}
+
+.mergediffpath {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mergediffcount {
+  color: rgb(132, 137, 145);
+  font-variant-numeric: tabular-nums;
+}
+
+.mergemanifest {
+  border-top: 1px solid rgb(30, 33, 38);
+  padding: 6px 0;
+}
+
+.mergemanifesthead {
+  padding: 2px 9px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(120, 125, 133);
+}
+
+.mergemanifestrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: rgb(170, 174, 180);
+}
+
+.mergemanifestkind {
+  color: rgb(132, 137, 145);
+}
+
+.mergediffpane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid rgb(32, 35, 40);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mergediffhead {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 9px;
+  font-size: 11.5px;
+  color: rgb(196, 200, 206);
+  border-bottom: 1px solid rgb(30, 33, 38);
+}
+
+.mergelines {
+  flex: 1;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 4px 0;
+  tab-size: 4;
+}
+
+.mergeline {
+  display: flex;
+  gap: 0;
+  white-space: pre;
+}
+
+.mergeline.add {
+  background: rgba(110, 158, 138, 0.1);
+}
+
+.mergeline.del {
+  background: rgba(184, 92, 87, 0.1);
+}
+
+.mergenum {
+  width: 42px;
+  text-align: right;
+  padding-right: 8px;
+  color: rgb(108, 113, 121);
+  user-select: none;
+}
+
+.mergeglyph {
+  width: 14px;
+  color: rgb(130, 135, 143);
+}
+
+.mergeline.add .mergeglyph {
+  color: rgba(110, 158, 138, 1);
+}
+
+.mergeline.del .mergeglyph {
+  color: rgba(184, 92, 87, 1);
+}
+
+.mergetext {
+  padding-right: 12px;
+  color: rgb(206, 209, 214);
+}
+
+.mergebinary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px;
+  overflow: auto;
+}
+
+.mergebinary img {
+  max-width: 280px;
+  max-height: 220px;
+  border: 1px solid rgb(40, 44, 50);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mergewhys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 96px;
+  overflow-y: auto;
+  border-top: 1px solid rgb(32, 35, 40);
+  padding-top: 6px;
+}
+
+.mergewhy {
+  display: flex;
+  gap: 10px;
+  font-size: 11.5px;
+  color: rgb(160, 164, 172);
+}
+
+.mergeunsupported {
+  color: rgba(181, 139, 98, 0.95);
+}
+
+.mergeform {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 8px 0 2px;
+}
+
+.mergeform label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgb(126, 131, 139);
+}
+
+.mergeform select,
+.mergeform input {
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: rgb(218, 221, 226);
+  background: rgb(18, 20, 24);
+  border: 1px solid rgb(44, 48, 55);
+  border-radius: 7px;
+}
+
+.mergedrift {
+  max-height: 132px;
+  overflow-y: auto;
+  border: 1px solid rgb(32, 35, 40);
+  border-radius: 8px;
+  padding: 4px 0;
+}
+
+.mergedriftline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: rgb(196, 200, 206);
+}
+
+.mergedriftline.off {
+  color: rgb(120, 125, 133);
+  text-decoration: line-through;
+}
+
+.mergedriftline input[type='checkbox'] {
+  accent-color: #6e9e8a;
+}
+
+.planbtn {
+  margin-left: 6px;
+}
+
+/* The plan dialog opens from inside the consolidation list, so it has to sit above it. */
+.modal-backdrop.raised {
+  z-index: 80;
+}
+
+/* The trash is a view of the middle column, not a dialog over it. */
+.trashview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.trashhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgb(30, 33, 38);
+}
+
+.trashcount {
+  font-size: 12px;
+  color: rgb(150, 154, 162);
+}
+
+.trashlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.trashfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid rgb(30, 33, 38);
+}
+
+.bulkbtn.danger {
+  color: rgb(220, 160, 156);
+  border-color: rgba(184, 92, 87, 0.45);
+}
+
+.trashview .mergeroot {
+  padding: 10px 12px;
+}
+
+.listhead.trashmode .seg {
+  display: none;
+}
+
+/* In the trash the count is the only thing on the left of the actions, so it centres. */
+.listhead .count.trashcount {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  color: rgb(150, 154, 162);
+}
+
+.listhead.trashmode {
+  position: sticky;
+}
+
+.trashtools {
+  margin-left: auto;
+}

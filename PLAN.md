@@ -118,7 +118,7 @@ Exit: a first ingest on a skill linked to two repositories writes distilled sect
 
 Built and verified: `bash scripts/links-check.sh` runs 30 checks against two real repositories in a temporary agent root. `docs/linked-sources.md` maps each requirement to the check that proves it.
 
-### P4.5 — Merge planning dialog (5 days) — added at Apo's request
+### P4.5 — Merge planning dialog (5 days) — added at Apo's request, built
 
 The Consolidate screen grows into one planning dialog with three flows: promote a newer copy while
 carrying organic drift out of the older one; fold A, B, C and D into a new X and send the sources to
@@ -129,6 +129,13 @@ kept assets and scripts. Spec and exit criteria: `docs/merge-planning.md`.
 
 Nothing writes before an explicit approve, and every apply keeps a snapshot so one undo returns the
 original package hash.
+
+Built: `server/src/plandiff.ts` (the shared package diff with a frontmatter region, binaries and a
+manifest), `promote.ts` (drift carry with an acknowledgement gate), `mergeIntoX.ts` (a staged,
+rollback-safe fold that sends every source to the trash) and `improveJob.ts` (a five-step job with
+per-file proposals). The screen adds a right-click Move and Improve, a Plan dialog on every group,
+and a Deleted row over the trash with select, recover, delete and wipe. `bash scripts/merge-plan-check.sh`
+runs 50 checks, including a forced failure that proves the rollback.
 
 The spec now also covers the cases a first sketch misses: three-copy groups and reverts, frontmatter
 and file-level drift, moves versus losses, contradictions and deliberate removals, link re-pointing,
