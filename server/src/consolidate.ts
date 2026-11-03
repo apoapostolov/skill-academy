@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { getDb } from './db'
+import { compositeTargets } from './links'
 import { insideProtected } from './safety'
 
 /**
@@ -231,8 +232,11 @@ export function consolidateDryRun(): {
     .prepare('SELECT DISTINCT root_path FROM skills ORDER BY root_path')
     .all() as Array<{ root_path: string }>).map((row) => row.root_path)
 
+  // A composite skill is fed by links: absorbing or replacing it would break every provenance line
+  // it carries, so it never enters a group.
+  const composite = compositeTargets()
   const bodies: Body[] = []
-  for (const root of roots) bodies.push(...collect(root))
+  for (const root of roots) bodies.push(...collect(root).filter((body) => !composite.has(body.dir)))
 
   const byName = new Map<string, Body[]>()
   const byHash = new Map<string, Body[]>()

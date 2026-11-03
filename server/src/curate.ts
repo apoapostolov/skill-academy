@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDb } from './db'
+import { compositeTargets } from './links'
 
 /**
  * Deterministic curation. No model, no network: clusters are built from what the index already
@@ -41,12 +42,14 @@ interface Row {
 }
 
 function rows(): Row[] {
-  return getDb()
+  // Linked skills are composites: curation may read them, never propose them for a merge.
+  const composite = compositeTargets()
+  return (getDb()
     .prepare(
       `SELECT id, name, description, path, root_path, tags, category, tokens, package_hash
        FROM skills ORDER BY name COLLATE NOCASE`
     )
-    .all() as unknown as Row[]
+    .all() as unknown as Row[]).filter((row) => !composite.has(row.path))
 }
 
 function versionOf(path: string): string | null {

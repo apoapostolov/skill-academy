@@ -23,6 +23,12 @@ let ensured = false
 
 export function ensureMonitorTables(): void {
   if (ensured) return
+  // An older database predates the cached tree body; the column is added in place.
+  try {
+    getDb().exec('ALTER TABLE repo_snapshots ADD COLUMN files TEXT')
+  } catch {
+    /* the column is already there */
+  }
   getDb()
     .prepare(
       `CREATE TABLE IF NOT EXISTS installations (
@@ -88,6 +94,7 @@ export function ensureMonitorTables(): void {
          release_name TEXT,
          release_at TEXT,
          prerelease INTEGER NOT NULL DEFAULT 0,
+         files TEXT,
          archived INTEGER NOT NULL DEFAULT 0,
          default_branch TEXT,
          unreachable INTEGER NOT NULL DEFAULT 0,
@@ -204,7 +211,7 @@ export interface RequestLog {
 
 export const lastRun: RequestLog = { requests: 0, conditional: 0 }
 
-async function api(url: string, init: RequestInit = {}): Promise<Response> {
+export async function githubApi(url: string, init: RequestInit = {}): Promise<Response> {
   lastRun.requests += 1
   const response = await fetch(url, { ...init, headers: { ...githubHeaders(), ...(init.headers ?? {}) } })
   readRateLimit(response.headers, rateLimit)
@@ -391,14 +398,14 @@ export interface RepoMeta {
 /** `HEAD` and a branch name are both aliases for a commit; the baseline stores the commit. */
 export async function resolveRef(repo: string, ref: string): Promise<string> {
   if (/^[0-9a-f]{40}$/i.test(ref)) return ref.toLowerCase()
-  const response = await api(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`)
+  const response = await githubApi(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`)
   if (!response.ok) return ref
   const data = (await response.json()) as { sha?: string }
   return data.sha ? data.sha.toLowerCase() : ref
 }
 
 export async function repoMeta(repo: string): Promise<RepoMeta> {
-  const response = await api(`https://api.github.com/repos/${repo}`)
+  const response = await githubApi(`https://api.github.com/repos/${repo}`)
   if (response.status === 404) {
     return { canonical: repo, defaultBranch: 'main', archived: false, unreachable: true, error: 'repository not found' }
   }
@@ -417,7 +424,7 @@ export interface ReleaseInfo {
 }
 
 export async function latestRelease(repo: string, allowPrerelease = false): Promise<ReleaseInfo> {
-  const response = await api(`https://api.github.com/repos/${repo}/releases?per_page=20`)
+  const response = await githubApi(`https://api.github.com/repos/${repo}/releases?per_page=20`)
   if (!response.ok) return { tag: null, name: null, at: null, prerelease: false }
   const data = (await response.json()) as Array<{ tag_name: string; name: string | null; published_at: string | null; prerelease: boolean; draft: boolean }>
   const release = data.find((entry) => !entry.draft && (allowPrerelease || !entry.prerelease))
@@ -439,18 +446,28 @@ export async function fetchTree(repo: string, ref: string, allowCache = true): P
   ensureMonitorTables()
   const cached = getDb()
     .prepare('SELECT * FROM repo_snapshots WHERE repo = ? AND ref = ?')
-    .get(repo, ref) as { etag: string | null; fetched_at: string; tree_sha: string | null; truncated: number } | undefined
+    .get(repo, ref) as
+    | { etag: string | null; fetched_at: string; tree_sha: string | null; truncated: number; files: string | null }
+    | undefined
   const headers: Record<string, string> = {}
   if (allowCache && cached?.etag) {
     headers['if-none-match'] = cached.etag
     lastRun.conditional += 1
   }
-  const response = await api(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers })
+  const response = await githubApi(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers })
   if (response.status === 304 && cached) {
-    const stored = getDb()
-      .prepare('SELECT path FROM installation_files WHERE installation_id IN (SELECT id FROM installations WHERE repo = ?) LIMIT 0')
-    void stored
-    return { files: [], truncated: Boolean(cached.truncated), treeSha: cached.tree_sha, etag: cached.etag, notModified: true }
+    // A conditional answer means what was cached is still current, so the cached body comes back
+    // with it. Returning an empty list here made every unchanged repository look wiped.
+    let cachedFiles: TreeFile[] = []
+    if (cached.files) {
+      try {
+        cachedFiles = JSON.parse(cached.files) as TreeFile[]
+      } catch {
+        cachedFiles = []
+      }
+    }
+    if (!cachedFiles.length) return fetchTree(repo, ref, false)
+    return { files: cachedFiles, truncated: Boolean(cached.truncated), treeSha: cached.tree_sha, etag: cached.etag, notModified: true }
   }
   if (!response.ok) {
     return { files: [], truncated: false, treeSha: null, etag: null, notModified: false, error: `github ${response.status}` }
@@ -465,12 +482,20 @@ export async function fetchTree(repo: string, ref: string, allowCache = true): P
     .map((entry) => ({ path: entry.path, blob: entry.sha, bytes: entry.size ?? 0 }))
   getDb()
     .prepare(
-      `INSERT INTO repo_snapshots (repo, ref, tree_sha, etag, fetched_at, truncated)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO repo_snapshots (repo, ref, tree_sha, etag, fetched_at, truncated, files)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(repo, ref) DO UPDATE SET tree_sha = excluded.tree_sha, etag = excluded.etag,
-         fetched_at = excluded.fetched_at, truncated = excluded.truncated`
+         fetched_at = excluded.fetched_at, truncated = excluded.truncated, files = excluded.files`
     )
-    .run(repo, ref, data.sha ?? null, response.headers.get('etag'), new Date().toISOString(), data.truncated ? 1 : 0)
+    .run(
+      repo,
+      ref,
+      data.sha ?? null,
+      response.headers.get('etag'),
+      new Date().toISOString(),
+      data.truncated ? 1 : 0,
+      JSON.stringify(files)
+    )
   return {
     files,
     truncated: Boolean(data.truncated),
@@ -928,7 +953,7 @@ export async function runCheck(input: { repo?: string; installationId?: number; 
 /* ---------------------------------- blobs ---------------------------------- */
 
 export async function fetchBlob(repo: string, blobSha: string): Promise<string | null> {
-  const response = await api(`https://api.github.com/repos/${repo}/git/blobs/${blobSha}`)
+  const response = await githubApi(`https://api.github.com/repos/${repo}/git/blobs/${blobSha}`)
   if (!response.ok) return null
   const data = (await response.json()) as { content?: string; encoding?: string; size?: number }
   if (!data.content) return null
@@ -937,7 +962,7 @@ export async function fetchBlob(repo: string, blobSha: string): Promise<string |
 }
 
 export async function fetchBlobBuffer(repo: string, blobSha: string): Promise<Buffer | null> {
-  const response = await api(`https://api.github.com/repos/${repo}/git/blobs/${blobSha}`)
+  const response = await githubApi(`https://api.github.com/repos/${repo}/git/blobs/${blobSha}`)
   if (!response.ok) return null
   const data = (await response.json()) as { content?: string; encoding?: string }
   if (!data.content) return null

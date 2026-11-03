@@ -116,6 +116,26 @@ Link a local skill to remote skills, resolve deltas since the last ingested ref,
 
 Exit: a first ingest on a skill linked to two repositories writes distilled sections and `references/ingested/` with per-link commits; a second run with no upstream change writes nothing; a contradicting rule keeps the local text and is listed; restore returns the pre-ingest hash; a composite skill survives a curation run untouched.
 
+Built and verified: `bash scripts/links-check.sh` runs 30 checks against two real repositories in a temporary agent root. `docs/linked-sources.md` maps each requirement to the check that proves it.
+
+### P4.5 — Merge planning dialog (5 days) — added at Apo's request
+
+The Consolidate screen grows into one planning dialog with three flows: promote a newer copy while
+carrying organic drift out of the older one; fold A, B, C and D into a new X and send the sources to
+the internal trash where they can be viewed, restored or cleared; and improve one skill through a
+multi-step AI job that proposes per-file edits. The dialog shows the finished skill as a dimmed
+red/green diff across `SKILL.md` and every reference file, plus a manifest naming added, removed and
+kept assets and scripts. Spec and exit criteria: `docs/merge-planning.md`.
+
+Nothing writes before an explicit approve, and every apply keeps a snapshot so one undo returns the
+original package hash.
+
+The spec now also covers the cases a first sketch misses: three-copy groups and reverts, frontmatter
+and file-level drift, moves versus losses, contradictions and deliberate removals, link re-pointing,
+a transactional four-package move with rollback, placements following the trash, Improve's bounded
+job with unsupported-claim rejection and per-file accept, and the diff pane's stale-plan guard,
+deletion readability and placement consequence preview.
+
 ### P6 — Authoring (9 days)
 
 Generate a draft from intent, start empty, assign sources to a draft and compose a composite from them, CodeMirror editor with the markdown toolbar, outline, preview, validation, autosave, save through the placement engine, improve-with-diff. Tag read and write into frontmatter, with a tag filter in the sidebar.

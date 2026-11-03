@@ -54,6 +54,19 @@ import { applyConsolidation, undoConsolidation } from './consolidateApply'
 import { applyFold, foldGroup } from './fold'
 import { curateDryRun } from './curate'
 import { improveDryRun } from './improve'
+import {
+  addLink,
+  applyIngest,
+  checkLink,
+  getRun,
+  linkById,
+  linksOverview,
+  listRuns,
+  planIngest,
+  removeLink,
+  undoIngest,
+  updateLink
+} from './links'
 import { PROVIDERS, cachedModels, providerById, providerSummary, refreshModels, testProvider } from './providers'
 import { setOverride } from './providerConfig'
 import {
@@ -2005,6 +2018,167 @@ app.get('/api/monitor/job/:id', async (request, reply) => {
     return { error: 'job-not-found' }
   }
   return { job }
+})
+
+/* ---------------------------- linked sources ---------------------------- */
+
+/** A skill id is the only handle the screen has, so the path is resolved here, once. */
+function targetOf(id: number): { path: string; name: string } | null {
+  const row = getSkill(id)
+  if (!row) return null
+  return { path: (row as { real_path?: string }).real_path ?? row.path, name: row.name }
+}
+
+app.get('/api/skills/:id/links', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const target = targetOf(Number(id))
+  if (!target) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  return { ...linksOverview(target.path), target }
+})
+
+app.post('/api/skills/:id/links', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const target = targetOf(Number(id))
+  if (!target) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  const body = (request.body ?? {}) as {
+    repo?: string
+    sourcePath?: string
+    sourceName?: string
+    track?: 'release' | 'commit'
+    ref?: string | null
+    mode?: 'distill' | 'attach' | 'summarize'
+  }
+  if (!body.repo || !body.sourcePath) {
+    reply.code(400)
+    return { error: 'repo-and-path-required' }
+  }
+  const created = addLink({
+    targetPath: target.path,
+    skillId: Number(id),
+    repo: body.repo,
+    sourcePath: body.sourcePath,
+    sourceName: body.sourceName,
+    track: body.track,
+    ref: body.ref ?? null,
+    mode: body.mode
+  })
+  if ('error' in created) {
+    reply.code(created.error === 'duplicate-link' ? 409 : 400)
+    return created
+  }
+  return { link: created, ...linksOverview(target.path) }
+})
+
+app.patch('/api/links/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { mode?: 'distill' | 'attach' | 'summarize'; track?: 'release' | 'commit'; ref?: string | null }
+  const updated = updateLink(Number(id), body)
+  if (!updated) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  return { link: updated, ...linksOverview(updated.target_path) }
+})
+
+app.delete('/api/links/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const link = linkById(Number(id))
+  if (!link) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  removeLink(Number(id))
+  return { removed: true, ...linksOverview(link.target_path) }
+})
+
+app.post('/api/links/:id/check', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const status = await checkLink(Number(id))
+  if ('error' in status) {
+    reply.code(status.error === 'not-found' ? 404 : 502)
+    return status
+  }
+  return { status }
+})
+
+app.post('/api/links/:id/plan', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { provider?: string; model?: string; includeCode?: boolean; supplied?: unknown }
+  const settings = readSettings()
+  const proposal = await planIngest({
+    linkId: Number(id),
+    provider: body.provider ?? settings.mergeProvider,
+    model: body.model ?? settings.mergeModel,
+    includeCode: body.includeCode,
+    supplied: body.supplied
+  })
+  if ('error' in proposal) {
+    const code =
+      proposal.error === 'not-found' || proposal.error === 'target-missing'
+        ? 404
+        : proposal.error === 'no-change' || proposal.error === 'nothing-new'
+          ? 409
+          : proposal.error === 'provider-failed' || proposal.error === 'bad-answer'
+            ? 502
+            : 400
+    reply.code(code)
+    return proposal
+  }
+  return { proposal }
+})
+
+app.post('/api/ingest/apply', async (request, reply) => {
+  const body = (request.body ?? {}) as { runId?: number; confirm?: boolean }
+  if (!body.runId) {
+    reply.code(400)
+    return { error: 'runId-required' }
+  }
+  if (body.confirm !== true) {
+    // Reading the dry run is one step; writing is another, and the second one is explicit.
+    reply.code(428)
+    return { error: 'confirm-required', detail: { note: 'apply needs confirm: true after the dry run was read' } }
+  }
+  const result = applyIngest(body.runId)
+  if ('error' in result) {
+    reply.code(result.error === 'local-changed' ? 409 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.post('/api/ingest/undo', async (request, reply) => {
+  const body = (request.body ?? {}) as { runId?: number }
+  if (!body.runId) {
+    reply.code(400)
+    return { error: 'runId-required' }
+  }
+  const result = undoIngest(body.runId)
+  if ('error' in result) {
+    reply.code(result.error === 'not-applied' ? 409 : 400)
+    return result
+  }
+  return { result }
+})
+
+app.get('/api/links/runs', async (request) => {
+  const query = request.query as { target?: string }
+  return { runs: listRuns(query.target) }
+})
+
+app.get('/api/ingest/runs/:runId', async (request, reply) => {
+  const { runId } = request.params as { runId: string }
+  const run = getRun(Number(runId))
+  if (!run) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  return { run }
 })
 
 app.get('/api/monitor', async () => monitorOverview())
