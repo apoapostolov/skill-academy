@@ -206,5 +206,8 @@ installed skills.
 
 ## Deferred, and why
 
-- A target that is itself a **composite** skill is refused rather than folded; its ingested sections
-  belong to its links, and the next ingest would fight the merge.
+- A target that is itself a **composite** skill is a blocker the dialog will not apply. The server
+  records it as `the target is a composite skill; fold into a plain skill or ingest the group
+  instead` and would take an explicit `ack`, but the dialog disables Apply on any blocker, so in the
+  screen it is a refusal. See `docs/linked-sources.md` for why: ingest and undo both restore whole
+  packages from a snapshot, so the two writers cannot share a file.
