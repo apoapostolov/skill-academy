@@ -1004,7 +1004,7 @@ export function deleteWorkspace(id: number): boolean {
  * API; `local` names a checkout on this machine and is read from disk. The column holds both: for a
  * local source it is the absolute path.
  */
-export type SourceKind = 'github' | 'local'
+export type SourceKind = 'github' | 'local' | 'zip'
 
 export interface SourceRow {
   id: number

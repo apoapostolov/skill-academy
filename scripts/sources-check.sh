@@ -180,6 +180,81 @@ check('a folder without .git is refused by name', status == 400 and refused2.get
 status, deleted = call('DELETE', f'/api/sources/{sid}', {})
 check('the source unregisters', status == 200, str(deleted)[:120])
 
+# --- a zip behind a URL -------------------------------------------------------------------------
+# The archive is wrapped in one folder, the way a GitHub archive is, so the unwrap is exercised too.
+import functools, http.server, socketserver, threading, zipfile
+
+pack = data / 'pack'
+(pack / 'pack-main' / 'skills' / 'zip-skill').mkdir(parents=True)
+(pack / 'pack-main' / 'skills' / 'zip-skill' / 'SKILL.md').write_text(
+    '---\nname: zip-skill\ndescription: A skill that arrives inside a zip.\nversion: 2.0.0\n---\n\n'
+    '# From a zip\n\n## Rules\n\n- One rule from the archive.\n', encoding='utf-8')
+(pack / 'pack-main' / 'skills' / 'zip-skill' / 'extra.md').write_text('extra\n', encoding='utf-8')
+archive = data / 'pack.zip'
+with zipfile.ZipFile(archive, 'w') as z:
+    for file in sorted(pack.rglob('*')):
+        if file.is_file():
+            z.write(file, file.relative_to(pack))
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+handler = functools.partial(Quiet, directory=str(data))
+httpd = socketserver.TCPServer(('127.0.0.1', 0), handler)
+zip_port = httpd.server_address[1]
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+zip_url = f'http://127.0.0.1:{zip_port}/pack.zip'
+
+status, added = call('POST', '/api/sources', {'kind': 'zip', 'url': zip_url})
+zsid = added.get('source', {}).get('id')
+check('a zip URL registers without downloading', status == 200 and added.get('source', {}).get('kind') == 'zip', str(added)[:150])
+
+status, bad = call('POST', '/api/sources', {'kind': 'zip', 'url': 'not a url'})
+check('a zip source needs an http URL', status == 400, str(bad)[:120])
+
+status, seen = call('POST', f'/api/sources/{zsid}/check', {})
+check('checking a zip names its bytes as the commit', status == 200 and len(str(seen.get('commit'))) == 12, str(seen)[:150])
+check('the first zip check reports no change', seen.get('changed') is False, str(seen.get('changed')))
+
+status, mapped = call('POST', f'/api/sources/{zsid}/skills', {'skills': ['skills/zip-skill']})
+check('a skill inside the archive is mappable', status == 200 and mapped.get('skills') == ['skills/zip-skill'], str(mapped)[:140])
+
+status, zip_plan = call('POST', f'/api/sources/{zsid}/plan-update', {})
+check('the plan reads the unpacked tree', status == 200 and zip_plan.get('files', [{}])[0].get('bytes') == 2,
+      str(zip_plan.get('files'))[:160])
+
+status, applied = call('POST', f'/api/sources/{zsid}/apply-update',
+                       {'planId': zip_plan.get('planId'), 'confirm': True, 'replace': True})
+check('a zip replaces into the library', status == 200 and len(applied.get('replaced', [])) == 1, str(applied)[:180])
+installed = library / 'zip-skill'
+check('the archived package lands with its support file',
+      (installed / 'SKILL.md').exists() and (installed / 'extra.md').exists(), str(installed))
+check('the archive text is what landed', 'One rule from the archive.' in (installed / 'SKILL.md').read_text(encoding='utf-8'),
+      (installed / 'SKILL.md').read_text(encoding='utf-8')[:60])
+status, indexed = call('GET', '/api/skills?q=zip-skill')
+check('a zip skill is indexed', any(row.get('name') == 'zip-skill' for row in indexed.get('rows', [])), str(indexed)[:140])
+
+# The same URL serving different bytes is a new commit, and nothing is replaced without asking.
+with zipfile.ZipFile(archive, 'w') as z:
+    for file in sorted(pack.rglob('*')):
+        if file.is_file():
+            z.write(file, file.relative_to(pack))
+(new := pack / 'pack-main' / 'skills' / 'zip-skill' / 'SKILL.md').write_text(
+    '---\nname: zip-skill\ndescription: A skill that arrives inside a zip.\nversion: 2.1.0\n---\n\n'
+    '# From a zip\n\n## Rules\n\n- The rule the second archive carries.\n', encoding='utf-8')
+with zipfile.ZipFile(archive, 'w') as z:
+    for file in sorted(pack.rglob('*')):
+        if file.is_file():
+            z.write(file, file.relative_to(pack))
+status, second = call('POST', f'/api/sources/{zsid}/check', {})
+check('new archive bytes read as a change', second.get('changed') is True, str(second)[:150])
+check('a zip check reaches the new commit', (installed / 'SKILL.md').exists(), str(second.get('commit')))
+httpd.shutdown()
+
+status, deleted = call('DELETE', f'/api/sources/{zsid}', {})
+check('the zip source unregisters', status == 200, str(deleted)[:120])
+
 print('')
 print('sources checks:', 'all passed' if not failures else f'{len(failures)} failed: {failures}')
 sys.exit(1 if failures else 0)

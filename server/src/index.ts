@@ -43,6 +43,7 @@ import {
   saveWorkspace,
   deleteWorkspace,  listSources,
   saveSource,
+  SourceKind,
   recordSourceCheck,
   deleteSource,  recordSourceEvent,
   listSourceEvents,
@@ -58,6 +59,7 @@ import {
   saveOne,
   setMutationHook
 } from './db'
+import { downloadZip, extractZip, skillDirsIn, zipTreeDir } from './zipsource'
 import {
   archiveSkill,
   expiredTrash,
@@ -943,7 +945,17 @@ app.post('/api/providers/:id/test', async (request, reply) => {
 app.get('/api/sources', async () => ({ sources: listSources() }))
 
 app.post('/api/sources', async (request, reply) => {
-  const body = (request.body ?? {}) as { repo?: string; path?: string; kind?: string }
+  const body = (request.body ?? {}) as { repo?: string; path?: string; url?: string; kind?: string }
+  if (body.kind === 'zip' || body.url) {
+    const given = (body.url ?? body.repo ?? '').trim()
+    if (!/^https?:\/\//i.test(given)) {
+      reply.code(400)
+      return { error: 'a zip source needs an http(s) URL' }
+    }
+    // The download happens on check, not here: registering a source writes no files and does not
+    // make the app depend on the URL being up at the moment it is added.
+    return { source: saveSource(given, 'zip') }
+  }
   if (body.kind === 'local' || body.path) {
     const given = (body.path ?? '').trim()
     if (!given) {
@@ -971,6 +983,22 @@ app.post('/api/sources', async (request, reply) => {
   return { source: saveSource(repo, 'github') }
 })
 
+/**
+ * The directory a source's files are read from, or null when there is nothing to read yet.
+ * A local source is its own checkout; a zip source is the unpacked tree for the commit a plan named.
+ */
+function sourceTree(source: { id: number; repo: string; kind?: SourceKind; last_commit: string | null }): string | null {
+  if (source.kind === 'zip') {
+    if (!source.last_commit) return null
+    const tree = zipTreeDir(DATA_DIR, source.id, source.last_commit)
+    if (!existsSync(tree)) return null
+    // An archive usually wraps everything in one folder (`repo-main/`); a mapping names paths
+    // inside that folder, not above it.
+    return skillDirsIn(tree).base
+  }
+  return source.repo
+}
+
 /** Runs git in a checkout and returns its stdout, or an empty string when it fails. */
 function gitOutput(checkout: string, args: string[]): string {
   const result = spawnSync('git', ['-C', checkout, ...args], { encoding: 'utf8', timeout: 15_000 })
@@ -981,11 +1009,28 @@ function gitOutput(checkout: string, args: string[]): string {
 async function checkSource(source: {
   id: number
   repo: string
-  kind?: 'github' | 'local'
+  kind?: SourceKind
   last_commit: string | null
   last_release: string | null
   checked_at: string | null
 }) {
+  if (source.kind === 'zip') {
+    const downloaded = await downloadZip(source.repo, DATA_DIR, source.id)
+    const seenBefore = source.checked_at !== null
+    const tree = zipTreeDir(DATA_DIR, source.id, downloaded.commit)
+    // Unpacking on check keeps a plan readable: the plan hashes files, and hashing needs the tree.
+    if (!existsSync(tree)) extractZip(downloaded.archive, tree)
+    if (seenBefore && downloaded.commit !== source.last_commit) recordSourceEvent(source.repo, 'commit', downloaded.commit)
+    recordSourceCheck(source.repo, downloaded.commit, downloaded.release)
+    return {
+      repo: source.repo,
+      commit: downloaded.commit,
+      release: downloaded.release,
+      changed: seenBefore && downloaded.commit !== source.last_commit,
+      previous: { commit: source.last_commit, release: source.last_release },
+      kind: 'zip' as const
+    }
+  }
   if (source.kind === 'local') {
     const commit = gitOutput(source.repo, ['rev-parse', 'HEAD']).trim().slice(0, 12) || null
     if (!commit) {
@@ -1336,10 +1381,11 @@ app.post('/api/sources/:id/plan-update', async (request, reply) => {
   }
 
   const mapped = sourceSkills(source.id)
+  const tree = sourceTree(source)
   const files: Array<{ path: string; status: number; hash: string | null; bytes: number }> = []
-  if (mapped.length && source.kind === 'local') {
+  if (mapped.length && tree) {
     for (const filePath of mapped) {
-      const entry = path.join(source.repo, filePath)
+      const entry = path.join(tree, filePath)
       if (existsSync(entry) && statSync(entry).isDirectory()) {
         const inside = readdirSync(entry, { recursive: true }) as string[]
         const blobs = inside.filter((relative) => statSync(path.join(entry, relative)).isFile())
@@ -1446,12 +1492,13 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
 
   const staged: string[] = []
   const replaced: Array<{ name: string; path: string; files: number }> = []
-  if (source && mapped.length && source.kind === 'local') {
-    // A checkout on this machine needs no fetch: the files are already there, and git has already
-    // told us which commit they belong to.
-    const root = path.join(DATA_DIR, 'staging', `${source.id}-${(plan.commit ?? 'local').slice(0, 12)}`)
+  const tree = source ? sourceTree(source) : null
+  if (source && mapped.length && tree) {
+    // A checkout or an unpacked archive needs no fetch: the files are already there, and the check
+    // has already said which commit they belong to.
+    const root = path.join(DATA_DIR, 'staging', `${source.id}-${(plan.commit ?? source.kind ?? 'local').slice(0, 12)}`)
     for (const filePath of mapped) {
-      const entry = path.join(source.repo, filePath)
+      const entry = path.join(tree, filePath)
       if (!existsSync(entry)) continue
       const target = path.join(root, filePath.replace(/^\/+/, ''))
       mkdirSync(path.dirname(target), { recursive: true })
@@ -1463,11 +1510,11 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         staged.push(target)
       }
     }
-    addJournal('source-fetch', { repo: source.repo, ref: plan.commit, staged, kind: 'local' })
+    addJournal('source-fetch', { repo: source.repo, ref: plan.commit, staged, kind: source.kind })
 
     if (body.replace === true) {
       for (const skillPath of mapped) {
-        const entry = path.join(source.repo, skillPath.replace(/\/+$/, ''))
+        const entry = path.join(tree, skillPath.replace(/\/+$/, ''))
         if (!existsSync(entry) || !statSync(entry).isDirectory()) continue
         const name = path.basename(entry)
         const target = path.join(LIBRARY_DIR, name)
@@ -1481,7 +1528,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         setSourceBaseline(source.id, name, packageDigest(written), written)
         replaced.push({ name, path: target, files: files.length })
       }
-      addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, kind: 'local' })
+      addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, kind: source.kind })
     }
   } else if (source && mapped.length) {
     const ref = plan.commit ?? plan.release ?? 'HEAD'

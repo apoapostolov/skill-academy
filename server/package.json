@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "^2.1.2",
+    "adm-zip": "^0.6.1",
     "chokidar": "^4.0.3",
     "fastify": "^5.2.0",
     "gpt-tokenizer": "^4.1.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 interface SourceRow {
   id: number
   repo: string
-  kind: 'github' | 'local'
+  kind: 'github' | 'local' | 'zip'
   added_at: string
   last_commit: string | null
   last_release: string | null
@@ -42,7 +42,7 @@ interface EventRow {
 export function SourcesDialog({ onClose }: { onClose: () => void }) {
   const [sources, setSources] = useState<SourceRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
-  const [kind, setKind] = useState<'github' | 'local'>('local')
+  const [kind, setKind] = useState<'github' | 'local' | 'zip'>('local')
   const [entry, setEntry] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,7 +77,13 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
       const response = await fetch('/api/sources', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(kind === 'local' ? { path: entry.trim(), kind: 'local' } : { repo: entry.trim(), kind: 'github' })
+        body: JSON.stringify(
+          kind === 'local'
+            ? { path: entry.trim(), kind: 'local' }
+            : kind === 'zip'
+              ? { url: entry.trim(), kind: 'zip' }
+              : { repo: entry.trim(), kind: 'github' }
+        )
       })
       const data = (await response.json()) as { source?: SourceRow; error?: string; detail?: string; branch?: string }
       if (data.error) {
@@ -203,7 +209,8 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
           {(
             [
               ['local', 'Local checkout'],
-              ['github', 'GitHub repo']
+              ['github', 'GitHub repo'],
+              ['zip', 'Zip from a URL']
             ] as const
           ).map(([key, label]) => (
             <button
