@@ -184,11 +184,13 @@ Both parts that were missing are built: the tag chip editor writes the `tags:` l
 frontmatter (`PATCH /api/drafts/:id/tags`), and a draft can be deleted from the screen, which moves
 its folder into the app's trash rather than unlinking it. `scripts/authoring-check.sh` runs 34 checks.
 
-### P7 — Cloud sync (5 days)
+### P7 — Cloud sync (5 days) — built
 
 Git profiles, manifest, push with secrets scan, pull with three-way merge and per-path conflict resolution, schedules, status. Merging is skill-aware: a rename on one machine combines with an edit on another instead of presenting as a delete-plus-add.
 
 Exit: two machines converge on the same package hashes through a private repo; a conflicting edit surfaces as one conflict and loses nothing; a key-shaped string blocks the push; deleting `index.db` and pulling restores skills and placements.
+
+Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact pull, conflict copies), `server/src/lockdoc.ts` (the lock also lists the library's own packages), `server/src/lockrestore.ts` (a lock rebuilds the index and the placements), `web/src/Sync.tsx` (the Sync dialog) and `scripts/sync-check.sh` with **20 checks** over three servers and one bare repository. Detail and limits: `docs/sync.md`.
 
 ### P8 — Polish (8 days, including the key map)
 

@@ -64,6 +64,9 @@ import {
 } from './db'
 import { downloadZip, extractZip, skillDirsIn, zipTreeDir } from './zipsource'
 import { fetchAudit, parseEntry, type RegistryVerdict } from './skillssh'
+import { pullSync, pushSync, readSyncConfig, setSyncConfig, syncStatus } from './sync'
+import { restoreFromLock } from './lockrestore'
+import { defaultLockPath, lockDocument } from './lockdoc'
 import {
   archiveSkill,
   expiredTrash,
@@ -576,37 +579,8 @@ app.get('/api/placements', async (request, reply) => {
 
 app.get('/api/presets', async () => ({ presets: listPresets() }))
 
-function lockDocument() {
-  const rows = lockRows().map((row) => ({
-    name: row.name,
-    version: row.version ?? null,
-    // The folder the package is in, and the root it was found under. Both are needed: the first
-    // to find it again, the second to know which agent it arrived from.
-    path: row.path,
-    root: row.root_path,
-    hash: row.package_hash ?? null,
-    category: row.category ?? null,
-    tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
-    // Where it is switched on. A lock without placements can rebuild a library but not the
-    // arrangement, and the arrangement is what a second machine needs to look like this one.
-    placements: placementsForName(row.name)
-  }))
-  return { lockVersion: 1, skills: rows }
-}
-
-/** Placements for every row sharing a name: the name is what the lock identifies a skill by. */
-function placementsForName(name: string): Array<{ root: string; mode: string; target: string }> {
-  const rows = getDb()
-    .prepare(
-      `SELECT s.name, p.root_path, p.target_path, p.mode FROM placements p
-       JOIN skills s ON s.id = p.skill_id WHERE s.name = ? ORDER BY p.root_path`
-    )
-    .all(name) as Array<{ root_path: string; target_path: string; mode: string }>
-  return rows.map((row) => ({ root: row.root_path, mode: row.mode, target: row.target_path }))
-}
-
 function lockPath(body?: { path?: string }): string {
-  return body?.path ?? process.env.SKILL_ACADEMY_LOCK ?? path.join(DATA_DIR, 'skill-academy.lock.json')
+  return body?.path ?? defaultLockPath()
 }
 
 /**
@@ -636,6 +610,35 @@ function queueLockWrite(): void {
   lockTimer.unref?.()
 }
 setMutationHook(queueLockWrite)
+
+// Cloud sync is git over the user's own private repository. The app owns a checkout, not an
+// account: no token is stored, and git's own credential helper does the authenticating.
+app.get('/api/sync', async () => syncStatus())
+
+app.post('/api/sync/config', async (request, reply) => {
+  const body = (request.body ?? {}) as { repo?: string; branch?: string }
+  const repo = (body.repo ?? '').trim()
+  if (!repo) {
+    reply.code(400)
+    return { error: 'a repository is required' }
+  }
+  return { config: setSyncConfig(repo, (body.branch ?? 'main').trim() || 'main') }
+})
+
+app.post('/api/sync/push', async (request, reply) => {
+  const result = pushSync(readSyncConfig())
+  if (!result.ok) {
+    // A secret-shaped string is not a failure of the push, it is a refusal: nothing was committed.
+    reply.code(result.error === 'secrets-found' ? 409 : 400)
+  }
+  return result
+})
+
+app.post('/api/sync/pull', async (request, reply) => {
+  const result = pullSync(readSyncConfig())
+  if (!result.ok) reply.code(400)
+  return result
+})
 
 app.get('/api/lock', async () => lockDocument())
 
@@ -690,79 +693,13 @@ app.post('/api/lock/restore', async (request, reply) => {
     reply.code(404)
     return { error: 'no-lockfile', path: target }
   }
-  const document = JSON.parse(readFileSync(target, 'utf8')) as {
-    lockVersion?: number
-    skills?: Array<{
-      name: string
-      version?: string | null
-      path?: string
-      root: string
-      hash?: string | null
-      category?: string | null
-      tags?: string[]
-      placements?: Array<{ root: string; mode: string; target: string }>
-    }>
+  const restored = restoreFromLock(target, { apply: body.apply === true, prune: body.prune === true })
+  if ('error' in restored) {
+    reply.code(400)
+    return { error: restored.error, path: target }
   }
-  const entries = document.skills ?? []
-  const matched: string[] = []
-  const missing: string[] = []
-  const diverged: Array<{ name: string; root: string; expected: string | null; actual: string }> = []
-  let placementsWritten = 0
-
-  for (const entry of entries) {
-    // A lock written before the path was recorded named only the root, and the package is the one
-    // named after the skill inside it.
-    const dir = entry.path ?? path.join(entry.root, entry.name)
-    if (!existsSync(path.join(dir, 'SKILL.md'))) {
-      missing.push(`${entry.name}@${dir}`)
-      continue
-    }
-    // The same read the scan performs, so the hash compared is the hash the lock recorded.
-    const record = parseSkill(dir, path.dirname(dir), 'lock')
-    if (!record) {
-      missing.push(`${entry.name}@${dir}`)
-      continue
-    }
-    if (entry.hash && record.packageHash !== entry.hash) {
-      diverged.push({ name: entry.name, root: dir, expected: entry.hash, actual: record.packageHash })
-      continue
-    }
-    matched.push(`${entry.name}@${dir}`)
-    if (body.apply === true) {
-      saveOne(path.dirname(dir), 'lock', record)
-      for (const placement of entry.placements ?? []) {
-        const skill = getDb().prepare('SELECT id FROM skills WHERE path = ?').get(dir) as { id: number } | undefined
-        if (!skill) continue
-        getDb()
-          .prepare(
-            `INSERT INTO placements (skill_id, root_path, target_path, mode, seen_at) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(skill_id, root_path) DO UPDATE SET target_path = excluded.target_path, mode = excluded.mode, seen_at = excluded.seen_at`
-          )
-          .run(skill.id, placement.root, placement.target, placement.mode, new Date().toISOString())
-        placementsWritten += 1
-      }
-    }
-  }
-
-  const unlisted = body.prune === true
-    ? (getDb().prepare('SELECT name, path FROM skills').all() as Array<{ name: string; path: string }>).filter(
-        (row) => !entries.some((entry) => entry.root === row.path)
-      )
-    : []
-  for (const row of unlisted) removeByPath(row.path)
-
-  if (missing.length || diverged.length) reply.code(409)
-  return {
-    path: target,
-    lockVersion: document.lockVersion ?? null,
-    skills: entries.length,
-    matched,
-    missing,
-    diverged,
-    placementsWritten,
-    pruned: unlisted.map((row) => row.name),
-    applied: body.apply === true
-  }
+  if (restored.missing.length || restored.diverged.length) reply.code(409)
+  return { path: target, ...restored }
 })
 
 app.post('/api/github/key', async (request, reply) => {

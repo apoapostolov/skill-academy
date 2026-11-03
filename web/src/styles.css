@@ -5148,3 +5148,13 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   border: 1px dashed var(--hair);
   border-radius: 10px;
 }
+
+/* The sync dialog is wider than the sources one: it carries a repository, a branch and two actions
+   on one line, and the findings read as file-and-line rows. */
+.syncdlg {
+  inset: 8vh 14vw;
+}
+
+.syncbranch {
+  max-width: 90px;
+}
