@@ -183,6 +183,11 @@ check('undo returns the hash the run started from', undone['result']['hash'] == 
       f"expected {proposal_b['hashBefore']}, got {undone['result']['hash']}")
 body = (target / 'SKILL.md').read_text(encoding='utf-8')
 check('the distilled section is gone after undo', '## From receiving-code-review (obra/superpowers@' not in body)
+# Undo is a point in time, not a per-source removal: the run after B had already landed, and its
+# section went with the snapshot B restored. Undo in reverse order and this never bites.
+check('an older undo takes the later ingest with it',
+      '## From brainstorming (obra/superpowers@' not in body,
+      'the section the run after B wrote is still there, so undo is per-source after all')
 
 # 8. A composite skill is not a merge candidate.
 status, groups = call('GET', '/api/consolidate')

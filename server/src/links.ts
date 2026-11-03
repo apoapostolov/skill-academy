@@ -576,17 +576,42 @@ export async function planIngest(input: PlanInput): Promise<IngestProposal | { e
     return { error: 'provider-failed', detail: { message } }
   }
 
-  const parsed = parseAnswer(answer.text)
+  let parsed = parseAnswer(answer.text)
+  let answered = answer
+  if ('error' in parsed && input.supplied === undefined) {
+    // An array that stops mid-element is a report that was cut off, not a model refusing to answer:
+    // say where it broke and ask once more for the whole object.
+    const retry = await askModel(provider, {
+      system,
+      user: [
+        user,
+        '',
+        `Your previous answer stopped before the JSON ended: ${parsed.error}. It ended with:`,
+        answer.text.slice(-400),
+        '',
+        'Return the complete JSON object again, every array closed, no prose around it.'
+      ].join('\n'),
+      model,
+      temperature: 0.1,
+      maxTokens: 12_000,
+      timeoutMs: 180_000
+    })
+    if (!('kind' in retry)) {
+      const second = parseAnswer(retry.text)
+      answered = retry
+      if (!('error' in second)) parsed = second
+    }
+  }
   if ('error' in parsed) {
     // The tokens are the evidence: an empty answer that still spent output tokens is a truncated
     // or reasoning-only reply, not a model that refused.
     const detail = {
       message: parsed.error,
-      sample: answer.text.slice(0, 300),
-      chars: answer.text.length,
-      inTokens: answer.inputTokens,
-      outTokens: answer.outputTokens,
-      model: answer.model
+      sample: answered.text.slice(0, 300),
+      chars: answered.text.length,
+      inTokens: answered.inputTokens,
+      outTokens: answered.outputTokens,
+      model: answered.model
     }
     finishRun(runId, 'failed', { error: `${parsed.error} (chars ${detail.chars}, out ${detail.outTokens})` })
     return { error: 'bad-answer', detail }

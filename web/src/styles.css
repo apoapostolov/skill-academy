@@ -3634,6 +3634,18 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 
 /* ------------------------------- merge planning ------------------------------- */
 
+/* A dialog is a layer, not a block in the flow: without this it lands inside whatever holds it. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 9, 11, 0.72);
+  z-index: 60;
+}
+
 .modal-backdrop.inner {
   position: fixed;
   inset: 0;
