@@ -4323,3 +4323,11 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .mergecandidate:hover {
   border-color: rgba(127, 163, 199, 0.6);
 }
+
+/* An empty trash is a state, not a note: it sits in the middle of the list, clear of the header. */
+.trashview .empty.trashempty {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: rgb(138, 142, 150);
+}

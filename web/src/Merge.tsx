@@ -602,7 +602,7 @@ export function TrashView({
               <div className="mergeexpiry">{new Date(row.expires_at).toLocaleDateString()}</div>
             </div>
           ))}
-          {!rows.length && <div className="mergenote">Nothing has been deleted.</div>}
+          {!rows.length && <div className="empty trashempty">Nothing has been deleted.</div>}
         </div>
 
         <div className="trashfoot">
