@@ -44,6 +44,9 @@ import {
   deleteWorkspace,  listSources,
   saveSource,
   SourceKind,
+  dueSources,
+  setSourceSchedule,
+  type SourceMode,
   recordSourceCheck,
   deleteSource,  recordSourceEvent,
   listSourceEvents,
@@ -1009,6 +1012,25 @@ function sourceTree(source: { id: number; repo: string; kind?: SourceKind; last_
   return source.repo
 }
 
+/**
+ * Keeps a copy of a package before an update overwrites it. An update that cannot be taken back is
+ * not an update, it is a gamble, so the previous bytes are recorded beside the library and named in
+ * the journal entry that made them the previous bytes.
+ */
+function snapshotPackage(target: string, name: string): string | null {
+  if (!existsSync(target)) return null
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const folder = path.join(LIBRARY_DIR, '.snapshots', `${name}-${stamp}`)
+  try {
+    mkdirSync(path.dirname(folder), { recursive: true })
+    cpSync(target, folder, { recursive: true })
+    return folder
+  } catch (error) {
+    console.error('snapshot failed:', (error as Error).message)
+    return null
+  }
+}
+
 /** Runs git in a checkout and returns its stdout, or an empty string when it fails. */
 function gitOutput(checkout: string, args: string[]): string {
   const result = spawnSync('git', ['-C', checkout, ...args], { encoding: 'utf8', timeout: 15_000 })
@@ -1506,6 +1528,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
 
   const staged: string[] = []
   const replaced: Array<{ name: string; path: string; files: number }> = []
+  const snapshots: Array<{ name: string; target: string; snapshot: string }> = []
   const tree = source ? sourceTree(source) : null
   if (source && mapped.length && tree) {
     // A checkout or an unpacked archive needs no fetch: the files are already there, and the check
@@ -1532,7 +1555,9 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         if (!existsSync(entry) || !statSync(entry).isDirectory()) continue
         const name = path.basename(entry)
         const target = path.join(LIBRARY_DIR, name)
+        const snapshot = snapshotPackage(target, name)
         if (existsSync(target)) unplace(target, TRASH_DIR)
+        if (snapshot) snapshots.push({ name, target, snapshot })
         cpSync(entry, target, { recursive: true })
         const files = (readdirSync(target, { recursive: true }) as string[]).filter((relative) =>
           statSync(path.join(target, relative)).isFile()
@@ -1542,7 +1567,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         setSourceBaseline(source.id, name, packageDigest(written), written)
         replaced.push({ name, path: target, files: files.length })
       }
-      addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, kind: source.kind })
+      addJournal('source-replace', { repo: source.repo, ref: plan.commit, replaced, snapshots, kind: source.kind })
     }
   } else if (source && mapped.length) {
     const ref = plan.commit ?? plan.release ?? 'HEAD'
@@ -1572,7 +1597,9 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         if (!treeResponse.ok) continue
         const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string }> }
         const files = (tree.tree ?? []).filter((entry) => entry.type === 'blob' && entry.path.startsWith(skillPath + '/'))
+        const snapshot = snapshotPackage(target, name)
         if (existsSync(target)) unplace(target, TRASH_DIR)
+        if (snapshot) snapshots.push({ name, target, snapshot })
         for (const file of files) {
           const relative = file.path.slice(skillPath.length + 1)
           const destination = path.join(target, relative)
@@ -1585,7 +1612,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
         setSourceBaseline(source.id, name, packageDigest(written), written)
         replaced.push({ name, path: target, files: files.length })
       }
-      addJournal('source-replace', { repo: source.repo, ref, replaced })
+      addJournal('source-replace', { repo: source.repo, ref, replaced, snapshots })
     }
   }
 
@@ -1601,6 +1628,7 @@ app.post('/api/sources/:id/apply-update', async (request, reply) => {
     acknowledged: acknowledged.length,
     staged,
     replaced,
+    snapshots: snapshots.length,
     note: staged.length
       ? 'Files are staged. Installing them into the library is a separate, reversible step.'
       : 'No mapped files to fetch.'
@@ -1638,6 +1666,101 @@ app.get('/api/sources/:id/audit', async (request, reply) => {
     }
   }
   return { repo: entry.source, verdicts }
+})
+
+/**
+ * A tick checks the sources whose interval has run out and, for one in `auto`, applies what changed.
+ *
+ * Applying goes through the same two routes the screen calls, so an automatic update cannot behave
+ * differently from a confirmed one: the local-edit guard refuses it exactly as it refuses a person,
+ * and every write is journalled with the snapshot that makes it reversible.
+ */
+async function selfPost(pathname: string, body?: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
+  const response = await fetch(`http://127.0.0.1:${API_PORT}${pathname}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {})
+  })
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>
+  return { status: response.status, data }
+}
+
+async function runDueSources(force: boolean): Promise<{
+  checked: number
+  changed: number
+  applied: number
+  blocked: number
+  errors: string[]
+}> {
+  const due = force
+    ? listSources().filter((row) => row.check_every_minutes > 0)
+    : dueSources(new Date())
+  const summary = { checked: 0, changed: 0, applied: 0, blocked: 0, errors: [] as string[] }
+  for (const source of due) {
+    summary.checked += 1
+    let seen: Awaited<ReturnType<typeof checkSource>>
+    try {
+      seen = await checkSource(source)
+    } catch (error) {
+      summary.errors.push(`${source.repo}: ${(error as Error).message}`)
+      continue
+    }
+    if ('error' in seen) {
+      summary.errors.push(`${source.repo}: ${seen.error}`)
+      continue
+    }
+    if (!seen.changed) continue
+    summary.changed += 1
+    if (source.mode !== 'auto') continue
+
+    const planned = await selfPost(`/api/sources/${source.id}/plan-update`)
+    if (planned.status !== 200) {
+      summary.errors.push(`${source.repo}: plan ${String(planned.data.error ?? planned.status)}`)
+      continue
+    }
+    const applied = await selfPost(`/api/sources/${source.id}/apply-update`, {
+      planId: planned.data.planId,
+      confirm: true,
+      replace: true
+    })
+    if (applied.status === 409 && applied.data.error === 'local-edit') {
+      // Something was edited here. An automatic run stops rather than overwrite it, and the event
+      // stays unacknowledged so the edit can be resolved by a person.
+      summary.blocked += 1
+      addJournal('source-auto-blocked', { repo: source.repo, commit: seen.commit, edited: applied.data.edited })
+      continue
+    }
+    if (applied.status !== 200) {
+      summary.errors.push(`${source.repo}: apply ${String(applied.data.error ?? applied.status)}`)
+      continue
+    }
+    summary.applied += 1
+    addJournal('source-auto', {
+      repo: source.repo,
+      commit: seen.commit,
+      release: seen.release,
+      replaced: Array.isArray(applied.data.replaced) ? applied.data.replaced.length : 0
+    })
+  }
+  return summary
+}
+
+app.post('/api/sources/:id/schedule', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = (request.body ?? {}) as { minutes?: number; mode?: string }
+  const source = listSources().find((row) => row.id === Number(id))
+  if (!source) {
+    reply.code(404)
+    return { error: 'not found' }
+  }
+  const mode: SourceMode = body.mode === 'auto' ? 'auto' : 'notify'
+  setSourceSchedule(source.id, Number(body.minutes ?? 0), mode)
+  return { source: listSources().find((row) => row.id === source.id) }
+})
+
+app.post('/api/sources/tick', async (request) => {
+  const body = (request.body ?? {}) as { force?: boolean }
+  return runDueSources(body.force === true)
 })
 
 app.post('/api/sources/check-all', async () => {
@@ -3390,6 +3513,17 @@ app
         }
       })().catch(() => undefined)
     }, 5 * 60_000).unref()
+    // Sources with an interval are checked once a minute; a source with no interval is never
+    // touched here. SKILL_ACADEMY_SCHEDULE=0 (what every harness sets) leaves the timer out.
+    if (process.env.SKILL_ACADEMY_SCHEDULE !== '0') {
+      setInterval(() => {
+        void runDueSources(false)
+          .then((summary) => {
+            if (summary.checked) console.log('source tick:', JSON.stringify(summary))
+          })
+          .catch((error) => console.error('source tick failed:', (error as Error).message))
+      }, 60_000).unref()
+    }
   })
   .catch((error) => {
     console.error('api failed to start:', error)

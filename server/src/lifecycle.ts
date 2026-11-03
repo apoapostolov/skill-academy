@@ -232,6 +232,7 @@ export function undoJournal(journalId: number): { ok: boolean; reason?: string; 
   if (!row) return { ok: false, reason: 'not-found' }
   if (row.undone_at) return { ok: false, reason: 'already-undone' }
   const payload = JSON.parse(row.payload) as {
+    snapshots?: Array<{ name: string; target: string; snapshot: string }>
     trashId?: number
     target?: string
     from?: string
@@ -264,6 +265,26 @@ export function undoJournal(journalId: number): { ok: boolean; reason?: string; 
         fs.rmSync(payload.snapshot, { recursive: true, force: true })
       } else {
         fs.rmSync(payload.target, { recursive: true, force: true })
+      }
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message }
+    }
+  } else if (row.action === 'source-replace') {
+    // A source replaced packages it had snapshotted first. Undo puts every one of them back, and a
+    // package the replace created has no snapshot, so undo removes it.
+    const written = (payload as { snapshots?: Array<{ name: string; target: string; snapshot: string }> }).snapshots ?? []
+    try {
+      for (const entry of written) {
+        if (entry.snapshot && fs.existsSync(entry.snapshot)) {
+          fs.rmSync(entry.target, { recursive: true, force: true })
+          fs.cpSync(entry.snapshot, entry.target, { recursive: true })
+          fs.rmSync(entry.snapshot, { recursive: true, force: true })
+          const parsed = parseSkill(entry.target, path.dirname(entry.target), 'library')
+          if (parsed) saveOne(path.dirname(entry.target), 'library', parsed)
+        } else {
+          removeByPath(entry.target)
+          fs.rmSync(entry.target, { recursive: true, force: true })
+        }
       }
     } catch (error) {
       return { ok: false, reason: (error as Error).message }

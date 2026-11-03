@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react'
  */
 
 interface SourceRow {
+  check_every_minutes: number
+  mode: 'notify' | 'auto'
   id: number
   repo: string
   kind: 'github' | 'local' | 'zip' | 'skillssh'
@@ -129,6 +131,21 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
       }
       setEntry('')
       setNote(data.branch ? `added on ${data.branch}` : 'added')
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** The interval and the mode travel together: a schedule with no mode would be a question. */
+  const setSchedule = async (source: SourceRow, minutes: number, mode: 'notify' | 'auto'): Promise<void> => {
+    setBusy(true)
+    try {
+      await fetch(`/api/sources/${source.id}/schedule`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ minutes, mode })
+      })
       await load()
     } finally {
       setBusy(false)
@@ -356,6 +373,29 @@ export function SourcesDialog({ onClose }: { onClose: () => void }) {
                 Registry audit
               </button>
             )}
+            <select
+              className="sdsched"
+              aria-label={`Check interval for ${source.repo}`}
+              value={source.check_every_minutes ?? 0}
+              onChange={(event) => void setSchedule(source, Number(event.target.value), source.mode ?? 'notify')}
+            >
+              <option value={0}>Off</option>
+              <option value={15}>Every 15 min</option>
+              <option value={60}>Hourly</option>
+              <option value={360}>Every 6 hours</option>
+              <option value={1440}>Daily</option>
+            </select>
+            <button
+              type="button"
+              className={`switch ${source.mode === 'auto' ? 'on' : ''}`}
+              role="switch"
+              aria-checked={source.mode === 'auto'}
+              title={source.mode === 'auto' ? 'Automatic: a change is applied' : 'Notify: a change is recorded only'}
+              onClick={() => void setSchedule(source, source.check_every_minutes ?? 0, source.mode === 'auto' ? 'notify' : 'auto')}
+            >
+              <span className="knob" />
+            </button>
+            <span className="sdmodename">{source.mode === 'auto' ? 'auto' : 'notify'}</span>
           </div>
           <div className="sdmap">
             <input

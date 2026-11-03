@@ -268,6 +268,58 @@ with zipfile.ZipFile(archive, 'w') as z:
 status, second = call('POST', f'/api/sources/{zsid}/check', {})
 check('new archive bytes read as a change', second.get('changed') is True, str(second)[:150])
 check('a zip check reaches the new commit', (installed / 'SKILL.md').exists(), str(second.get('commit')))
+# --- scheduling, an automatic update, and taking it back -----------------------------------------
+def repack(text):
+    (pack / 'pack-main' / 'skills' / 'zip-skill' / 'SKILL.md').write_text(
+        '---\nname: zip-skill\ndescription: A skill that arrives inside a zip.\nversion: 2.1.0\n---\n\n'
+        '# From a zip\n\n## Rules\n\n- ' + text + '\n', encoding='utf-8')
+    with zipfile.ZipFile(archive, 'w') as z:
+        for file in sorted(pack.rglob('*')):
+            if file.is_file():
+                z.write(file, file.relative_to(pack))
+
+install_text_a = (installed / 'SKILL.md').read_text(encoding='utf-8')
+
+status, scheduled = call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 1, 'mode': 'notify'})
+check('a source takes an interval and a mode', status == 200 and scheduled.get('source', {}).get('check_every_minutes') == 1
+      and scheduled.get('source', {}).get('mode') == 'notify', str(scheduled)[:160])
+
+repack('The rule the third archive carries.')
+status, notify_tick = call('POST', '/api/sources/tick', {'force': True})
+check('a tick checks the source that has an interval', notify_tick.get('checked') == 1, str(notify_tick)[:160])
+check('notify mode records the change and applies nothing',
+      notify_tick.get('changed') == 1 and notify_tick.get('applied') == 0, str(notify_tick)[:160])
+check('notify mode leaves the library alone', (installed / 'SKILL.md').read_text(encoding='utf-8') == install_text_a)
+
+status, auto = call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 1, 'mode': 'auto'})
+check('the mode can become automatic', auto.get('source', {}).get('mode') == 'auto', str(auto)[:140])
+
+repack('The rule the fourth archive carries.')
+status, auto_tick = call('POST', '/api/sources/tick', {'force': True})
+check('an automatic tick applies the update', auto_tick.get('applied') == 1, str(auto_tick)[:200])
+auto_text = (installed / 'SKILL.md').read_text(encoding='utf-8')
+check('the library carries the archive it was never asked about', 'fourth archive' in auto_text, auto_text[:80])
+
+status, quiet_tick = call('POST', '/api/sources/tick', {'force': True})
+check('the next tick finds nothing new', quiet_tick.get('changed') == 0, str(quiet_tick)[:160])
+
+entries = call('GET', '/api/journal?limit=20')[1].get('entries') or []
+auto_entry = next((row for row in entries if row.get('action') == 'source-auto'), None)
+check('the automatic run is journalled', auto_entry is not None, str(entries[:3])[:160])
+replace_entry = next((row for row in entries if row.get('action') == 'source-replace'), None)
+check('the replace kept a snapshot of what it overwrote',
+      bool((replace_entry or {}).get('payload', {}).get('snapshots')), str((replace_entry or {}).get('payload'))[:200])
+
+status, undone = call('POST', f"/api/journal/{replace_entry.get('id')}/undo", {})
+check('an automatic update can be taken back', status == 200 and undone.get('state') == 'undone', str(undone)[:160])
+restored_text = (installed / 'SKILL.md').read_text(encoding='utf-8')
+check('the previous bytes are back', 'fourth archive' not in restored_text and 'third archive' in restored_text,
+      restored_text[:80])
+
+call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 0, 'mode': 'notify'})
+status, off_tick = call('POST', '/api/sources/tick', {'force': True})
+check('a source switched off is not ticked', off_tick.get('checked') == 0, str(off_tick)[:140])
+
 httpd.shutdown()
 
 status, deleted = call('DELETE', f'/api/sources/{zsid}', {})

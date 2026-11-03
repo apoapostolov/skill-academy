@@ -1006,6 +1006,8 @@ export function deleteWorkspace(id: number): boolean {
  */
 export type SourceKind = 'github' | 'local' | 'zip' | 'skillssh'
 
+export type SourceMode = 'notify' | 'auto'
+
 export interface SourceRow {
   id: number
   repo: string
@@ -1014,6 +1016,10 @@ export interface SourceRow {
   last_commit: string | null
   last_release: string | null
   checked_at: string | null
+  /** Minutes between automatic checks. Zero means only when asked. */
+  check_every_minutes: number
+  /** `notify` records what it saw; `auto` also applies it, if nothing was edited locally. */
+  mode: SourceMode
 }
 
 function ensureSources(): void {
@@ -1030,11 +1036,37 @@ function ensureSources(): void {
        )`
     )
     .run()
+  for (const column of [
+    { name: 'check_every_minutes', ddl: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'mode', ddl: "TEXT NOT NULL DEFAULT 'notify'" }
+  ]) {
+    const present = (
+      getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
+    ).some((row) => row.name === column.name)
+    if (!present) getDb().exec(`ALTER TABLE sources ADD COLUMN ${column.name} ${column.ddl}`)
+  }
   // The table predates the second kind, and a database that already exists needs the column.
   const columns = getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
   if (!columns.some((column) => column.name === 'kind')) {
     getDb().prepare("ALTER TABLE sources ADD COLUMN kind TEXT NOT NULL DEFAULT 'github'").run()
   }
+}
+
+/** Sets how often a source is checked and what happens when a check finds something new. */
+export function setSourceSchedule(id: number, minutes: number, mode: SourceMode): void {
+  const every = Number.isFinite(minutes) ? Math.max(0, Math.min(60 * 24 * 30, Math.round(minutes))) : 0
+  getDb().prepare('UPDATE sources SET check_every_minutes = ?, mode = ? WHERE id = ?').run(every, mode, id)
+}
+
+/** Sources whose interval has run out, oldest first, so a tick spends its time on the stalest. */
+export function dueSources(now: Date): SourceRow[] {
+  return listSources()
+    .filter((row) => row.check_every_minutes > 0)
+    .filter((row) => {
+      if (!row.checked_at) return true
+      return now.getTime() - new Date(row.checked_at).getTime() >= row.check_every_minutes * 60_000
+    })
+    .sort((a, b) => String(a.checked_at).localeCompare(String(b.checked_at)))
 }
 
 export function listSources(): SourceRow[] {
