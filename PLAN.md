@@ -192,7 +192,7 @@ Exit: two machines converge on the same package hashes through a private repo; a
 
 Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact pull, conflict copies), `server/src/lockdoc.ts` (the lock also lists the library's own packages), `server/src/lockrestore.ts` (a lock rebuilds the index and the placements), `web/src/Sync.tsx` (the Sync dialog) and `scripts/sync-check.sh` with **20 checks** over three servers and one bare repository. Detail and limits: `docs/sync.md`.
 
-### P8 — Polish (8 days) — built
+### P8 — Polish (8 days) — built, three exit clauses unmet
 
 Onboarding, empty states, keyboard map, accessibility pass, dark mode, twelve themes with the contrast gate, notification center, reduced motion. Copy pass in Apo's voice.
 
@@ -228,7 +228,14 @@ Screen reader labels: audited in the running app across the main screen, Appeara
 
 **First run** built: an empty library gets a panel with the three actions that fill it, the list's empty state drops the "filter" wording, and `prefers-reduced-motion` is honoured (`docs/first-run.md`), verified on a throwaway empty server in a real browser.
 
-Everything in this phase now has a check or a recorded verification behind it.
+Not met yet, stated rather than implied:
+
+- **A keyboard-only run of the five main flows** has not been done end to end: individual keys were proven in a browser, the flows were not.
+- **Contrast on every surface** is enforced at the token level (twelve themes, nine pairs each). A component that hard-codes a colour escapes the gate, and nothing detects that yet.
+- **No layout shift on scan** has never been measured at all.
+- **The key map does not cover every action that has a button**: 21 keys against seven dialog-opening actions, plus compare, presets, workspaces and improve/consolidate, which have buttons and no key.
+
+What is closed: the whole key map, twelve themes with a contrast gate that caught a real failure, the accessible-name audit (1,137 controls, none unnamed), the notification centre, first run, and reduced motion.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 
