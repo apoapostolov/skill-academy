@@ -294,6 +294,7 @@ check('notify mode leaves the library alone', (installed / 'SKILL.md').read_text
 status, auto = call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 1, 'mode': 'auto'})
 check('the mode can become automatic', auto.get('source', {}).get('mode') == 'auto', str(auto)[:140])
 
+before_auto_text = (installed / 'SKILL.md').read_text(encoding='utf-8')
 repack('The rule the fourth archive carries.')
 status, auto_tick = call('POST', '/api/sources/tick', {'force': True})
 check('an automatic tick applies the update', auto_tick.get('applied') == 1, str(auto_tick)[:200])
@@ -303,18 +304,36 @@ check('the library carries the archive it was never asked about', 'fourth archiv
 status, quiet_tick = call('POST', '/api/sources/tick', {'force': True})
 check('the next tick finds nothing new', quiet_tick.get('changed') == 0, str(quiet_tick)[:160])
 
+# The notification centre reads the same events, and acknowledging one clears it from the queue.
+# An apply acknowledges the events it acted on, so a fresh change is made here on purpose.
+call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 1, 'mode': 'notify'})
+repack('The rule the fifth archive carries.')
+call('POST', '/api/sources/tick', {'force': True})
+status, feed = call('GET', '/api/notifications')
+source_items = [row for row in feed.get('items', []) if row.get('kind') == 'source' and row.get('repo') == zip_url]
+check('an upstream change is a notification', len(source_items) >= 1 and source_items[0].get('acknowledged') is False,
+      str(feed.get('unread'))[:80])
+check('the count matches what is unacknowledged', feed.get('unread') == len(source_items), str(feed.get('unread')))
+status, acked = call('POST', f"/api/sources/events/{source_items[0]['eventId']}/ack", {})
+check('a notification can be acknowledged', status == 200, str(acked)[:120])
+status, cleared = call('GET', '/api/notifications')
+check('an acknowledged event leaves the queue',
+      not [row for row in cleared.get('items', []) if row.get('id') == source_items[0]['id']], str(cleared.get('unread')))
+
 entries = call('GET', '/api/journal?limit=20')[1].get('entries') or []
 auto_entry = next((row for row in entries if row.get('action') == 'source-auto'), None)
 check('the automatic run is journalled', auto_entry is not None, str(entries[:3])[:160])
 replace_entry = next((row for row in entries if row.get('action') == 'source-replace'), None)
-check('the replace kept a snapshot of what it overwrote',
-      bool((replace_entry or {}).get('payload', {}).get('snapshots')), str((replace_entry or {}).get('payload'))[:200])
+payload = (replace_entry or {}).get('payload', {})
+if isinstance(payload, str):
+    payload = json.loads(payload or '{}')
+check('the replace kept a snapshot of what it overwrote', bool(payload.get('snapshots')), str(payload)[:200])
 
 status, undone = call('POST', f"/api/journal/{replace_entry.get('id')}/undo", {})
 check('an automatic update can be taken back', status == 200 and undone.get('state') == 'undone', str(undone)[:160])
 restored_text = (installed / 'SKILL.md').read_text(encoding='utf-8')
-check('the previous bytes are back', 'fourth archive' not in restored_text and 'third archive' in restored_text,
-      restored_text[:80])
+check('the previous bytes are back, byte for byte', restored_text == before_auto_text,
+      f"restored {restored_text.strip().splitlines()[-1][:40]!r} vs before {before_auto_text.strip().splitlines()[-1][:40]!r}")
 
 call('POST', f'/api/sources/{zsid}/schedule', {'minutes': 0, 'mode': 'notify'})
 status, off_tick = call('POST', '/api/sources/tick', {'force': True})

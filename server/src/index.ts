@@ -1808,6 +1808,70 @@ app.post('/api/sources/tick', async (request) => {
   return runDueSources(body.force === true)
 })
 
+/**
+ * Everything waiting for a decision, in one list: upstream events nobody has acknowledged, and
+ * automatic updates that stopped because the library copy had been edited.
+ *
+ * The list is read from the two places that already record those things — `source_events` and the
+ * journal — rather than kept in a third table that could drift from both.
+ */
+app.get('/api/notifications', async () => {
+  const items: Array<{
+    id: string
+    kind: 'source' | 'auto-blocked'
+    title: string
+    detail: string
+    at: string
+    repo: string
+    acknowledged: boolean
+    eventId?: number
+  }> = []
+
+  for (const event of listSourceEvents()) {
+    items.push({
+      id: `event-${event.id}`,
+      kind: 'source',
+      title: event.kind === 'release' ? `New release ${event.value}` : `New commit ${event.value}`,
+      detail:
+        event.kind === 'release'
+          ? 'The upstream repository published a release this library has not applied.'
+          : 'The upstream repository moved. Plan an update to see what it changes.',
+      at: event.seen_at,
+      repo: event.repo,
+      acknowledged: Boolean(event.acknowledged),
+      eventId: event.id
+    })
+  }
+
+  const blocked = getDb()
+    .prepare("SELECT * FROM journal WHERE action = 'source-auto-blocked' ORDER BY id DESC LIMIT 40")
+    .all() as Array<{ id: number; at: string; payload: string; undone_at: string | null }>
+  for (const row of blocked) {
+    let payload: { repo?: string; commit?: string | null; edited?: Array<{ name: string; changed: Array<{ file: string }> }> } = {}
+    try {
+      payload = JSON.parse(row.payload) as typeof payload
+    } catch {
+      payload = {}
+    }
+    const edited = payload.edited ?? []
+    items.push({
+      id: `journal-${row.id}`,
+      kind: 'auto-blocked',
+      title: 'An automatic update was refused',
+      detail: edited.length
+        ? `The library copy of ${edited.map((entry) => entry.name).join(', ')} had been edited, so nothing was overwritten.`
+        : 'The library copy had been edited, so nothing was overwritten.',
+      at: row.at,
+      repo: payload.repo ?? '',
+      // A journal entry is a record, not a queue item: it is never "unread", it is simply history.
+      acknowledged: true
+    })
+  }
+
+  items.sort((a, b) => b.at.localeCompare(a.at))
+  return { items, unread: items.filter((item) => !item.acknowledged).length }
+})
+
 app.post('/api/sources/check-all', async () => {
   const sources = listSources()
   const results = []

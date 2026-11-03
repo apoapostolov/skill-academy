@@ -224,7 +224,9 @@ The whole map in one handler in `web/src/App.tsx`, the `?` overlay, and `docs/ke
 
 Screen reader labels: audited in the running app across the main screen, Appearance, Sync, Sources and the key map — **1,137 visible controls, none unnamed** — and the two fields that relied on a placeholder now carry an explicit `aria-label` (`docs/accessibility.md`).
 
-Still open in this phase: the notification centre and the onboarding pass.
+**Notification centre** built: a sidebar scope beside Drafts with a count, rows in the middle column, and an acknowledge action (`docs/notifications.md`); four checks in `scripts/sources-check.sh` (now 76) prove the queue and its clearing, and the list was verified in the running app.
+
+Still open in this phase: the onboarding pass.
 
 ### P9 — Parity: MCP, then CLI (6 days, after v1)
 

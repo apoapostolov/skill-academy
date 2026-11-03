@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Versioning from './Monitor'
 import { SourcesDialog } from './Sources'
 import { SyncDialog } from './Sync'
+import { NotificationList } from './Notifications'
 import { AppearanceDialog } from './Appearance'
 import { THEMES, applyTheme, themeById, type Theme } from './themes'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
@@ -172,6 +173,7 @@ type Scope =
   | { kind: 'health' }
   | { kind: 'trash' }
   | { kind: 'drafts' }
+  | { kind: 'notifications' }
   | { kind: 'workspace'; id: number }
   | { kind: 'agent'; agent: string; path: string }
   | { kind: 'tag'; tag: string }
@@ -725,6 +727,7 @@ export default function App() {
   const [keysOpen, setKeysOpen] = useState(false)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [themeId, setThemeId] = useState<string>(() => localStorage.getItem('skill-academy.theme') ?? THEMES[0].id)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
 
   const pickTheme = useCallback((theme: Theme): void => {
     applyTheme(theme)
@@ -1735,8 +1738,8 @@ export default function App() {
   }
 
   async function fetchPage(offset: number, replace: boolean) {
-    // The trash is a list of its own, not a page of the library.
-    if (scope.kind === 'trash') return
+    // The trash and the notifications are lists of their own, not pages of the library.
+    if (scope.kind === 'trash' || scope.kind === 'notifications') return
     const requestId = ++requestRef.current
     loadingRef.current = true
     setLoadingMore(true)
@@ -1996,6 +1999,7 @@ export default function App() {
     if (scope.kind === 'health') return 'Needs attention'
     if (scope.kind === 'trash') return 'Deleted'
     if (scope.kind === 'drafts') return 'Drafts'
+    if (scope.kind === 'notifications') return 'Notifications'
     if (scope.kind === 'workspace') return workspaces.find((row) => row.id === scope.id)?.name ?? 'Workspace'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
@@ -2706,6 +2710,12 @@ export default function App() {
             />
           </div>
           <button
+            className={`nav ${scope.kind === 'notifications' ? 'active' : ''}`}
+            onClick={() => setScope({ kind: 'notifications' })}
+          >
+            Notifications {unreadNotifications > 0 && <span className="navbadge">{unreadNotifications}</span>}
+          </button>
+          <button
             className={`nav ${scope.kind === 'drafts' ? 'active' : ''}`}
             onClick={() => {
               setScope({ kind: 'drafts' })
@@ -3039,6 +3049,12 @@ export default function App() {
               }}
             />
           )}
+          {scope.kind === 'notifications' && (
+            <NotificationList
+              onCount={setUnreadNotifications}
+              onOpenSource={() => setSourcesOpen(true)}
+            />
+          )}
           {scope.kind === 'drafts' && (
             <DraftList
               drafts={drafts}
@@ -3052,7 +3068,11 @@ export default function App() {
               }}
             />
           )}
-          {scope.kind !== 'trash' && scope.kind !== 'drafts' && scope.kind !== 'workspace' && skills.map((skill) => (
+          {scope.kind !== 'trash' &&
+            scope.kind !== 'drafts' &&
+            scope.kind !== 'workspace' &&
+            scope.kind !== 'notifications' &&
+            skills.map((skill) => (
             <button
               key={skill.id}
               data-skill-id={skill.id}

@@ -5255,3 +5255,78 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   font-size: 10px;
   font-family: var(--mono);
 }
+
+/* Notifications: upstream events and refused automatic updates, as rows in the list pane. */
+.notifylist {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.notifyrow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sep);
+}
+
+.notifyrow.read {
+  opacity: 0.62;
+}
+
+.notifytop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.notifykind {
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid var(--sep);
+  border-radius: 9px;
+}
+
+.notifyname {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.notifywhen {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.notifytitle {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.notifydetail {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.navbadge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  color: var(--bg);
+  background: var(--attention);
+  border-radius: 8px;
+}
+
+.notifyempty {
+  margin: 40px auto;
+  text-align: center;
+}
