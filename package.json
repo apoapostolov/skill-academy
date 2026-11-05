@@ -13,7 +13,7 @@
     "dev": "node scripts/dev.mjs",
     "service": "node scripts/service.mjs",
     "app": "node scripts/app.mjs",
-    "stop": "node scripts/stop-dev.mjs",
+    "stop": "node scripts/stop.mjs",
     "test:placements": "cd server && npx tsx ../scripts/test-placements.ts",
     "dev:server": "npm -w @skill-academy/server run dev",
     "dev:web": "npm -w @skill-academy/web run dev",
@@ -25,7 +25,8 @@
     "contrast": "tsx scripts/contrast-check.ts",
     "ska": "tsx cli/ska.ts",
     "mcp": "tsx mcp/server.ts",
-    "parity": "bash scripts/parity-check.sh"
+    "parity": "bash scripts/parity-check.sh",
+    "stop:dev": "node scripts/stop-dev.mjs"
   },
   "engines": {
     "node": ">=22.5"
