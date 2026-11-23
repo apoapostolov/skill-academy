@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import path from 'node:path'
 import { getDb, addJournal } from './db'
 import { DATA_DIR } from './config'
-import { chat, providerById } from './providers'
+import { chat, providerById, resolveModelChoice } from './providers'
+import { readSettings } from './lifecycle'
 import { diffPackages, snapshotPackage, substantiveLines, normaliseLine } from './plandiff'
 import type { PackageDiff } from './plandiff'
 
@@ -100,6 +101,7 @@ const running = new Map<number, ImproveProposal>()
 
 function row(jobId: number): JobRow | undefined {
   ensureImproveTables()
+  // SAFETY: the table is created above, and every selected column is declared on JobRow.
   return getDb().prepare('SELECT * FROM improve_jobs WHERE id = ?').get(jobId) as unknown as JobRow | undefined
 }
 
@@ -172,8 +174,10 @@ export interface StartImproveInput {
 export async function startImprove(input: StartImproveInput): Promise<ImproveProposal | { error: string; detail?: unknown }> {
   ensureImproveTables()
   if (!existsSync(path.join(input.skillPath, 'SKILL.md'))) return { error: 'not-a-skill', detail: input.skillPath }
-  const providerId = input.provider?.trim() || 'opencode-go'
-  const model = input.model?.trim() || 'deepseek-v4.1-flash'
+  const saved = readSettings()
+  const choice = resolveModelChoice(input, { provider: saved.mergeProvider, model: saved.mergeModel })
+  const providerId = choice.provider
+  const model = choice.model
   const provider = providerById(providerId)
   if (!provider) return { error: 'unknown-provider', detail: providerId }
 
@@ -471,5 +475,6 @@ export function listImproveJobs(skillPath?: string): Array<Pick<JobRow, 'id' | '
   const rows = skillPath
     ? getDb().prepare('SELECT id, skill_path, status, model, started_at, finished_at, instruction FROM improve_jobs WHERE skill_path = ? ORDER BY id DESC LIMIT 20').all(skillPath)
     : getDb().prepare('SELECT id, skill_path, status, model, started_at, finished_at, instruction FROM improve_jobs ORDER BY id DESC LIMIT 20').all()
+  // SAFETY: the projection lists exactly these columns, so each row matches the pick.
   return rows as unknown as Array<Pick<JobRow, 'id' | 'skill_path' | 'status' | 'model' | 'started_at' | 'finished_at' | 'instruction'>>
 }

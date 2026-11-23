@@ -3,7 +3,8 @@ import path from 'node:path'
 import { DATA_DIR, LIBRARY_DIR } from './config'
 import { addJournal, getDb } from './db'
 import { place, isLinked, unplace } from './placement'
-import { chat, providerById, type Provider } from './providers'
+import { chat, providerById, resolveModelChoice, type Provider } from './providers'
+import { readSettings } from './lifecycle'
 
 /**
  * A draft is a skill that does not exist yet: it lives under the app's own data directory, never in
@@ -332,13 +333,14 @@ export interface ModelOptions {
 
 async function askModel(system: string, user: string, options: ModelOptions): Promise<{ text: string } | { error: string; detail?: unknown }> {
   if (options.supplied !== undefined) return { text: options.supplied }
-  const providerId = options.provider ?? 'opencode-go'
-  const provider = providerById(providerId) as Provider | undefined
-  if (!provider) return { error: 'unknown-provider', detail: providerId }
+  const saved = readSettings()
+  const choice = resolveModelChoice(options, { provider: saved.mergeProvider, model: saved.mergeModel })
+  const provider = providerById(choice.provider) as Provider | undefined
+  if (!provider) return { error: 'unknown-provider', detail: choice.provider }
   const answer = await chat(provider, {
     system,
     user,
-    model: options.model?.trim() || provider.models[0] || '',
+    model: choice.model,
     temperature: 0.2,
     maxTokens: 2500,
     timeoutMs: 120_000

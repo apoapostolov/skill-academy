@@ -93,6 +93,7 @@ import {
 import { applyImprove, getImproveJob, listImproveJobs, startImprove, undoImprove } from './improveJob'
 import { improveDryRun } from './improve'
 import { diffPackages } from './plandiff'
+import { resolveModelChoice } from './providers'
 import { insideProtected } from './safety'
 import {
   addLink,
@@ -388,6 +389,15 @@ function hiddenAgentRoots(): string[] {
   return loadRegistry()
     .roots.filter((root) => root.owners.some((agent) => hidden.has(agent)))
     .map((root) => root.path)
+}
+
+/**
+ * Every route that runs a model resolves its pair here, so a machine without the saved provider
+ * configured falls through to one it can reach instead of failing closed on a hardcoded default.
+ */
+function modelFor(body: { provider?: string; model?: string }): { provider: string; model: string } {
+  const settings = readSettings()
+  return resolveModelChoice(body, { provider: settings.mergeProvider, model: settings.mergeModel })
 }
 
 app.get('/api/skills', async (request) => {
@@ -793,12 +803,10 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
     reply.code(400)
     return { error: 'key is required' }
   }
-  const settings = readSettings()
   const result = await applyFold({
     key: body.key,
     text: typeof body.text === 'string' && body.text.trim() ? body.text : undefined,
-    provider: body.provider ?? settings.mergeProvider,
-    model: body.model ?? settings.mergeModel,
+    ...modelFor(body),
     read: !!body.read,
     confirm: !!body.confirm,
     dryRun: !!body.dryRun
@@ -816,11 +824,10 @@ app.post('/api/consolidate/fold', async (request, reply) => {
     reply.code(400)
     return { error: 'key is required' }
   }
-  const settings = readSettings()
   const result = await foldGroup(
     body.key,
-    body.provider?.trim() || settings.mergeProvider,
-    body.model?.trim() || settings.mergeModel,
+    modelFor(body).provider,
+    modelFor(body).model,
     typeof body.supplied === 'string' ? body.supplied : undefined
   )
   if ('error' in result) {
@@ -3143,11 +3150,9 @@ app.post('/api/links/:id/check', async (request, reply) => {
 app.post('/api/links/:id/plan', async (request, reply) => {
   const { id } = request.params as { id: string }
   const body = (request.body ?? {}) as { provider?: string; model?: string; includeCode?: boolean; supplied?: unknown }
-  const settings = readSettings()
   const proposal = await planIngest({
     linkId: Number(id),
-    provider: body.provider?.trim() || settings.mergeProvider,
-    model: body.model?.trim() || settings.mergeModel,
+    ...modelFor(body),
     includeCode: body.includeCode,
     supplied: body.supplied
   })
@@ -3233,7 +3238,6 @@ app.post('/api/promote/plan', async (request, reply) => {
     provider?: string
     model?: string
   }
-  const settings = readSettings()
   const winnerPath = body.winnerPath ?? pathOfSkillId(body.winnerId)?.path
   const loserPath = body.loserPath ?? pathOfSkillId(body.loserId)?.path
   if (!winnerPath || !loserPath) {
@@ -3244,8 +3248,8 @@ app.post('/api/promote/plan', async (request, reply) => {
     winnerPath,
     loserPath,
     contradictions: body.contradictions === true,
-    provider: body.provider?.trim() || settings.mergeProvider,
-    model: body.model?.trim() || settings.mergeModel
+    provider: modelFor(body).provider,
+    model: modelFor(body).model
   })
   if ('error' in plan) {
     reply.code(plan.error.includes('missing') ? 404 : 400)
@@ -3291,15 +3295,14 @@ app.post('/api/merge-into-x/plan', async (request, reply) => {
     reply.code(400)
     return { error: 'group-and-name-required' }
   }
-  const settings = readSettings()
   // A target is a skill that already exists: it absorbs the group instead of a new package appearing.
   if (body.targetPath) {
     const existing = await planFoldIntoExisting({
       groupKey: body.groupKey,
       targetPath: body.targetPath,
       suppliedBody: body.suppliedBody,
-      provider: body.provider?.trim() || settings.mergeProvider,
-      model: body.model?.trim() || settings.mergeModel
+      provider: modelFor(body).provider,
+      model: modelFor(body).model
     })
     if ('error' in existing) {
       reply.code(existing.error === 'group-not-found' ? 404 : 400)
@@ -3311,8 +3314,7 @@ app.post('/api/merge-into-x/plan', async (request, reply) => {
     groupKey: body.groupKey,
     name: body.name as string,
     suppliedBody: body.suppliedBody,
-    provider: body.provider ?? settings.mergeProvider,
-    model: body.model ?? settings.mergeModel
+    ...modelFor(body)
   })
   if ('error' in plan) {
     reply.code(plan.error === 'group-not-found' ? 404 : 400)
@@ -3372,12 +3374,10 @@ app.post('/api/improve/job', async (request, reply) => {
     reply.code(400)
     return { error: 'instruction-required' }
   }
-  const settings = readSettings()
   const job = await startImprove({
     skillPath: target,
     instruction: body.instruction.trim(),
-    provider: body.provider?.trim() || settings.mergeProvider,
-    model: body.model?.trim() || settings.mergeModel,
+    ...modelFor(body),
     supplied: typeof body.supplied === 'string' ? body.supplied : undefined
   })
   if ('error' in job) {

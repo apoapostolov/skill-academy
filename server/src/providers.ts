@@ -275,6 +275,56 @@ function isRetryableProviderFailure(result: ProviderFailure): boolean {
   return result.kind === 'network'
 }
 
+export interface ModelChoice {
+  provider: string
+  model: string
+}
+
+/**
+ * One place that answers "which provider and model does this run use". Three conventions used to
+ * coexist: a settings pair, a hardcoded free relay, and each caller's own default. They disagreed
+ * whenever a machine did not have the hardcoded one configured.
+ *
+ * Order: what the caller asked for, then the environment, then the saved settings, then the first
+ * provider this machine can actually reach. A named but unconfigured provider is returned as asked,
+ * because that is the choice the user made and the failure should name it.
+ */
+export function resolveModelChoice(
+  requested: { provider?: string; model?: string } = {},
+  saved: { provider?: string; model?: string } = {}
+): ModelChoice {
+  const trim = (value: string | undefined): string => (value ?? '').trim()
+  const configured = (id: string): boolean => {
+    const provider = providerById(id)
+    return Boolean(provider && isConfigured(provider))
+  }
+  const withModel = (providerId: string, model: string): ModelChoice => ({
+    provider: providerId,
+    model: model || providerById(providerId)?.models[0] || ''
+  })
+
+  const askedProvider = trim(requested.provider)
+  if (askedProvider) return withModel(askedProvider, trim(requested.model))
+
+  const envProvider = trim(process.env.SKILL_ACADEMY_PROVIDER)
+  const envModel = trim(process.env.SKILL_ACADEMY_MODEL)
+  if (envProvider) return withModel(envProvider, envModel)
+
+  const savedProvider = trim(saved.provider)
+  const savedModel = trim(saved.model)
+  if (savedProvider && configured(savedProvider)) return withModel(savedProvider, savedModel)
+
+  for (const candidate of PROVIDERS) {
+    const resolved = providerById(candidate.id) ?? candidate
+    if (isConfigured(resolved)) return withModel(candidate.id, savedModel && candidate.id === savedProvider ? savedModel : '')
+  }
+
+  // Nothing is reachable. Returning the saved pair keeps the error message specific to what was
+  // asked for instead of naming an arbitrary provider.
+  if (savedProvider) return withModel(savedProvider, savedModel)
+  return { provider: PROVIDERS[0].id, model: PROVIDERS[0].models[0] ?? '' }
+}
+
 async function tryFallback(request: ChatRequest, tried: Set<string>): Promise<ChatResult | null> {
   for (const candidate of PROVIDERS) {
     if (tried.has(candidate.id)) continue
