@@ -2,13 +2,26 @@
 /**
  * The MCP server: the library an agent can ask about.
  *
- * Six tools, because an agent asking for a skill is the likelier caller than a person in a browser:
- * `list`, `search`, `enable`, `disable`, `scan`, `lock`. It is a thin client over the local service,
- * which stays the source of truth, so an enable from here writes the same journal entry the UI writes.
+ * Ten tools. Six act on the library (`list`, `search`, `enable`, `disable`, `scan`, `lock`) and four
+ * read what the app's own screens read (`skill`, `improve`, `consolidate`, `curate`). It is a thin
+ * client over the local service, which stays the source of truth, so an enable from here writes the
+ * same journal entry the UI writes, and an audit from here is the same audit the app shows.
  *
  * Transport is stdio with newline-delimited JSON-RPC 2.0, which is what MCP clients speak.
  */
-import { DEFAULT_BASE, ServiceError, apiPost, checkLock, listSkills, resolveSkill, setEnabled } from '../cli/api'
+import {
+  DEFAULT_BASE,
+  ServiceError,
+  apiPost,
+  checkLock,
+  consolidateGroups,
+  curationReport,
+  improveFindings,
+  listSkills,
+  resolveSkill,
+  setEnabled,
+  skillDetail
+} from '../cli/api'
 
 const PROTOCOL_VERSION = '2024-11-05'
 const SERVER_INFO = { name: 'skill-academy', version: '1.0.0' }
@@ -104,6 +117,85 @@ const TOOLS: ToolDefinition[] = [
       properties: { check: { type: 'boolean', description: 'Compare the lock with the library instead of writing it' } }
     },
     run: async (args) => (args.check ? checkLock(BASE) : apiPost(BASE, '/api/lock/write', {}))
+  },
+  {
+    name: 'skill',
+    description:
+      'One skill in full: version, tags, related skills, health, risk, copy count and any drift. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Exact skill name' } },
+      required: ['name']
+    },
+    run: async (args) => {
+      const skill = await resolveSkill(BASE, String(args.name))
+      return skillDetail(BASE, skill.id)
+    }
+  },
+  {
+    name: 'improve',
+    description:
+      'The library audit the app shows in its Improve view: one finding per rule breach, with severity, the skill, the file and a sentence saying what is wrong. Read-only, and the same rules the app runs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        severity: { type: 'string', description: 'Only findings at this severity: error, warn or info' },
+        skill: { type: 'string', description: 'Only findings for this exact skill name' },
+        limit: { type: 'number', description: 'How many findings to return (default 50)' }
+      }
+    },
+    run: async (args) => {
+      const report = await improveFindings(BASE)
+      const severity = args.severity ? String(args.severity) : ''
+      const skill = args.skill ? String(args.skill) : ''
+      const findings = report.findings
+        .filter((finding) => (!severity || finding.severity === severity) && (!skill || finding.skill === skill))
+        .slice(0, Math.min(Number(args.limit ?? 50), 200))
+      return { roots: report.roots.length, total: report.findings.length, summary: report.summary, findings }
+    }
+  },
+  {
+    name: 'consolidate',
+    description:
+      'Groups of skills that look like copies of each other, with the verdict the app gives: near duplicate, partial overlap, intentional family, shape only, weak evidence or cross-root placement. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mergeType: { type: 'string', description: 'Only groups with this verdict' },
+        limit: { type: 'number', description: 'How many groups to return (default 20)' }
+      }
+    },
+    run: async (args) => {
+      const report = await consolidateGroups(BASE)
+      const mergeType = args.mergeType ? String(args.mergeType) : ''
+      const groups = report.groups
+        .filter((group) => !mergeType || group.mergeType === mergeType)
+        .slice(0, Math.min(Number(args.limit ?? 20), 120))
+      return { scanned: report.scanned, summary: report.summary, total: report.groups.length, groups }
+    }
+  },
+  {
+    name: 'curate',
+    description:
+      'What has aged and what overlaps: skills whose folder has not changed in N days, plus duplicate, variant, near-duplicate and family-overload clusters. Age is the last edit, not usage, and the app cannot see who loaded a skill. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        staleDays: { type: 'number', description: 'Minimum days since the last edit (default 90)' },
+        limit: { type: 'number', description: 'How many rows per list to return (default 20)' }
+      }
+    },
+    run: async (args) => {
+      const report = await curationReport(BASE)
+      const days = Number(args.staleDays ?? 90)
+      const limit = Math.min(Number(args.limit ?? 20), 200)
+      return {
+        scanned: report.scanned,
+        stale: report.stale.filter((row) => row.daysSinceModified >= days).slice(0, limit),
+        clusters: report.groups.slice(0, limit),
+        similar: report.similar.slice(0, limit)
+      }
+    }
   }
 ]
 

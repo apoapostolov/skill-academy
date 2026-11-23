@@ -84,6 +84,82 @@ export async function resolveSkill(base: string, name: string): Promise<SkillRow
   )
 }
 
+/* ------------------------------ reading the audit ------------------------------ */
+
+/**
+ * The three dry runs the app runs for its own screens. They are read-only by construction, which is
+ * why an agent may call them: nothing is written, renamed or archived by asking what is wrong.
+ */
+export interface ImproveFinding {
+  rule: string
+  severity: 'error' | 'warn' | 'info'
+  skill: string
+  path: string
+  detail: string
+  skillId?: number
+}
+
+export interface ImproveReport {
+  findings: ImproveFinding[]
+  rules: Array<{ id: string; severity: string; why: string }>
+  /** Findings per rule, which is what the Improve view counts. */
+  summary: Record<string, number>
+  /** The agent roots the dry run walked. It reads the filesystem, not the index. */
+  roots: string[]
+  ms: number
+}
+
+export const improveFindings = (base: string): Promise<ImproveReport> =>
+  apiPost<ImproveReport>(base, '/api/improve/dry-run', {})
+
+export interface ConsolidateGroup {
+  key: string
+  mergeType: string
+  evidence: string
+  survivor: string | null
+  members: Array<{ name: string; path: string; version: string | null; chars: number }>
+  blocked: string | null
+  liveRoot?: boolean
+}
+
+export const consolidateGroups = (
+  base: string
+): Promise<{ groups: ConsolidateGroup[]; summary: Record<string, number>; scanned: number }> =>
+  apiPost<{ groups: ConsolidateGroup[]; summary: Record<string, number>; scanned: number }>(
+    base,
+    '/api/consolidate/dry-run',
+    {}
+  )
+
+export interface CurationReport {
+  groups: Array<{ kind: string; key: string; evidence: string; members: Array<{ id: number; name: string }> }>
+  similar: Array<{ a: string; b: string; score: number }>
+  stale: Array<{ id: number; name: string; path: string; daysSinceModified: number }>
+  scanned: number
+}
+
+export const curationReport = (base: string): Promise<CurationReport> =>
+  apiPost<CurationReport>(base, '/api/curate/dry-run', {})
+
+export interface SkillDetail {
+  id: number
+  name: string
+  path: string
+  version: string | null
+  description: string | null
+  tags: string[]
+  related_skills: string[]
+  health: unknown[]
+  findings: unknown[]
+  risk: string
+  copyCount?: number
+  drift?: { thisVersion: string; latestVersion: string; latestId: number } | null
+  sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }>
+}
+
+export const skillDetail = (base: string, id: number): Promise<SkillDetail> =>
+  apiGet<SkillDetail>(base, `/api/skills/${id}`)
+
 export async function agentsForRoot(base: string, rootPath: string): Promise<string[]> {
   const { roots } = await apiGet<{ roots: RootRow[] }>(base, '/api/roots')
   const root = roots.find((entry) => entry.path.toLowerCase() === rootPath.toLowerCase())

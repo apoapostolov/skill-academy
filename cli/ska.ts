@@ -13,9 +13,13 @@ import {
   apiGet,
   apiPost,
   checkLock,
+  consolidateGroups,
+  curationReport,
+  improveFindings,
   listSkills,
   resolveSkill,
-  setEnabled
+  setEnabled,
+  skillDetail
 } from './api'
 
 interface Options {
@@ -26,11 +30,13 @@ interface Options {
   force: boolean
   check: boolean
   file?: string
+  severity?: string
+  days: number
   rest: string[]
 }
 
 function parse(argv: string[]): { command: string; options: Options } {
-  const options: Options = { base: DEFAULT_BASE, json: false, limit: 20, force: false, check: false, rest: [] }
+  const options: Options = { base: DEFAULT_BASE, json: false, limit: 20, force: false, check: false, days: 90, rest: [] }
   let command = ''
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -41,6 +47,8 @@ function parse(argv: string[]): { command: string; options: Options } {
     else if (arg === '--base') options.base = argv[++index] ?? options.base
     else if (arg === '--limit') options.limit = Number(argv[++index] ?? 20)
     else if (arg === '--agent') options.agent = argv[++index]
+    else if (arg === '--severity') options.severity = argv[++index]
+    else if (arg === '--days') options.days = Number(argv[++index] ?? 90)
     else if (arg.startsWith('--')) throw new ServiceError(`unknown option ${arg}`, 2)
     else if (!command) command = arg
     else options.rest.push(arg)
@@ -66,6 +74,10 @@ async function main(): Promise<number> {
     out('  scan [--force]          rescan the roots')
     out('  lock [--check] [--file] write the lock, or check it against --file and exit 1 on drift')
     out('  status                  what the service thinks it is doing')
+    out('  skill <name>            one skill with tags, related skills, health and drift')
+    out('  improve [--severity s]  the library audit: one line per rule breach')
+    out('  consolidate             groups that look like copies of each other')
+    out('  curate [--days n]       what has aged and what overlaps')
     out('')
     out('  --base <url>            service address (default ' + DEFAULT_BASE + ')')
     out('  --json                  machine-readable output')
@@ -104,6 +116,79 @@ async function main(): Promise<number> {
     for (const { agent, result } of results) {
       out(`${command === 'enable' ? 'enabled' : 'disabled'} ${name} for ${agent}${result.path ? ` -> ${result.path}` : ''}`)
     }
+    return 0
+  }
+
+  if (command === 'skill') {
+    const name = options.rest[0]
+    if (!name) throw new ServiceError('skill needs a name', 2)
+    const row = await resolveSkill(options.base, name)
+    const detail = await skillDetail(options.base, row.id)
+    if (options.json) {
+      out(JSON.stringify(detail, null, 2))
+      return 0
+    }
+    out(`${detail.name}  v${detail.version ?? '—'}`)
+    out(`  path     ${detail.path}`)
+    out(`  risk     ${detail.risk}`)
+    out(`  tags     ${detail.tags.length ? detail.tags.join(', ') : 'none'}`)
+    out(`  related  ${detail.related_skills.length ? detail.related_skills.join(', ') : 'none'}`)
+    out(`  health   ${detail.health.length ? `${detail.health.length} issue(s)` : 'clean'}`)
+    if (detail.copyCount && detail.copyCount > 1) out(`  copies   ${detail.copyCount}`)
+    if (detail.drift) out(`  behind   v${detail.drift.latestVersion} exists in another root`)
+    if (detail.sameVersionDrift?.length) out(`  drift    ${detail.sameVersionDrift.length} copy at the same version with different bytes`)
+    return 0
+  }
+
+  if (command === 'improve') {
+    const report = await improveFindings(options.base)
+    const severity = options.severity
+    const findings = report.findings.filter((finding) => !severity || finding.severity === severity)
+    if (options.json) {
+      out(JSON.stringify({ scanned: report.scanned, total: report.findings.length, findings }, null, 2))
+      return 0
+    }
+    out(`${findings.length} of ${report.findings.length} findings across ${report.roots.length} roots`)
+    for (const finding of findings.slice(0, options.limit)) {
+      out(`  ${finding.severity.padEnd(5)} ${finding.rule.padEnd(22)} ${finding.skill}  ${finding.detail}`)
+    }
+    if (findings.length > options.limit) out(`  … ${findings.length - options.limit} more (use --limit)`)
+    return findings.some((finding) => finding.severity === 'error') ? 1 : 0
+  }
+
+  if (command === 'consolidate') {
+    const report = await consolidateGroups(options.base)
+    if (options.json) {
+      out(JSON.stringify(report, null, 2))
+      return 0
+    }
+    out(`${report.groups.length} group(s) over ${report.scanned} skills`)
+    for (const [kind, count] of Object.entries(report.summary)) out(`  ${kind.padEnd(22)} ${count}`)
+    for (const group of report.groups.slice(0, options.limit)) {
+      out(`  ${group.mergeType.padEnd(22)} ${group.survivor ?? group.members[0]?.name ?? group.key}  ${group.evidence}`)
+    }
+    return 0
+  }
+
+  if (command === 'curate') {
+    const report = await curationReport(options.base)
+    const days = options.days
+    const stale = report.stale.filter((row) => row.daysSinceModified >= days)
+    if (options.json) {
+      out(JSON.stringify({ scanned: report.scanned, stale, clusters: report.groups, similar: report.similar }, null, 2))
+      return 0
+    }
+    out(`${stale.length} skill(s) untouched for ${days}+ days, over ${report.scanned} read`)
+    // Two copies of one name in different roots are two rows here, so the root is part of the line.
+    for (const row of stale.slice(0, options.limit)) {
+      const where = row.path.split(/[\/]/).slice(-3, -1).join('/')
+      out(`  ${String(row.daysSinceModified).padStart(4)}d  ${row.name.padEnd(34)} ${where}`)
+    }
+    if (report.groups.length) {
+      out(`${report.groups.length} overlap cluster(s)`)
+      for (const group of report.groups.slice(0, options.limit)) out(`  ${group.kind.padEnd(18)} ${group.key}`)
+    }
+    out('age is the last edit, not usage: the app cannot see who loaded a skill')
     return 0
   }
 
