@@ -3827,12 +3827,12 @@ export default function App() {
                 </div>
               ) : extensionOf(openRef.rel) === '.md' || extensionOf(openRef.rel) === '.markdown' ? (
                 mdMode === 'preview' ? (
-                  <MarkdownBody text={openRef.text} className="md body" />
+                  <MarkdownBody text={openRef.text} className={`md body${wrap ? ' wrapped' : ''}`} />
                 ) : (
-                  <pre className="body raw">{openRef.text}</pre>
+                  <pre className={`body raw${wrap ? ' wrapped' : ''}`}>{openRef.text}</pre>
                 )
               ) : (
-                <pre className="body code">
+                <pre className={`body code${wrap ? ' wrapped' : ''}`}>
                   {highlight(openRef.text, extensionOf(openRef.rel)).map((token, position) =>
                     token.cls ? (
                       <span className={token.cls} key={position}>

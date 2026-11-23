@@ -233,6 +233,81 @@ const markdown = await evaluate(`(async () => {
 check('a skill body renders as markup', markdown.rows > 0 && markdown.nodes > 0, JSON.stringify(markdown))
 check('no script tag survives the markdown path', markdown.scriptTags === 0, JSON.stringify(markdown))
 
+// The wrap button sits in the detail header, which stays visible when a package reference is
+// opened. Assert the body under it, not just the button's own state.
+const refWrap = await evaluate(`(async () => {
+  const list = await (await fetch('/api/skills?limit=120')).json()
+  for (const row of list.rows ?? []) {
+    const detail = await (await fetch('/api/skills/' + row.id)).json()
+    for (const ref of detail.package?.entries ?? []) {
+      if (!/\\.md$/i.test(ref.relPath) || ref.relPath.toLowerCase() === 'skill.md') continue
+      const payload = await (await fetch('/api/skills/' + row.id + '/file?rel=' + encodeURIComponent(ref.relPath))).json()
+      const longest = (payload.text ?? '').split('\\n').reduce((n, line) => Math.max(n, line.length), 0)
+      if (longest > 130) return { id: row.id, name: row.name, ref: ref.relPath, longest }
+    }
+  }
+  return null
+})()`)
+check('a reference with a long line exists for the wrap check', Boolean(refWrap), JSON.stringify(refWrap))
+
+if (refWrap) {
+  const startedWrapped = await evaluate(`document.querySelector('.wrapbtn')?.getAttribute('aria-pressed') === 'true'`)
+  if (startedWrapped) {
+    await evaluate(`document.querySelector('.wrapbtn')?.click(); true`)
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  await evaluate(`(() => {
+    const input = document.querySelector('.search')
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(refWrap.name)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)
+  await new Promise((r) => setTimeout(r, 2000))
+  await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.row')].find((r) => r.textContent.includes(${JSON.stringify(refWrap.name)}))
+    row?.click()
+    return !!row
+  })()`)
+  await new Promise((r) => setTimeout(r, 1200))
+  const opened = await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.pkg-row')].find((r) => (r.getAttribute('title') ?? '').includes(${JSON.stringify(refWrap.ref)}))
+    row?.click()
+    return !!row
+  })()`)
+  await new Promise((r) => setTimeout(r, 700))
+  check('the reference preview opened for the wrap check', opened, JSON.stringify(refWrap))
+
+  const readRef = `(() => {
+    const btn = document.querySelector('.wrapbtn')
+    const body = document.querySelector('.refview .md.body, .refview pre.body')
+    const cs = body ? getComputedStyle(body) : null
+    return {
+      pressed: btn?.getAttribute('aria-pressed') ?? null,
+      cls: body?.className ?? null,
+      whiteSpace: cs?.whiteSpace ?? null,
+      scrollWidth: body?.scrollWidth ?? null,
+      clientWidth: body?.clientWidth ?? null
+    }
+  })()`
+  const beforeRef = await evaluate(readRef)
+  check('a reference starts unwrapped', beforeRef.pressed === 'false' && beforeRef.whiteSpace === 'pre' && !String(beforeRef.cls).includes('wrapped'), JSON.stringify(beforeRef))
+
+  await evaluate(`document.querySelector('.wrapbtn')?.click(); true`)
+  await new Promise((r) => setTimeout(r, 350))
+  const afterRef = await evaluate(readRef)
+  check('the wrap button wraps the reference body',
+        afterRef.pressed === 'true' && String(afterRef.cls).includes('wrapped') && afterRef.whiteSpace === 'pre-wrap' && afterRef.scrollWidth <= afterRef.clientWidth + 1,
+        JSON.stringify(afterRef))
+
+  await evaluate(`(() => { document.querySelector('.refbar button')?.click(); return true })()`)
+  await new Promise((r) => setTimeout(r, 500))
+  if (startedWrapped) {
+    await evaluate(`document.querySelector('.wrapbtn')?.click(); true`)
+    await new Promise((r) => setTimeout(r, 250))
+  }
+}
+
 // A same-version drift banner must offer a real comparison and a resolution, not a stub.
 const drift = await evaluate(`(async () => {
   const list = await (await fetch('/api/skills?q=apo-food-taste&limit=10')).json()
