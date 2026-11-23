@@ -5849,3 +5849,42 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   background: rgba(181, 139, 98, 0.08);
   border-radius: 0 6px 6px 0;
 }
+
+/* A merged body read against the body it replaces, in two columns of the same height. */
+.foldcompare {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.foldsidebyside {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.foldcolumn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.foldcolumnhead {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.foldcolumn .foldtext {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .foldsidebyside {
+    grid-template-columns: 1fr;
+  }
+}

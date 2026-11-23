@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { VersioningView } from './VersioningView'
 import { VersioningDetail } from './VersioningDetail'
-import type { CheckJob, InstallationView, MonitorEvent, Overview, Unrecorded } from './versioningTypes'
+import type { CheckJob, Overview, Unrecorded } from './versioningTypes'
 import { SourcesDialog } from './Sources'
 import { SyncDialog } from './Sync'
 import { KeysMap } from './KeysMap'
@@ -956,6 +956,17 @@ export default function App() {
     if (!consolidateReport && !consolidateBusy) void loadConsolidate()
   }
 
+  /** The badge is a fact about the server, not about which pane happens to be mounted. */
+  async function refreshUnread(): Promise<void> {
+    try {
+      const response = await fetch('/api/notifications')
+      const data = (await response.json()) as { items?: Array<{ acknowledged?: boolean }> }
+      setUnreadNotifications((data.items ?? []).filter((row) => !row.acknowledged).length)
+    } catch {
+      // A failed count is not worth an error banner: the list itself will say what is there.
+    }
+  }
+
   async function loadCuration() {
     setCurationBusy(true)
     setCurationError('')
@@ -1805,6 +1816,7 @@ export default function App() {
   useEffect(() => {
     loadState()
     void loadWorkspaces()
+    void refreshUnread()
   }, [])
 
   function paramsFor(offset: number): string {
@@ -1859,12 +1871,17 @@ export default function App() {
     source.onerror = () => setLive(false)
     source.onmessage = (event) => {
       setLive(true)
+      let kind = ''
       try {
         const payload = JSON.parse(event.data)
-        if (payload?.type !== 'library') return
+        kind = String(payload?.type ?? '')
+        if (kind !== 'library' && kind !== 'source') return
       } catch {
         return
       }
+      // A source event changes the unread count whether or not the notifications list is open, so
+      // the badge is read through the same door the list reads rather than counting on a mount.
+      if (kind === 'source') void refreshUnread()
       loadState()
       if ((pageRef.current?.scrollTop ?? 0) < 120) {
         fetchPageRef.current(0, true)

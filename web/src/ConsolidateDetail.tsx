@@ -93,6 +93,7 @@ export function ConsolidateDetail({
   const [applyBusy, setApplyBusy] = useState(false)
   const [planRead, setPlanRead] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
+  const [survivorBody, setSurvivorBody] = useState<string | null>(null)
 
   useEffect(() => {
     setFold(null)
@@ -102,6 +103,7 @@ export function ConsolidateDetail({
     setApplyBusy(false)
     setPlanRead(false)
     setPreview(null)
+    setSurvivorBody(null)
   }, [group.key])
 
   const proposeFold = async () => {
@@ -159,6 +161,26 @@ export function ConsolidateDetail({
       onChanged()
     } finally {
       setFoldBusy(false)
+    }
+  }
+
+  /** The body the merge replaces, so the merged text can be read against it rather than alone. */
+  const loadSurvivor = async () => {
+    if (survivorBody !== null) {
+      setSurvivorBody(null)
+      return
+    }
+    const survivor = group.members.find((member) => member.name === group.plan?.survivor)
+    if (!survivor || survivor.skillId === null) {
+      setNote('The survivor has no index row, so its body cannot be read here.')
+      return
+    }
+    try {
+      const response = await fetch(`/api/skills/${survivor.skillId}/file?rel=SKILL.md`)
+      const data = (await response.json()) as { text?: string }
+      setSurvivorBody(data.text ?? '')
+    } catch {
+      setNote('The survivor body could not be read.')
     }
   }
 
@@ -364,7 +386,25 @@ export function ConsolidateDetail({
                 {fold.model} · {(fold.ms / 1000).toFixed(1)} s · {fold.chars} chars
               </span>
             </div>
-            <pre className="foldtext">{fold.text}</pre>
+            <div className="foldcompare">
+              <button className="ghost small" onClick={() => void loadSurvivor()}>
+                {survivorBody === null ? 'Read it against the survivor' : 'Hide the survivor'}
+              </button>
+            </div>
+            {survivorBody === null ? (
+              <pre className="foldtext">{fold.text}</pre>
+            ) : (
+              <div className="foldsidebyside">
+                <div className="foldcolumn">
+                  <div className="foldcolumnhead">{group.plan?.survivor ?? 'survivor'} as it is</div>
+                  <pre className="foldtext">{survivorBody}</pre>
+                </div>
+                <div className="foldcolumn">
+                  <div className="foldcolumnhead">merged body, audited above</div>
+                  <pre className="foldtext">{fold.text}</pre>
+                </div>
+              </div>
+            )}
             {fold.droppedRules.length > 0 && (
               <div className="foldmissing">
                 missing from the merge:
