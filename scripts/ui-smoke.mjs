@@ -51,6 +51,14 @@ await evaluate(`(() => { window.__errs = []; window.addEventListener('error', (e
 
 check('the app shell rendered', await evaluate(`document.querySelector('.nav') !== null`))
 
+const chrome = await evaluate(`(() => {
+  const left = [...document.querySelectorAll('.mb-left .mb-item')].map((n) => n.textContent.trim())
+  const right = [...document.querySelectorAll('.toolbar-right .iconbtn')].map((n) => n.getAttribute('aria-label'))
+  return { left, right }
+})()`)
+check('the header has no Improve or Consolidate label', !chrome.left.includes('Improve') && !chrome.left.includes('Consolidate'), JSON.stringify(chrome.left))
+check('Appearance is the glyph just before Settings', chrome.right.indexOf('Appearance') === chrome.right.length - 2 && chrome.right.at(-1) === 'Settings', JSON.stringify(chrome.right))
+
 // Consolidate: click the sidebar entry and read the middle column.
 await evaluate(`(() => {
   const nav = [...document.querySelectorAll('.nav')].find((n) => n.textContent.trim().startsWith('Consolidate'))

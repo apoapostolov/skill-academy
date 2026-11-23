@@ -171,6 +171,17 @@ function GearGlyph() {
   )
 }
 
+function PaletteGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
+      <path d="M8 1.8a6.2 6.2 0 0 0 0 12.4c1 0 1.5-.7 1.5-1.4 0-.8-.6-1.2-.6-1.9 0-.8.6-1.3 1.4-1.3h1.1A3.6 3.6 0 0 0 15.2 6.5C14.9 3.9 11.8 1.8 8 1.8Z" strokeLinejoin="round" />
+      <circle cx="5.2" cy="6.2" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="4.8" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="4.7" cy="9.4" r="0.85" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 function ChevronGlyph({ open }: { open: boolean }) {
   return (
     <svg
@@ -2066,9 +2077,6 @@ export default function App() {
           <button className="mb-item" onClick={() => setSyncOpen(true)}>
             Sync
           </button>
-          <button className="mb-item" onClick={() => setAppearanceOpen(true)}>
-            Appearance
-          </button>
         </div>
         <div className="searchwrap">
           <input
@@ -2091,6 +2099,14 @@ export default function App() {
           </button>
                     <button className="btn primary" onClick={scan} disabled={scanning}>
             {scanning ? 'Scanning…' : 'Scan'}
+          </button>
+          <button
+            className="ghost iconbtn"
+            onClick={() => setAppearanceOpen(true)}
+            title="Appearance (P)"
+            aria-label="Appearance"
+          >
+            <PaletteGlyph />
           </button>
           <button
             className="ghost iconbtn"
