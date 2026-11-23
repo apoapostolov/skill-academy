@@ -206,3 +206,22 @@ Every row answers a right-click with the same actions the `⋯` menu offers, so 
 ## Out of scope for v1
 
 Skill execution, team permissions, a hosted registry, Windows service installation, mobile, and authoring anything other than a `SKILL.md` package.
+
+## Known limits
+
+These are deliberate boundaries rather than unfinished work. Each names what is missing and why it sits
+there, so a reader can tell a gap from a bug.
+
+| Limit | What it means in practice | Why it is not built |
+| --- | --- | --- |
+| Usage is unknown | A skill's age is the last edit to its folder; nothing counts loads | Seventy-nine agents load skills without asking the app, so a load counter would be a guess dressed as a number |
+| Improving is per skill | The Improve view reports; it does not rewrite. The AI job proposes per-file edits for one skill | A bulk rewrite of a library from rules alone would be the app editing work nobody read |
+| No per-repo versioning schedule | Every repository is checked on the app's one clock | A per-repo timer multiplies GitHub requests against a sixty-an-hour limit |
+| No external notification delivery | Notifications live in the sidebar scope | Mail or chat delivery needs a service and a secret the app deliberately does not hold |
+| No baseline import | A skill installed before recording is listed as "without a baseline" and can be recorded by hand | A guessed baseline would make every later diff wrong in a way nobody can see |
+| Semver ranking is numeric | `1.10.0` beats `1.9.2`; pre-release ordering is not modelled | The library has no pre-release channel to rank |
+| The MCP server has no auth | It speaks stdio over the local machine and exposes read tools plus enable/disable | Adding auth to a local pipe protects nothing, and a network transport is a different product |
+| A workspace root is not a library root | Workspace skills enter the library when promoted | Scanning a project folder as a library would duplicate the same skill under every project |
+| Two light themes are unshipped | Day and Paper exist in the theme file but fail contrast | Hard-coded greys in the stylesheet fail on a light palette, and shipping them would fail the contrast check |
+| Sync is manual | Push and pull are clicks | A background pull can change a library while an agent is reading it |
+
