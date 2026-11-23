@@ -24,6 +24,7 @@
     "fixtures": "bash scripts/fixture-check.sh",
     "contrast": "tsx scripts/contrast-check.ts",
     "ui-smoke": "node scripts/ui-smoke.mjs",
+    "version-drift": "node scripts/version-drift-check.mjs",
     "monitor": "bash scripts/monitor-check.sh",
     "ska": "tsx cli/ska.ts",
     "mcp": "tsx mcp/server.ts",

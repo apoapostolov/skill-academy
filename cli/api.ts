@@ -154,6 +154,7 @@ export interface SkillDetail {
   risk: string
   copyCount?: number
   drift?: { thisVersion: string; latestVersion: string; latestId: number } | null
+  ahead?: { thisVersion: string; olderCopies: Array<{ id: number; path: string; root: string; version: string }> } | null
   sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }>
 }
 

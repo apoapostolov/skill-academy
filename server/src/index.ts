@@ -456,6 +456,16 @@ app.get('/api/skills/:id', async (request, reply) => {
     self.version && newest && newest.id !== row.id && compareVersions(self.version, newest.version) < 0
       ? { thisVersion: self.version, latestVersion: newest.version, latestId: newest.id, latestRoot: newest.root_path }
       : null
+  // The mirror of `drift`: this copy is newer than every other copy of the name. It is information,
+  // not a fault, but the older copies can still hold content this one does not, so the pane names
+  // them and leaves the decision to the reader.
+  const olderCopies = copies
+    .filter((copy) => copy.id !== row.id && self.version && compareVersions(copy.version, self.version) < 0)
+    .map((copy) => ({ id: copy.id, path: copy.path, root: copy.root_path, version: copy.version }))
+  const ahead =
+    self.version && olderCopies.length > 0 && copies.every((copy) => copy.id === row.id || compareVersions(self.version, copy.version) > 0)
+      ? { thisVersion: self.version, olderCopies }
+      : null
   return {
     ...row,
     version: self.version,
@@ -469,6 +479,7 @@ app.get('/api/skills/:id', async (request, reply) => {
     body: readSkillBody(row.path),
     package: readPackage(row.path),
     drift,
+    ahead,
     sameVersionDrift
   }
 })

@@ -49,6 +49,7 @@ Logs also go to `~/.skill-academy/logs/dev.log`, so a crash that kills the page 
 - I edit files in this repository and let the watcher pick them up. I do not restart your service, kill your processes, or open new consoles. If a change needs a restart, the supervisor does it.
 - I verify against the live app at `127.0.0.1:10008` with a browser and against the API with `curl`, then read the log file if something failed. You should not have to tell me what the error was.
 - When I need a clean database I use `npm run seed`, which writes a synthetic library under `~/.skill-academy/fixtures/` and points the service at it. Your real agent folders are never the test fixture.
+- `npm run version-drift` runs a second API and client against a temporary library. Chrome clicks through the behind and ahead banners, so your library stays untouched.
 - A change is done when the running app shows it. Not when the file is saved, not when it typechecks.
 
 ## Rules that keep this honest
@@ -58,7 +59,7 @@ Logs also go to `~/.skill-academy/logs/dev.log`, so a crash that kills the page 
 - **State survives.** SQLite and files are the state; a restart must never lose a scan or a toggle.
 - **Errors are visible.** A crash shows a banner with the last error and the dev panel keeps the trace. No silent dead page.
 - **No hidden consoles.** Background jobs run without a visible window; the only terminal is the one you started `npm run dev` in.
-- **Ports are fixed.** 10008 is always the front door (Vite HMR in dev, built app in production). 10009 is the API service in dev, checked at startup with a clear message if taken.
+- **Ports have fixed defaults.** 10008 is the usual front door and 10009 the dev API, checked at startup with a clear message if taken. Isolated test runs may set `SKILL_ACADEMY_APP_PORT` and `SKILL_ACADEMY_API_PORT` for their own stack.
 
 ## When the app is not running
 

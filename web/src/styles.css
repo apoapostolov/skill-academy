@@ -2345,6 +2345,17 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   color: #e3c184;
 }
 
+/* Ahead is information, not a fault: the accent colour carries that difference. */
+.drift.ahead {
+  border-color: rgba(127, 163, 199, 0.38);
+  background: rgba(127, 163, 199, 0.07);
+}
+
+.drift.ahead .drift-secondary {
+  border-color: rgba(127, 163, 199, 0.5);
+  color: var(--accent);
+}
+
 /* The three controls in the detail head sit as one cluster; the gap was eating the
    width that belongs to the title. */
 .detailhead {

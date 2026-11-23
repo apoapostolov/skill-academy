@@ -136,6 +136,7 @@ async function main(): Promise<number> {
     out(`  health   ${detail.health.length ? `${detail.health.length} issue(s)` : 'clean'}`)
     if (detail.copyCount && detail.copyCount > 1) out(`  copies   ${detail.copyCount}`)
     if (detail.drift) out(`  behind   v${detail.drift.latestVersion} exists in another root`)
+    if (detail.ahead?.olderCopies.length) out(`  ahead    ${detail.ahead.olderCopies.length} older ${detail.ahead.olderCopies.length === 1 ? 'copy' : 'copies'} of this name`)
     if (detail.sameVersionDrift?.length) out(`  drift    ${detail.sameVersionDrift.length} copy at the same version with different bytes`)
     return 0
   }
@@ -145,7 +146,7 @@ async function main(): Promise<number> {
     const severity = options.severity
     const findings = report.findings.filter((finding) => !severity || finding.severity === severity)
     if (options.json) {
-      out(JSON.stringify({ scanned: report.scanned, total: report.findings.length, findings }, null, 2))
+      out(JSON.stringify({ roots: report.roots.length, total: report.findings.length, findings }, null, 2))
       return 0
     }
     out(`${findings.length} of ${report.findings.length} findings across ${report.roots.length} roots`)

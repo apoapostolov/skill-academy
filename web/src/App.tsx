@@ -78,6 +78,11 @@ interface Drift {
   latestRoot: string
 }
 
+interface AheadDrift {
+  thisVersion: string
+  olderCopies: Array<{ id: number; path: string; root: string; version: string }>
+}
+
 interface Placement {
   agent: string
   root: string
@@ -655,6 +660,7 @@ export default function App() {
         body: string
         package?: { entries: PackageEntry[]; counts: Record<string, number> }
         drift?: Drift | null
+        ahead?: AheadDrift | null
         sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }>
         copyCount?: number
       })
@@ -711,6 +717,7 @@ export default function App() {
   // A resolution rewrites one of the copies, so the pane is told to read it again.
   const [detailRefresh, setDetailRefresh] = useState(0)
   const [copiesList, setCopiesList] = useState<Array<{ id: number; root: string; version: string | null }> | null>(null)
+  const [copiesKind, setCopiesKind] = useState<'changed' | 'older'>('changed')
   const [trashSelecting, setTrashSelecting] = useState(false)
   const [drafts, setDrafts] = useState<DraftRow[]>([])
   const [activeDraft, setActiveDraft] = useState<string | null>(null)
@@ -1603,6 +1610,7 @@ export default function App() {
         setSettingsOpen(false)
         setComparePair(null)
         setCopiesList(null)
+        setCopiesKind('changed')
         setInstallOpen(false)
         return
       }
@@ -1924,6 +1932,8 @@ export default function App() {
       .then((payload) => alive && setDetail(payload))
       .catch(() => alive && setDetail(null))
     setOpenRef(null)
+    setCopiesList(null)
+    setCopiesKind('changed')
     fetch(`/api/placements?skillId=${selected}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((payload) => alive && setPlacements(payload.placements))
@@ -3579,7 +3589,8 @@ export default function App() {
                     ) : (
                       <button
                         className="ghost small drift-secondary"
-                        onClick={() =>
+                        onClick={() => {
+                          setCopiesKind('changed')
                           setCopiesList(
                             (detail.sameVersionDrift ?? []).map((copy) => ({
                               id: copy.id,
@@ -3587,7 +3598,7 @@ export default function App() {
                               version: copy.version
                             }))
                           )
-                        }
+                        }}
                       >
                         Show copies
                       </button>
@@ -3604,32 +3615,6 @@ export default function App() {
                       Resolve…
                     </button>
                   </span>
-                </div>
-              )}
-              {copiesList && (
-                <div className="copies-pop">
-                  <div className="copies-pop-head">
-                    <span>
-                      {copiesList.length} changed {copiesList.length === 1 ? 'copy' : 'copies'} at v{detail.version}
-                    </span>
-                    <button className="ghost iconbtn" onClick={() => setCopiesList(null)} aria-label="Close">
-                      ×
-                    </button>
-                  </div>
-                  {copiesList.map((copy) => (
-                    <div className="copies-row" key={copy.id}>
-                      <span className="copies-root" title={copy.root}>
-                        {copy.root}
-                      </span>
-                      <span className="copies-ver">{copy.version ?? 'no version'}</span>
-                      <button className="ghost small" onClick={() => openCompare(detail.id, copy.id)}>
-                        Compare
-                      </button>
-                      <button className="ghost small" onClick={() => openSkillById(copy.id)}>
-                        Open
-                      </button>
-                    </div>
-                  ))}
                 </div>
               )}
               {detail.drift && (
@@ -3664,6 +3649,90 @@ export default function App() {
                       Promote latest
                     </button>
                   </span>
+                </div>
+              )}
+              {detail.ahead && (
+                <div className="drift ahead">
+                  <span className="drift-text">
+                    Ahead: this copy is <b>v{detail.ahead.thisVersion}</b>{' '}
+                    {detail.ahead.olderCopies.length === 1 ? (
+                      <>
+                        and <b>v{detail.ahead.olderCopies[0].version}</b> exists in{' '}
+                        <code>{detail.ahead.olderCopies[0].root}</code>.
+                      </>
+                    ) : (
+                      <>and {detail.ahead.olderCopies.length} older copies exist in other folders.</>
+                    )}
+                  </span>
+                  <span className="drift-actions">
+                    {detail.ahead.olderCopies.length === 1 ? (
+                      <>
+                        <button
+                          className="ghost small drift-secondary"
+                          onClick={() => openCompare(detail.id, detail.ahead!.olderCopies[0].id)}
+                        >
+                          Compare
+                        </button>
+                        <button
+                          className="ghost small drift-secondary"
+                          onClick={() => openSkillById(detail.ahead!.olderCopies[0].id)}
+                        >
+                          Open other
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="ghost small drift-secondary"
+                        onClick={() => {
+                          setCopiesKind('older')
+                          setCopiesList(
+                            (detail.ahead?.olderCopies ?? []).map((copy) => ({
+                              id: copy.id,
+                              root: copy.root,
+                              version: copy.version
+                            }))
+                          )
+                        }}
+                      >
+                        Show copies
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )}
+              {copiesList && (
+                <div className="copies-pop">
+                  <div className="copies-pop-head">
+                    <span>
+                      {copiesList.length} {copiesKind === 'older' ? 'older' : 'changed'}{' '}
+                      {copiesList.length === 1 ? 'copy' : 'copies'}
+                      {copiesKind === 'older' ? '' : ` at v${detail.version}`}
+                    </span>
+                    <button
+                      className="ghost iconbtn"
+                      onClick={() => {
+                        setCopiesList(null)
+                        setCopiesKind('changed')
+                      }}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {copiesList.map((copy) => (
+                    <div className="copies-row" key={copy.id}>
+                      <span className="copies-root" title={copy.root}>
+                        {copy.root}
+                      </span>
+                      <span className="copies-ver">{copy.version ?? 'no version'}</span>
+                      <button className="ghost small" onClick={() => openCompare(detail.id, copy.id)}>
+                        Compare
+                      </button>
+                      <button className="ghost small" onClick={() => openSkillById(copy.id)}>
+                        Open
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               {placements && (
