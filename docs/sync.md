@@ -81,11 +81,18 @@ nobody can see.
 
 ## Limits
 
-- Deletions travel as files disappearing from the tree, and a pull does not remove a library package
-  that the shared tree no longer has; nothing is deleted by a pull.
-- A conflict is reported, not merged line by line: the two versions sit side by side and a person
-  chooses. There is no three-way text merge and no per-hunk resolution yet.
+- A pull removes a library package the shared tree no longer has, into the app's trash with a
+t  thirty-day window, so the removal is reversible. Only `library/` is treated this way; a draft that
+  disappears upstream is left alone, because a draft is unfinished work rather than a copy.
+- A file changed on both machines is merged line by line against the last commit, which is the base
+  both sides started from. Regions only one side touched are taken as they are; a region both sides
+  rewrote differently becomes a conflict block in the file (`<<<<<<< this machine` … `>>>>>>> the
+  shared copy`) with the untouched local copy kept beside it as `<name>.local-<stamp>`. Two additions
+  at the same point are both kept, because a rule list is additive.
+- A binary file is never merged: both versions are kept and the file is reported as a conflict.
+- There is no per-hunk resolution in the app: a conflicted file is edited by hand, and the next push
+  commits the result.
 - Push and pull are manual. A schedule would need the same care as a source's clock, which is not
-  built here.
+  built here: a background pull can change a library while an agent is reading it.
 - The app stores no credential of its own; authentication is whatever git's configured helper has.
   A machine with no helper gets `could not read Username`, which is honest but not friendly.

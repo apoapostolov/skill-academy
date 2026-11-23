@@ -186,9 +186,9 @@ its folder into the app's trash rather than unlinking it. `scripts/authoring-che
 
 ### P7 — Cloud sync (5 days) — complete
 
-Git profiles, manifest, push with secrets scan, pull with three-way merge and per-path conflict resolution, schedules, status. Merging is skill-aware: a rename on one machine combines with an edit on another instead of presenting as a delete-plus-add.
+Git profiles, manifest, push with a secrets scan, pull with a three-way line merge, conflicts reported per file, status. A file changed on both machines is merged against the last commit, so regions only one side touched are kept and only a region both sides rewrote becomes a conflict block, with the local copy beside it. A package the shared tree dropped leaves the library into the trash. Renames are not followed: a rename upstream is still a delete plus an add, and push and pull stay manual because a background pull would change a library while an agent is reading it.
 
-Exit: two machines converge on the same package hashes through a private repo; a conflicting edit surfaces as one conflict and loses nothing; a key-shaped string blocks the push; deleting `index.db` and pulling restores skills and placements.
+Exit: two machines converge on the same package hashes through a private repo; two edits in different regions merge without losing either; a rewrite of the same line surfaces as one conflict and loses nothing; a deleted package leaves the other library into the trash; a key-shaped string blocks the push; deleting `index.db` and pulling restores skills and placements.
 
 Built: `server/src/sync.ts` (checkout, lock-first push, secrets scan, byte-exact pull, conflict copies), `server/src/lockdoc.ts` (the lock also lists the library's own packages), `server/src/lockrestore.ts` (a lock rebuilds the index and the placements), `web/src/Sync.tsx` (the Sync dialog) and `scripts/sync-check.sh` with **20 checks** over three servers and one bare repository. Detail and limits: `docs/sync.md`.
 
