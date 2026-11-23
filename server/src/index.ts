@@ -93,6 +93,7 @@ import {
 import { applyImprove, getImproveJob, listImproveJobs, startImprove, undoImprove } from './improveJob'
 import { improveDryRun } from './improve'
 import { diffPackages } from './plandiff'
+import { insideProtected } from './safety'
 import {
   addLink,
   applyIngest,
@@ -449,6 +450,8 @@ app.get('/api/skills/:id', async (request, reply) => {
     ...row,
     version: self.version,
     repo: self.repo,
+    // How many copies of this name exist, so the pane knows whether "the latest" is the only choice.
+    copyCount: copies.length,
     findings: safeJson(row.findings, []),
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
@@ -457,6 +460,41 @@ app.get('/api/skills/:id', async (request, reply) => {
     package: readPackage(row.path),
     drift,
     sameVersionDrift
+  }
+})
+
+/**
+ * The name group a single copy belongs to, in the shape the plan dialog reads. The detail pane needs
+ * one group, and loading every group in the library to find it would cost a full dry run per click.
+ */
+app.get('/api/skills/:id/group', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const row = getSkill(Number(id))
+  if (!row) {
+    reply.code(404)
+    return { error: 'not-found' }
+  }
+  const members = copiesOfName(row.name).map((copy) => {
+    const full = getSkill(copy.id)
+    return {
+      id: copy.id,
+      name: row.name,
+      path: copy.path,
+      root: copy.root_path,
+      version: provenanceOf(copy.path, copy.mtime).version,
+      chars: full?.body_chars ?? 0,
+      hash: String(full?.package_hash ?? ''),
+      mtime: copy.mtime
+    }
+  })
+  return {
+    group: {
+      key: `name:${row.name.toLowerCase()}`,
+      name: row.name,
+      members,
+      plan: null,
+      liveRoot: Boolean(insideProtected(members.map((member) => member.path)))
+    }
   }
 })
 
@@ -2675,61 +2713,55 @@ app.post('/api/skills/bulk', async (request, reply) => {
   }
 })
 
+/**
+ * Two copies, compared without a model in the loop. With `?with=<id>` it compares exactly those two
+ * and returns a package diff; without it, it compares this copy against the newest copy of the same
+ * name, which is the "what did upstream do that I do not have" question.
+ */
 app.get('/api/skills/:id/compare', async (request, reply) => {
-  // Compare with latest, without a model in the loop: what the two copies actually say.
-  // The AI pass can summarise this later; the diff is the part that must never be guessed.
   const { id } = request.params as { id: string }
+  const requested = Number((request.query as { with?: string }).with)
   const row = getSkill(Number(id))
   if (!row) {
     reply.code(404)
-    return { error: 'not found' }
+    return { error: 'not-found' }
   }
+
   const self = provenanceOf(row.path, String(row.mtime))
-  const copies = copiesOfName(row.name).filter((copy) => copy.id !== row.id)
-  const newest = copies
+  const others = copiesOfName(row.name)
+    .filter((copy) => copy.id !== row.id)
     .map((copy) => ({ ...copy, ...provenanceOf(copy.path, copy.mtime) }))
-    .filter((copy) => copy.version)
-    .sort((a, b) => compareVersions(a.version, b.version))
-    .at(-1)
-  if (!newest || !self.version || compareVersions(self.version, newest.version) >= 0) {
+
+  const chosen = Number.isFinite(requested) && requested > 0
+    ? others.find((copy) => copy.id === requested)
+    : others.filter((copy) => copy.version).sort((a, b) => compareVersions(a.version, b.version)).at(-1)
+
+  if (!chosen) {
+    reply.code(409)
+    return { error: Number.isFinite(requested) && requested > 0 ? 'copy-not-in-group' : 'nothing-newer', thisVersion: self.version ?? null }
+  }
+  if (!Number.isFinite(requested) && (!self.version || compareVersions(self.version, chosen.version) >= 0)) {
     reply.code(409)
     return { error: 'nothing-newer', thisVersion: self.version ?? null }
   }
 
-  const read = (dir: string): string => {
-    try {
-      return readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
-    } catch {
-      return ''
-    }
-  }
-  const mine = read(row.path).split(/\r?\n/)
-  const theirs = read(newest.path).split(/\r?\n/)
-
-  // Trim the common head and tail, then report the changed middle with line numbers.
-  let head = 0
-  while (head < mine.length && head < theirs.length && mine[head] === theirs[head]) head += 1
-  let tail = 0
-  while (
-    tail < mine.length - head &&
-    tail < theirs.length - head &&
-    mine[mine.length - 1 - tail] === theirs[theirs.length - 1 - tail]
-  ) {
-    tail += 1
-  }
-  const mineMiddle = mine.slice(head, mine.length - tail)
-  const theirsMiddle = theirs.slice(head, theirs.length - tail)
-
+  const target = getSkill(chosen.id)
   return {
-    name: row.name,
-    thisVersion: self.version,
-    latestVersion: newest.version,
-    latestRoot: newest.root_path,
-    latestId: newest.id,
-    changedFrom: head + 1,
-    thisLines: mineMiddle.map((text, index) => ({ line: head + index + 1, text })),
-    latestLines: theirsMiddle.map((text, index) => ({ line: head + index + 1, text })),
-    identical: mineMiddle.length === 0 && theirsMiddle.length === 0
+    left: { id: row.id, name: row.name, path: row.path, root: row.root_path, version: self.version },
+    right: {
+      id: chosen.id,
+      name: row.name,
+      path: chosen.path,
+      root: chosen.root_path,
+      version: chosen.version
+    },
+    latestId: chosen.id,
+    // Which side is newer is a version question, and a same-version pair has no answer, so it is
+    // reported as unknown rather than guessed from order.
+    newer: self.version && chosen.version && self.version !== chosen.version
+      ? (compareVersions(self.version, chosen.version) > 0 ? 'left' : 'right')
+      : null,
+    diff: diffPackages(row.path, { dir: (target ?? chosen).path }, { images: true })
   }
 })
 

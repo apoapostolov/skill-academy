@@ -33,7 +33,7 @@ interface FileEntry {
   note?: string
 }
 
-interface PackageDiff {
+export interface PackageDiff {
   files: FileEntry[]
   totals: {
     files: number
@@ -767,19 +767,30 @@ interface MergeXPlanView {
 export function GroupPlanDialog({
   group,
   onClose,
-  onApplied
+  onApplied,
+  initialWinnerPath,
+  note
 }: {
   group: { key: string; members: GroupMemberView[]; plan: { survivor: string } | null; liveRoot?: boolean }
   onClose: () => void
   onApplied: () => void
+  /** The copy the caller already knows is the winner. A same-version pair has none, so it is unset. */
+  initialWinnerPath?: string
+  /** Why this dialog was opened, shown above the form. */
+  note?: string
 }) {
   const [mode, setMode] = useState<'promote' | 'x'>('promote')
   const ordered = useMemo(
     () => [...group.members].sort((a, b) => (b.version ?? '').localeCompare(a.version ?? '', undefined, { numeric: true })),
     [group.members]
   )
-  const [winner, setWinner] = useState(ordered[0]?.path ?? '')
-  const [loser, setLoser] = useState(ordered[1]?.path ?? '')
+  // A version number decides nothing when every copy declares the same one. The caller names the
+  // winner when it knows; otherwise the select starts empty and the reader has to choose, because a
+  // sort order is not evidence.
+  const sameVersion = ordered.length > 1 && ordered.every((member) => member.version === ordered[0].version)
+  const startingWinner = initialWinnerPath ?? (sameVersion ? '' : ordered[0]?.path ?? '')
+  const [winner, setWinner] = useState(startingWinner)
+  const [loser, setLoser] = useState(() => ordered.find((member) => member.path !== startingWinner)?.path ?? '')
   const [name, setName] = useState(group.plan?.survivor ?? ordered[0]?.name ?? '')
   const [promote, setPromote] = useState<PromotePlanView | null>(null)
   const [merged, setMerged] = useState<MergeXPlanView | null>(null)
@@ -908,11 +919,14 @@ export function GroupPlanDialog({
           </div>
         </div>
 
+        {note && <div className="mergenote mergenotebar">{note}</div>}
+
         {mode === 'promote' ? (
           <div className="mergeform">
-            <label>
-              newer copy
+            <label className={sameVersion && !initialWinnerPath ? 'mergepick-unknown' : undefined}>
+              {sameVersion && !initialWinnerPath ? 'copy that keeps its content' : 'newer copy'}
               <select value={winner} onChange={(event) => setWinner(event.target.value)}>
+                {sameVersion && !initialWinnerPath && <option value="">pick a copy…</option>}
                 {ordered.map((member) => (
                   <option key={member.path} value={member.path}>
                     {member.name} {member.version ?? '(no version)'}
@@ -938,6 +952,12 @@ export function GroupPlanDialog({
               />
               check contradictions (one model call)
             </label>
+            {sameVersion && !initialWinnerPath && (
+              <div className="mergenote">
+                Every copy declares the same version, so no copy is newer. The first select names the copy whose
+                content is kept.
+              </div>
+            )}
             <button className="mergeapply" disabled={busy || !winner || !loser || winner === loser} onClick={() => void planPromote()}>
               {busy ? 'Reading…' : 'Read the drift'}
             </button>

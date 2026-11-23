@@ -233,6 +233,88 @@ const markdown = await evaluate(`(async () => {
 check('a skill body renders as markup', markdown.rows > 0 && markdown.nodes > 0, JSON.stringify(markdown))
 check('no script tag survives the markdown path', markdown.scriptTags === 0, JSON.stringify(markdown))
 
+// A same-version drift banner must offer a real comparison and a resolution, not a stub.
+const drift = await evaluate(`(async () => {
+  const list = await (await fetch('/api/skills?q=apo-food-taste&limit=10')).json()
+  for (const row of list.rows ?? []) {
+    const detail = await (await fetch('/api/skills/' + row.id)).json()
+    if ((detail.sameVersionDrift ?? []).length > 0) {
+      return { id: row.id, name: row.name, others: detail.sameVersionDrift.length, otherId: detail.sameVersionDrift[0].id }
+    }
+  }
+  return null
+})()`)
+
+if (drift) {
+  await evaluate(`(() => {
+    const nav = [...document.querySelectorAll('.nav')].find((n) => n.textContent.trim().startsWith('All skills'))
+    nav?.click()
+    return !!nav
+  })()`)
+  await new Promise((r) => setTimeout(r, 800))
+  await evaluate(`(() => {
+    const input = document.querySelector('.search')
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify('apo-food-taste')})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)
+  await new Promise((r) => setTimeout(r, 2200))
+  const banner = await evaluate(`(async () => {
+    const row = [...document.querySelectorAll('.row')].find((r) => r.textContent.includes('apo-food-taste'))
+    row?.click()
+    await new Promise((r) => setTimeout(r, 1500))
+    const el = document.querySelector('.drift.same-version')
+    return {
+      clicked: !!row,
+      has: !!el,
+      text: (el?.textContent ?? '').slice(0, 120),
+      buttons: [...(el?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+      stub: !!document.querySelector('.compare-panel')
+    }
+  })()`)
+  check('the same-version banner offers Compare and Resolve', banner.has && banner.buttons.includes('Compare') && banner.buttons.some((b) => b.startsWith('Resolve')), JSON.stringify(banner))
+  check('the stub compare panel is gone', banner.stub === false, JSON.stringify(banner))
+
+  const dialog = await evaluate(`(async () => {
+    const btn = [...document.querySelectorAll('.drift.same-version button')].find((b) => b.textContent.trim() === 'Compare')
+    btn?.click()
+    await new Promise((r) => setTimeout(r, 2200))
+    const dlg = document.querySelector('[aria-label="Compare copies"]')
+    return {
+      opened: !!dlg,
+      sub: (dlg?.querySelector('.mergesub')?.textContent ?? '').slice(0, 90),
+      diffFiles: dlg ? dlg.querySelectorAll('.mergedifflist button, .mergediff button').length : 0
+    }
+  })()`)
+  check('Compare opens a real package diff', dialog.opened && dialog.diffFiles > 0, JSON.stringify(dialog))
+  await evaluate(`document.querySelector('[aria-label="Compare copies"] .mergeheadactions .ghost:last-child')?.click()`)
+  await new Promise((r) => setTimeout(r, 500))
+
+  // The resolution must not pretend a version decided anything: no winner is preselected.
+  const resolve = await evaluate(`(async () => {
+    const btn = [...document.querySelectorAll('.drift.same-version button')].find((b) => b.textContent.trim().startsWith('Resolve'))
+    btn?.click()
+    await new Promise((r) => setTimeout(r, 2000))
+    const dlg = document.querySelector('.mergedialog')
+    const winner = dlg?.querySelector('select')
+    const note = dlg?.querySelector('.mergenotebar, .mergenote')?.textContent ?? ''
+    const apply = dlg?.querySelector('.mergeapply')
+    return {
+      opened: !!dlg,
+      winnerValue: winner ? winner.value : null,
+      winnerLabel: winner?.previousElementSibling?.textContent?.trim() ?? '',
+      note: note.slice(0, 110),
+      disabled: apply ? apply.disabled : null
+    }
+  })()`)
+  check('Resolve opens the plan dialog', resolve.opened, JSON.stringify(resolve))
+  check('same version picks no winner by itself', resolve.opened && resolve.winnerValue === '' && resolve.disabled === true, JSON.stringify(resolve))
+  await evaluate(`[...document.querySelectorAll('.mergeheadactions .ghost')].find((b) => b.textContent.trim() === 'Close')?.click()`)
+} else {
+  console.log('SKIP  no same-version drift pair in this library')
+}
+
 const errs2 = await evaluate(`window.__errs ?? []`)
 check('no console errors while rendering improve', errs2.length === 0, JSON.stringify(errs2.slice(0, 3)))
 

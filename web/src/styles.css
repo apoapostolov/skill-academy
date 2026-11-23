@@ -660,21 +660,21 @@ h2 {
   flex: 0 0 auto;
 }
 
-.detail .chips .chip.seg {
+.detail .chips .chip.chip-split {
   padding: 0;
   overflow: hidden;
 }
 
-.detail .chips .chip.seg .tag-text {
+.detail .chips .chip.chip-split .tag-text {
   min-width: max-content;
   flex: 0 0 auto;
 }
 
-.detail .chips .chip.seg .tag-name {
+.detail .chips .chip.chip-split .tag-name {
   padding: 0 7px;
 }
 
-.detail .chips .chip.seg .tag-prefix {
+.detail .chips .chip.chip-split .tag-prefix {
   padding: 0 5px;
   font-size: 9px;
 }
@@ -1609,6 +1609,88 @@ h2 {
 
 .drift .drift-action {
   flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Resolution actions sit on the right, primary last. One primary per banner. */
+.drift .drift-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drift .drift-secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-color: rgba(181, 139, 98, 0.5);
+  color: var(--attention);
+}
+
+.drift .drift-secondary:hover {
+  color: var(--text);
+  border-color: rgba(181, 139, 98, 0.75);
+}
+
+.drift.same-version {
+  border-color: rgba(184, 92, 87, 0.45);
+  background: rgba(184, 92, 87, 0.08);
+}
+
+.drift.same-version .drift-secondary {
+  border-color: rgba(184, 92, 87, 0.45);
+  color: var(--destructive);
+}
+
+/* Below this width the text and the actions stack, and the actions stay right-aligned. */
+@media (max-width: 720px) {
+  .drift {
+    flex-wrap: wrap;
+  }
+  .drift .drift-actions {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+.copies-pop {
+  margin: -4px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--sep);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.copies-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.copies-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.copies-root {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.copies-ver {
+  color: var(--text-2);
   white-space: nowrap;
 }
 
@@ -3391,19 +3473,19 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 /* A prefixed tag is one pill with two segments: the axis on the left behind a hard
    divider, the tag name on the right. The chip drops its own padding so the divider
    can run the full height of the pill. */
-.chip.seg {
+.chip.chip-split {
   padding: 0;
   overflow: hidden;
 }
 
-.chip.seg .tag-text {
+.chip.chip-split .tag-text {
   display: inline-flex;
   align-items: center;
   align-self: stretch;
   min-width: 0;
 }
 
-.chip.seg .tag-prefix {
+.chip.chip-split .tag-prefix {
   display: inline-flex;
   align-items: center;
   align-self: stretch;
@@ -3417,7 +3499,7 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
   vertical-align: 0;
 }
 
-.chip.seg .tag-name {
+.chip.chip-split .tag-name {
   padding: 0 8px;
 }
 
@@ -5754,3 +5836,16 @@ pre.body.raw.wrapped { white-space: pre-wrap; word-break: break-word; overflow-x
 .vevent.destructive .vevent-kind { color: var(--destructive, #b85c57); }
 .vevent-summary { color: var(--text-muted, #9aa0a6); }
 .vevent-when { margin-left: auto; font-size: 11px; color: var(--text-faint, #6b7280); }
+
+/* A select that starts empty because no version decided it gets a visible hint, not a silent default. */
+.mergepick-unknown select {
+  border-color: rgba(181, 139, 98, 0.6);
+}
+
+.mergenotebar {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--attention);
+  background: rgba(181, 139, 98, 0.08);
+  border-radius: 0 6px 6px 0;
+}

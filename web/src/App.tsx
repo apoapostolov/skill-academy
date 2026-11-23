@@ -9,8 +9,9 @@ import { NotificationList } from './Notifications'
 import { AppearanceDialog } from './Appearance'
 import { THEMES, applyTheme, themeById, type Theme } from './themes'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
+import { CompareCopies } from './CompareCopies'
 import { ImproveView } from './ImproveView'
-import { ConsolidateView, type ConsolidateGroupView, type ConsolidateReport } from './ConsolidateView'
+import { ConsolidateView, type ConsolidateReport } from './ConsolidateView'
 import { ConsolidateDetail } from './ConsolidateDetail'
 import { CurationView } from './CurationView'
 import type { CurationReport } from './curationTypes'
@@ -650,7 +651,14 @@ export default function App() {
   const [debounced, setDebounced] = useState('')
   const [selected, setSelected] = useState<number | null>(null)
   const [detail, setDetail] = useState<
-    (Skill & { body: string; package?: { entries: PackageEntry[]; counts: Record<string, number> }; drift?: Drift | null; sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }> }) | null
+    | (Skill & {
+        body: string
+        package?: { entries: PackageEntry[]; counts: Record<string, number> }
+        drift?: Drift | null
+        sameVersionDrift?: Array<{ id: number; path: string; root: string; version: string }>
+        copyCount?: number
+      })
+    | null
   >(null)
   const [openRef, setOpenRef] = useState<{ name: string; rel: string; text: string; image: string | null } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -691,7 +699,18 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [moveTarget, setMoveTarget] = useState<{ id: number; name: string; path: string } | null>(null)
   const [improveTarget, setImproveTarget] = useState<{ id: number; name: string } | null>(null)
-  const [planGroup, setPlanGroup] = useState<ConsolidateGroupView | null>(null)
+  const [planGroup, setPlanGroup] = useState<{
+    key: string
+    members: Array<{ name: string; path: string; version: string | null; chars: number }>
+    plan: { survivor: string } | null
+    liveRoot?: boolean
+    initialWinnerPath?: string
+    note?: string
+  } | null>(null)
+  const [comparePair, setComparePair] = useState<{ leftId: number; rightId: number } | null>(null)
+  // A resolution rewrites one of the copies, so the pane is told to read it again.
+  const [detailRefresh, setDetailRefresh] = useState(0)
+  const [copiesList, setCopiesList] = useState<Array<{ id: number; root: string; version: string | null }> | null>(null)
   const [trashSelecting, setTrashSelecting] = useState(false)
   const [drafts, setDrafts] = useState<DraftRow[]>([])
   const [activeDraft, setActiveDraft] = useState<string | null>(null)
@@ -1025,6 +1044,54 @@ export default function App() {
     }
   }
 
+  /**
+   * Selecting a skill whose row is not in the current list would leave the pane reading something the
+   * list does not show, so the scope and the filter are widened first.
+   */
+  function openSkillById(id: number) {
+    setSelected(id)
+    if (!skills.some((row) => row.id === id)) {
+      setQuery('')
+      setDebounced('')
+      setScope({ kind: 'all' })
+    }
+  }
+
+  function openCompare(leftId: number, rightId: number) {
+    setComparePair({ leftId, rightId })
+  }
+
+  /** The plan dialog needs the name group, and one group is cheaper to fetch than every group. */
+  async function openGroupForSkill(skillId: number, options: { preferWinnerId?: number; note?: string } = {}) {
+    try {
+      const response = await fetch(`/api/skills/${skillId}/group`)
+      const data = (await response.json()) as {
+        group?: {
+          key: string
+          members: Array<{ id: number; name: string; path: string; version: string | null; chars: number }>
+          liveRoot?: boolean
+        }
+        error?: string
+      }
+      if (!data.group) {
+        setError(data.error ?? 'the group could not be read')
+        return
+      }
+      // The dialog selects by path, so the id the caller knows is resolved here rather than guessed.
+      const preferred = data.group.members.find((member) => member.id === options.preferWinnerId)
+      setPlanGroup({
+        key: data.group.key,
+        members: data.group.members,
+        plan: null,
+        liveRoot: data.group.liveRoot,
+        initialWinnerPath: preferred?.path,
+        note: options.note
+      })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   useEffect(() => {
     if (scope.kind === 'consolidate' && !consolidateReport && !consolidateBusy) void loadConsolidate()
     if (scope.kind === 'curation' && !curationReport && !curationBusy) void loadCuration()
@@ -1056,7 +1123,6 @@ export default function App() {
     const payload = (await response.json()) as { hint?: string; error?: string }
     setGithubNote(payload.error ?? `saved ${payload.hint ?? ''} · 5000 calls an hour`)
   }
-  const [compareOpen, setCompareOpen] = useState(false)
   const [closedFolders, setClosedFolders] = useState<Record<string, boolean>>({})
   // Remembers whether markdown reads as prose or as source, across sessions.
   const [trashList, setTrashList] = useState<
@@ -1524,7 +1590,8 @@ export default function App() {
         setSourcesOpen(false)
         setProvidersOpen(false)
         setSettingsOpen(false)
-        setCompareOpen(false)
+        setComparePair(null)
+        setCopiesList(null)
         setInstallOpen(false)
         return
       }
@@ -1847,7 +1914,7 @@ export default function App() {
     return () => {
       alive = false
     }
-  }, [selected])
+  }, [selected, detailRefresh])
 
   async function repairPlacement(placement: Placement) {
     if (!detail) return
@@ -2193,18 +2260,28 @@ export default function App() {
         <GroupPlanDialog
           group={{
             key: planGroup.key,
-            members: planGroup.members.map((member) => ({
-              name: member.name,
-              path: member.path,
-              version: member.version,
-              chars: member.chars
-            })),
+            members: planGroup.members,
             plan: planGroup.plan ? { survivor: planGroup.plan.survivor } : null,
             liveRoot: planGroup.liveRoot
           }}
+          initialWinnerPath={planGroup.initialWinnerPath}
+          note={planGroup.note}
           onClose={() => setPlanGroup(null)}
           onApplied={() => {
-            void openConsolidate()
+            // A resolution changes the copy this pane is reading, so both sides are re-read.
+            if (selected !== null) setDetailRefresh((value) => value + 1)
+            if (scope.kind === 'consolidate') void loadConsolidate()
+          }}
+        />
+      )}
+      {comparePair && (
+        <CompareCopies
+          leftId={comparePair.leftId}
+          rightId={comparePair.rightId}
+          onClose={() => setComparePair(null)}
+          onOpenCopy={(id) => {
+            setComparePair(null)
+            openSkillById(id)
           }}
         />
       )}
@@ -2702,24 +2779,6 @@ export default function App() {
                 </>
               )
             })()}
-          {compareOpen && detail?.drift && (
-            <div className="compare-panel" role="dialog" aria-label="Compare with latest">
-              <div className="cp-head">
-                <span>Compare with latest</span>
-                <button className="ghost iconbtn" onClick={() => setCompareOpen(false)} aria-label="Close">
-                  ×
-                </button>
-              </div>
-              <p>
-                This copy is <b>v{detail.drift.thisVersion}</b>. The newest copy is{' '}
-                <b>v{detail.drift.latestVersion}</b> in <code>{detail.drift.latestRoot}</code>.
-              </p>
-              <p className="cp-planned">
-                Planned: an AI pass reads both copies, reports anything only this copy knows, folds it into the newest
-                text, then replaces this copy with that result.
-              </p>
-            </div>
-          )}
           </ScrollPane>
         </aside>
 
@@ -3372,7 +3431,23 @@ export default function App() {
               return g ? (
                 <ConsolidateDetail
                   group={g}
-                  onPlan={(group) => setPlanGroup(group)}
+                  onPlan={(group) =>
+                    setPlanGroup({
+                      key: group.key,
+                      members: group.members.map((member) => ({
+                        name: member.name,
+                        path: member.path,
+                        version: member.version,
+                        chars: member.chars
+                      })),
+                      plan: group.plan ? { survivor: group.plan.survivor } : null,
+                      liveRoot: group.liveRoot,
+                      // A classified group already names its survivor, so that copy is preselected.
+                      initialWinnerPath: group.plan
+                        ? group.members.find((member) => member.name === group.plan!.survivor)?.path
+                        : undefined
+                    })
+                  }
                   onChanged={() => void loadConsolidate()}
                 />
               ) : (
@@ -3418,7 +3493,7 @@ export default function App() {
                 {detail.version ? <span className="chip version">v{detail.version.replace(/^v/i, '')}</span> : null}
                 {detail.category ? <span className="chip category">{detail.category}</span> : null}
                 {detail.tags.map((tag) => (
-                  <span className={`chip${TAG_PREFIX.test(tag) ? ' seg' : ''}`} key={tag}>
+                  <span className={`chip${TAG_PREFIX.test(tag) ? ' chip-split' : ''}`} key={tag}>
                     <TagLabel tag={tag} />
                   </span>
                 ))}
@@ -3455,10 +3530,89 @@ export default function App() {
               {detail.sameVersionDrift && detail.sameVersionDrift.length > 0 && (
                 <div className="drift same-version">
                   <span className="drift-text">
-                    Same version, different content: <b>v{detail.version}</b> also exists as a changed copy in{' '}
-                    <code>{detail.sameVersionDrift[0].root}</code>.
-                    {detail.sameVersionDrift.length > 1 ? ` ${detail.sameVersionDrift.length} copies differ.` : ''}
+                    Same version, different content: <b>v{detail.version}</b>{' '}
+                    {detail.sameVersionDrift.length === 1 ? (
+                      <>
+                        also exists as a changed copy in <code>{detail.sameVersionDrift[0].root}</code>. The version
+                        number cannot say which one is right.
+                      </>
+                    ) : (
+                      <>
+                        has {detail.sameVersionDrift.length} other changed copies. The version number cannot say which
+                        one is right.
+                      </>
+                    )}
                   </span>
+                  <span className="drift-actions">
+                    {detail.sameVersionDrift.length === 1 ? (
+                      <>
+                        <button
+                          className="ghost small drift-secondary"
+                          onClick={() => openCompare(detail.id, detail.sameVersionDrift![0].id)}
+                        >
+                          Compare
+                        </button>
+                        <button
+                          className="ghost small drift-secondary"
+                          onClick={() => openSkillById(detail.sameVersionDrift![0].id)}
+                        >
+                          Open other
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="ghost small drift-secondary"
+                        onClick={() =>
+                          setCopiesList(
+                            (detail.sameVersionDrift ?? []).map((copy) => ({
+                              id: copy.id,
+                              root: copy.root,
+                              version: copy.version
+                            }))
+                          )
+                        }
+                      >
+                        Show copies
+                      </button>
+                    )}
+                    <button
+                      className="btn primary drift-action"
+                      title="Choose which copy keeps its content. Nothing is written until Apply."
+                      onClick={() =>
+                        void openGroupForSkill(detail.id, {
+                          note: 'Same version, different content: no copy is newer, so pick the winner yourself.'
+                        })
+                      }
+                    >
+                      Resolve…
+                    </button>
+                  </span>
+                </div>
+              )}
+              {copiesList && (
+                <div className="copies-pop">
+                  <div className="copies-pop-head">
+                    <span>
+                      {copiesList.length} changed {copiesList.length === 1 ? 'copy' : 'copies'} at v{detail.version}
+                    </span>
+                    <button className="ghost iconbtn" onClick={() => setCopiesList(null)} aria-label="Close">
+                      ×
+                    </button>
+                  </div>
+                  {copiesList.map((copy) => (
+                    <div className="copies-row" key={copy.id}>
+                      <span className="copies-root" title={copy.root}>
+                        {copy.root}
+                      </span>
+                      <span className="copies-ver">{copy.version ?? 'no version'}</span>
+                      <button className="ghost small" onClick={() => openCompare(detail.id, copy.id)}>
+                        Compare
+                      </button>
+                      <button className="ghost small" onClick={() => openSkillById(copy.id)}>
+                        Open
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               {detail.drift && (
@@ -3466,10 +3620,33 @@ export default function App() {
                   <span className="drift-text">
                     Behind: this copy is <b>v{detail.drift.thisVersion}</b>, and <b>v{detail.drift.latestVersion}</b> exists
                     in another folder.
+                    {detail.copyCount && detail.copyCount > 2
+                      ? ` ${detail.copyCount - 1} other copies exist, so the newest is not the only choice.`
+                      : ''}
                   </span>
-                  <button className="btn primary drift-action" onClick={() => setCompareOpen(true)}>
-                    Compare with latest
-                  </button>
+                  <span className="drift-actions">
+                    <button
+                      className="ghost small drift-secondary"
+                      onClick={() => openCompare(detail.id, detail.drift!.latestId)}
+                    >
+                      Compare
+                    </button>
+                    <button className="ghost small drift-secondary" onClick={() => openSkillById(detail.drift!.latestId)}>
+                      Open copy
+                    </button>
+                    <button
+                      className="btn primary drift-action"
+                      title="Read the drift, then decide what moves where. Nothing is written until Apply."
+                      onClick={() =>
+                        void openGroupForSkill(detail.id, {
+                          preferWinnerId: detail.drift!.latestId,
+                          note: `This copy is v${detail.drift!.thisVersion}; the newest is v${detail.drift!.latestVersion}, so the newer copy is preselected as the winner.`
+                        })
+                      }
+                    >
+                      Promote latest
+                    </button>
+                  </span>
                 </div>
               )}
               {placements && (
