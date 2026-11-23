@@ -2,7 +2,7 @@
   "name": "skill-academy",
   "private": true,
   "type": "module",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "license": "MIT",
   "description": "Local control plane for AI agent skills",
   "workspaces": [
