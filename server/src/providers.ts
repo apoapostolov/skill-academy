@@ -260,12 +260,47 @@ function authHeaders(provider: Provider, key: string | null): Record<string, str
   return headers
 }
 
-export async function chat(provider: Provider, request: ChatRequest): Promise<ChatResult | ProviderFailure> {
+function isConfigured(provider: Provider): boolean {
+  if (!provider.needsKey) return true
+  if (OAUTH_PROVIDERS[provider.id] && oauthAccessToken(provider.id)) return true
+  return Boolean(getKey(provider.id))
+}
+
+function isRetryableProviderFailure(result: ProviderFailure): boolean {
+  if (result.kind === 'http') {
+    if (result.status === 429 || result.status === 402 || result.status === 529) return true
+    const body = result.body.toLowerCase()
+    return body.includes('quota') || body.includes('rate limit') || body.includes('ratelimit') || body.includes('usage limit')
+  }
+  return result.kind === 'network'
+}
+
+async function tryFallback(request: ChatRequest, tried: Set<string>): Promise<ChatResult | null> {
+  for (const candidate of PROVIDERS) {
+    if (tried.has(candidate.id)) continue
+    const resolved = providerById(candidate.id) ?? candidate
+    if (!isConfigured(resolved)) continue
+    tried.add(candidate.id)
+    const fallbackRequest = { ...request, model: resolved.models[0] || request.model }
+    const result = await chat(resolved, fallbackRequest, tried)
+    if (!('kind' in result)) return result
+    if (!isRetryableProviderFailure(result)) return null
+  }
+  return null
+}
+
+export async function chat(provider: Provider, request: ChatRequest, tried?: Set<string>): Promise<ChatResult | ProviderFailure> {
   // A signed-in provider authenticates with its session; only a provider without one falls back to
   // a saved API key. Reading the key alone reported every signed-in provider as unconfigured.
   const session = OAUTH_PROVIDERS[provider.id] ? oauthAccessToken(provider.id) : null
   const key = session ?? (provider.needsKey ? getKey(provider.id) : null)
   if (provider.needsKey && !key) return { kind: 'no-key', provider: provider.id }
+
+  // An empty model is a saved blank setting or a caller that forgot to resolve; fall back to the
+  // provider's first known model so a fresh data dir and CLI/MCP callers do not fail closed.
+  request = { ...request, model: request.model?.trim() || provider.models[0] || request.model }
+  const attempted = tried ?? new Set<string>()
+  attempted.add(provider.id)
 
   const started = Date.now()
   const controller = new AbortController()
@@ -298,7 +333,14 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
         })
       })
       const raw = await response.text()
-      if (!response.ok) return { kind: 'http', status: response.status, body: raw.slice(0, 500) }
+      if (!response.ok) {
+        const failure: ProviderFailure = { kind: 'http', status: response.status, body: raw.slice(0, 500) }
+        if (isRetryableProviderFailure(failure)) {
+          const fallback = await tryFallback(request, attempted)
+          if (fallback) return fallback
+        }
+        return failure
+      }
       let text = ''
       let inputTokens: number | null = null
       let outputTokens: number | null = null
@@ -387,7 +429,14 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
           }
         })
       })
-      if (!response.ok) return { kind: 'http', status: response.status, body: (await response.text()).slice(0, 500) }
+      if (!response.ok) {
+        const failure: ProviderFailure = { kind: 'http', status: response.status, body: (await response.text()).slice(0, 500) }
+        if (isRetryableProviderFailure(failure)) {
+          const fallback = await tryFallback(request, attempted)
+          if (fallback) return fallback
+        }
+        return failure
+      }
       const payload = (await response.json()) as {
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
@@ -417,9 +466,16 @@ export async function chat(provider: Provider, request: ChatRequest): Promise<Ch
         max_tokens: request.maxTokens ?? 1024
       })
     })
-    if (!response.ok) return { kind: 'http', status: response.status, body: (await response.text()).slice(0, 500) }
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
+      if (!response.ok) {
+        const failure: ProviderFailure = { kind: 'http', status: response.status, body: (await response.text()).slice(0, 500) }
+        if (isRetryableProviderFailure(failure)) {
+          const fallback = await tryFallback(request, attempted)
+          if (fallback) return fallback
+        }
+        return failure
+      }
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>
       usage?: { prompt_tokens?: number; completion_tokens?: number }
     }
     return {

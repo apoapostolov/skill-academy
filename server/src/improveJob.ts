@@ -165,13 +165,15 @@ export interface StartImproveInput {
   instruction: string
   provider?: string
   model?: string
+  /** Test seam: a JSON contract answer audited in place of the model, so a harness needs no quota. */
+  supplied?: string
 }
 
 export async function startImprove(input: StartImproveInput): Promise<ImproveProposal | { error: string; detail?: unknown }> {
   ensureImproveTables()
   if (!existsSync(path.join(input.skillPath, 'SKILL.md'))) return { error: 'not-a-skill', detail: input.skillPath }
-  const providerId = input.provider ?? 'opencode-go'
-  const model = input.model ?? 'deepseek-v4.1-flash'
+  const providerId = input.provider?.trim() || 'opencode-go'
+  const model = input.model?.trim() || 'deepseek-v4.1-flash'
   const provider = providerById(providerId)
   if (!provider) return { error: 'unknown-provider', detail: providerId }
 
@@ -220,7 +222,30 @@ export async function startImprove(input: StartImproveInput): Promise<ImprovePro
       const corpus = [...files.values()].filter((file) => file.text !== null).map((file) => file.text as string).join('\n')
       const manifest = [...files.keys()].join('\n')
 
-      // 2. analyse — the model says what should change and why, without writing anything yet
+      // 2. analyse — the model says what should change and why, without writing anything yet.
+      // A supplied answer skips both model calls: the audit and the diff still run, so a harness
+      // proves the same pipeline without depending on a provider's quota.
+      let shape: { files?: Array<{ path?: string; content?: string | null; why?: string }>; notes?: string[] } | null = null
+      if (input.supplied) {
+        const supplied = parseJson(input.supplied)
+        if (!supplied || typeof supplied !== 'object') throw new Error('the supplied answer is not the JSON contract')
+        shape = supplied as { files?: Array<{ path?: string; content?: string | null; why?: string }>; notes?: string[] }
+        steps.push({
+          name: 'analyse',
+          status: 'done',
+          at: new Date().toISOString(),
+          ms: 0,
+          note: 'supplied answer, no model call'
+        })
+        steps.push({
+          name: 'propose',
+          status: 'done',
+          at: new Date().toISOString(),
+          ms: 0,
+          note: `${(shape.files ?? []).length} file(s) supplied`
+        })
+      }
+      if (!shape) {
       at = Date.now()
       const analysis = await chat(provider, {
         system:
@@ -268,25 +293,28 @@ export async function startImprove(input: StartImproveInput): Promise<ImprovePro
       proposal.tokens = { input: proposed.inputTokens, out: proposed.outputTokens }
       const parsed = parseJson(proposed.text)
       if (!parsed || typeof parsed !== 'object') throw new Error('the model answered without the JSON contract')
-      const shape = parsed as { files?: Array<{ path?: string; content?: string | null; why?: string }>; notes?: string[] }
+      shape = parsed as { files?: Array<{ path?: string; content?: string | null; why?: string }>; notes?: string[] }
       steps.push({
         name: 'propose',
         status: 'done',
         at: new Date().toISOString(),
         ms: Date.now() - at,
-        note: `${(shape.files ?? []).length} file(s) proposed`
+        note: `${(shape?.files ?? []).length} file(s) proposed`
       })
+      }
 
       // 4. validate — frontmatter, linked sections, invented support, and the size of a deletion
       at = Date.now()
       const proposedFiles: ProposedFile[] = []
-      for (const entry of shape.files ?? []) {
+      for (const entry of shape?.files ?? []) {
         const relative = String(entry.path ?? '').replace(/^[/\\]+/, '')
         if (!relative || relative.includes('..')) continue
         const content = entry.content === null ? null : String(entry.content ?? '')
         const before = files.get(relative)?.text ?? null
         if (content !== null && content === before) continue
-        if (content !== null) {
+        if (content === null) {
+          proposedFiles.push({ path: relative, status: 'removed', content: null, why: String(entry.why ?? '').trim(), unsupported: [] })
+        } else {
           const added = substantiveLines(content)
           const beforeLines = new Set(substantiveLines(before ?? '').map(normaliseLine))
           const fresh = added.filter((line) => !beforeLines.has(normaliseLine(line)))
@@ -300,11 +328,9 @@ export async function startImprove(input: StartImproveInput): Promise<ImprovePro
             why: String(entry.why ?? '').trim(),
             unsupported: unsupportedClaims(fresh, corpus)
           })
-        } else {
-          proposedFiles.push({ path: relative, status: 'removed', content: null, why: String(entry.why ?? '').trim(), unsupported: [] })
         }
       }
-      proposal.notes = (shape.notes ?? []).map((note) => String(note)).filter(Boolean).slice(0, 12)
+      proposal.notes = (shape?.notes ?? []).map((note) => String(note)).filter(Boolean).slice(0, 12)
       proposal.files = proposedFiles
 
       const skillFile = proposedFiles.find((file) => file.path === 'SKILL.md')

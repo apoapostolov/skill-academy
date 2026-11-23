@@ -50,7 +50,7 @@ import {
   recordSourceCheck,
   deleteSource,  recordSourceEvent,
   listSourceEvents,
-  acknowledgeSourceEvent,  lockRows,  setSourceSkills,
+  acknowledgeSourceEvent,  setSourceSkills,
   sourceSkills,
   getDb,
   getSourceBaseline,
@@ -313,7 +313,7 @@ app.get('/api/state', async () => {
       roots: registry.roots.length,
       detected: registry.roots.filter((root) => root.exists).length
     },
-    library: totals(),
+    library: totals(hiddenAgentRoots()),
     watching: watcher.size,
     lastScanAt,
     lastEventAt,
@@ -381,16 +381,27 @@ app.get('/api/events', (request, reply) => {
   })
 })
 
+function hiddenAgentRoots(): string[] {
+  const hidden = new Set(listHiddenAgents())
+  if (hidden.size === 0) return []
+  return loadRegistry()
+    .roots.filter((root) => root.owners.some((agent) => hidden.has(agent)))
+    .map((root) => root.path)
+}
+
 app.get('/api/skills', async (request) => {
   const params = request.query as Record<string, string | undefined>
+  const root = params.root || undefined
+  const excludeRoots = hiddenAgentRoots().filter((p) => p !== root)
   const result = querySkills({
     q: params.q?.trim() || undefined,
-    root: params.root || undefined,
+    root,
     tag: params.tag || undefined,
     category: params.category || undefined,
     status:
       params.status === 'active' || params.status === 'archived' ? params.status : ('all' as const),
     health: params.health === '1',
+    excludeRoots: excludeRoots.length > 0 ? excludeRoots : undefined,
     limit: params.limit ? Number(params.limit) : undefined,
     offset: params.offset ? Number(params.offset) : undefined
   })
@@ -400,6 +411,7 @@ app.get('/api/skills', async (request) => {
       ...row,
       tags: safeJson(row.tags, []),
       health: safeJson(row.health, []),
+      related_skills: safeJson(row.related_skills, []),
       ...provenanceOf(row.path, String(row.mtime))
     }))
   }
@@ -440,6 +452,7 @@ app.get('/api/skills/:id', async (request, reply) => {
     findings: safeJson(row.findings, []),
     tags: safeJson(row.tags, []),
     health: safeJson(row.health, []),
+    related_skills: safeJson(row.related_skills, []),
     body: readSkillBody(row.path),
     package: readPackage(row.path),
     drift,
@@ -516,7 +529,7 @@ app.get('/api/facets', async () => {
     hidden: listHiddenAgents(),
     tags: tagFacets(),
     categories: categoryFacets(),
-    issues: totals().issues
+    issues: totals(hiddenAgentRoots()).issues
   }
 })
 
@@ -625,7 +638,7 @@ app.post('/api/sync/config', async (request, reply) => {
   return { config: setSyncConfig(repo, (body.branch ?? 'main').trim() || 'main') }
 })
 
-app.post('/api/sync/push', async (request, reply) => {
+app.post('/api/sync/push', async (_request, reply) => {
   const result = pushSync(readSyncConfig())
   if (!result.ok) {
     // A secret-shaped string is not a failure of the push, it is a refusal: nothing was committed.
@@ -634,7 +647,7 @@ app.post('/api/sync/push', async (request, reply) => {
   return result
 })
 
-app.post('/api/sync/pull', async (request, reply) => {
+app.post('/api/sync/pull', async (_request, reply) => {
   const result = pullSync(readSyncConfig())
   if (!result.ok) reply.code(400)
   return result
@@ -760,13 +773,18 @@ app.post('/api/consolidate/fold/apply', async (request, reply) => {
 })
 
 app.post('/api/consolidate/fold', async (request, reply) => {
-  const body = (request.body ?? {}) as { key?: string; provider?: string; model?: string }
+  const body = (request.body ?? {}) as { key?: string; provider?: string; model?: string; supplied?: string }
   if (!body.key) {
     reply.code(400)
     return { error: 'key is required' }
   }
   const settings = readSettings()
-  const result = await foldGroup(body.key, body.provider ?? settings.mergeProvider, body.model ?? settings.mergeModel)
+  const result = await foldGroup(
+    body.key,
+    body.provider?.trim() || settings.mergeProvider,
+    body.model?.trim() || settings.mergeModel,
+    typeof body.supplied === 'string' ? body.supplied : undefined
+  )
   if ('error' in result) {
     reply.code(result.error === 'group-not-found' ? 404 : 409)
     return result
@@ -3096,8 +3114,8 @@ app.post('/api/links/:id/plan', async (request, reply) => {
   const settings = readSettings()
   const proposal = await planIngest({
     linkId: Number(id),
-    provider: body.provider ?? settings.mergeProvider,
-    model: body.model ?? settings.mergeModel,
+    provider: body.provider?.trim() || settings.mergeProvider,
+    model: body.model?.trim() || settings.mergeModel,
     includeCode: body.includeCode,
     supplied: body.supplied
   })
@@ -3194,8 +3212,8 @@ app.post('/api/promote/plan', async (request, reply) => {
     winnerPath,
     loserPath,
     contradictions: body.contradictions === true,
-    provider: body.provider ?? settings.mergeProvider,
-    model: body.model ?? settings.mergeModel
+    provider: body.provider?.trim() || settings.mergeProvider,
+    model: body.model?.trim() || settings.mergeModel
   })
   if ('error' in plan) {
     reply.code(plan.error.includes('missing') ? 404 : 400)
@@ -3248,8 +3266,8 @@ app.post('/api/merge-into-x/plan', async (request, reply) => {
       groupKey: body.groupKey,
       targetPath: body.targetPath,
       suppliedBody: body.suppliedBody,
-      provider: body.provider ?? settings.mergeProvider,
-      model: body.model ?? settings.mergeModel
+      provider: body.provider?.trim() || settings.mergeProvider,
+      model: body.model?.trim() || settings.mergeModel
     })
     if ('error' in existing) {
       reply.code(existing.error === 'group-not-found' ? 404 : 400)
@@ -3305,7 +3323,14 @@ app.post('/api/merge-into-x/undo', async (request, reply) => {
 })
 
 app.post('/api/improve/job', async (request, reply) => {
-  const body = (request.body ?? {}) as { skillId?: number; path?: string; instruction?: string; provider?: string; model?: string }
+  const body = (request.body ?? {}) as {
+    skillId?: number
+    path?: string
+    instruction?: string
+    provider?: string
+    model?: string
+    supplied?: string
+  }
   const target = body.path ?? pathOfSkillId(body.skillId)?.path
   if (!target) {
     reply.code(400)
@@ -3319,8 +3344,9 @@ app.post('/api/improve/job', async (request, reply) => {
   const job = await startImprove({
     skillPath: target,
     instruction: body.instruction.trim(),
-    provider: body.provider ?? settings.mergeProvider,
-    model: body.model ?? settings.mergeModel
+    provider: body.provider?.trim() || settings.mergeProvider,
+    model: body.model?.trim() || settings.mergeModel,
+    supplied: typeof body.supplied === 'string' ? body.supplied : undefined
   })
   if ('error' in job) {
     reply.code(job.error === 'not-a-skill' ? 404 : 400)

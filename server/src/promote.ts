@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { getDb, addJournal, getSkill } from './db'
+import { getDb, addJournal } from './db'
 import { archiveSkill } from './lifecycle'
 import { compareVersions } from './provenance'
 import { readBody } from './links'
@@ -270,7 +270,7 @@ export async function planPromote(input: PromoteInput): Promise<PromotePlan | { 
     const providerId = input.provider ?? 'opencode-go'
     const provider = providerById(providerId)
     if (provider) {
-      model = input.model ?? 'deepseek-v4.1-flash'
+      model = input.model?.trim() || 'deepseek-v4.1-flash'
       const answer = await chat(provider, {
         system:
           'You compare two versions of one skill. Output only JSON: {"contradictions":[{"local":"...","upstream":"...","why":"..."}]}. Use it only when the newer body states the opposite of a rule the older body states. Never invent a rule. When there is no contradiction return {"contradictions":[]}.',

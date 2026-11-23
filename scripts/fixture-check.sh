@@ -214,16 +214,37 @@ if router_group:
         check('the router restores byte for byte', narrow.read_text(encoding='utf-8') == before_narrow)
 
 if pair:
-    status, proposal = post('/api/consolidate/fold', {'key': pair['key']})
+    # The supplied body is the seam: the pair's two bodies are identical, so handing back one of them
+    # exercises the whole audit and write path without waiting on a provider, and it goes red only
+    # when the audit itself is wrong.
+    # The audit compares bodies, not frontmatter: applyFold re-attaches the survivor's block, so the
+    # supplied body must arrive without one or its own frontmatter counts as invented lines.
+    # The two copies differ only in their frontmatter description, so the union of both bodies is the
+    # merge a perfect model would return: nothing dropped, nothing invented.
+    NL = chr(10)
+
+    def body_of(path_):
+        text = path_.read_text(encoding='utf-8') if path_.exists() else ''
+        return text.split('---', 2)[2].lstrip() if text.startswith('---') else text
+    # The group is whatever the classifier grouped, so the union comes from its own member list
+    # rather than from two names guessed here: a third copy that matches would otherwise count as a
+    # dropped line and turn a correct audit into a false alarm.
+    pair_bodies = [body_of(pathlib.Path(member['path']) / 'SKILL.md') for member in pair['members']]
+    supplied_fold = NL.join(dict.fromkeys(line for body in pair_bodies for line in body.splitlines()))
+    status, proposal = post('/api/consolidate/fold', {'key': pair['key'], 'supplied': supplied_fold})
     check('fold answers', status in (200, 409) and not proposal.get('error'), str(proposal.get('error')))
+    check('a supplied fold is audited, not invented', proposal.get('inventedLines') == [],
+          str(proposal.get('inventedLines'))[:160])
     if proposal.get('status') == 'clean':
         check('the fold audit counts every line', proposal['keptRules'] == proposal['totalRules'],
               f"{proposal['keptRules']}/{proposal['totalRules']}")
-        status, applied = post('/api/consolidate/fold/apply', {'key': pair['key'], 'read': True, 'confirm': True})
+        # What was read is what gets written: the same supplied body goes back to apply.
+        status, applied = post('/api/consolidate/fold/apply',
+                               {'key': pair['key'], 'text': supplied_fold, 'read': True, 'confirm': True})
         check('a clean fold applies', status == 200 and bool(applied.get('applied')), str(applied.get('error')))
     else:
         check('a lossy fold is refused with its counts', True,
-              f"status {proposal.get('status')} · kept {proposal.get('keptRules')}/{proposal.get('totalRules')}")
+              f"status {proposal.get('status')} · kept {proposal.get('keptRules')}/{proposal.get('totalRules')} · dropped {proposal.get('droppedRules')}")
 
 if pointer_archive:
     status, refused = post('/api/consolidate/undo', {'archivePath': pointer_archive, 'originalPath': str(narrow)})

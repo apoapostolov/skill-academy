@@ -39,6 +39,7 @@ interface Row {
   category: string | null
   tokens: number
   package_hash: string | null
+  mtime: string | null
 }
 
 function rows(): Row[] {
@@ -46,9 +47,10 @@ function rows(): Row[] {
   const composite = compositeTargets()
   return (getDb()
     .prepare(
-      `SELECT id, name, description, path, root_path, tags, category, tokens, package_hash
+      `SELECT id, name, description, path, root_path, tags, category, tokens, package_hash, mtime
        FROM skills ORDER BY name COLLATE NOCASE`
     )
+    // SAFETY: node:sqlite returns plain row objects whose shape matches the selected columns.
     .all() as unknown as Row[]).filter((row) => !composite.has(row.path))
 }
 
@@ -106,6 +108,7 @@ function bestKeep(list: Row[]): number {
 export function curateDryRun(): {
   groups: CurationGroup[]
   similar: Array<{ a: string; b: string; score: number }>
+  stale: Array<{ id: number; name: string; path: string; daysSinceModified: number }>
   scanned: number
   ms: number
   summary: Record<ClusterKind, number>
@@ -223,10 +226,22 @@ export function curateDryRun(): {
   }
   for (const group of groups) summary[group.kind] += 1
 
+  const now = Date.now()
+  const stale = all
+    .map((row) => {
+      const mtime = row.mtime ? Date.parse(row.mtime) : NaN
+      const daysSinceModified = Number.isFinite(mtime) ? Math.floor((now - mtime) / 86_400_000) : -1
+      return { id: row.id, name: row.name, path: row.path, daysSinceModified }
+    })
+    .filter((row) => row.daysSinceModified >= 90)
+    .sort((a, b) => b.daysSinceModified - a.daysSinceModified)
+    .slice(0, 50)
+
   closest.sort((left, right) => right.score - left.score)
   return {
     groups,
     similar: closest.slice(0, 12),
+    stale,
     scanned: all.length,
     ms: Date.now() - started,
     summary

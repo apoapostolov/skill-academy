@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR, LIBRARY_DIR } from './config'
@@ -24,7 +23,7 @@ export interface DraftMeta {
 }
 
 export interface DraftIssue {
-  code: 'no-frontmatter' | 'no-name' | 'name-mismatch' | 'no-description' | 'long-description' | 'empty-body' | 'dangling-reference' | 'unclosed-frontmatter'
+  code: 'no-frontmatter' | 'no-name' | 'name-mismatch' | 'no-description' | 'long-description' | 'empty-body' | 'dangling-reference' | 'unclosed-frontmatter' | 'no-tags'
   detail: string
 }
 
@@ -52,13 +51,27 @@ const TEMPLATE = (name: string): string =>
     '---',
     `name: ${name}`,
     'description: ',
-    'version: 1.0.0',
-    'tags: []',
+    'version: 0.1.0',
+    'metadata:',
+    '  hermes:',
+    '    tags: []',
     '---',
     '',
     `# ${name}`,
     '',
-    '## What it does',
+    '## When to Use',
+    '',
+    '',
+    '## How to Run',
+    '',
+    '',
+    '## Procedure',
+    '',
+    '',
+    '## Pitfalls',
+    '',
+    '',
+    '## Verification',
     '',
     '',
     ''
@@ -99,7 +112,7 @@ function readMeta(id: string): DraftMeta | null {
 }
 
 function writeMeta(meta: DraftMeta): void {
-  fs.writeFileSync(metaPath(meta.id), JSON.stringify(meta, null, 2) + '\n', 'utf8')
+  fs.writeFileSync(metaPath(meta.id), `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
 }
 
 function uniqueId(base: string): string {
@@ -205,16 +218,49 @@ function splitFrontmatter(text: string): { data: Record<string, string>; body: s
   return { data, body: text.slice(text.indexOf('\n', end + 1) + 1), closed: true }
 }
 
+function parseTagValues(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean)
+}
+
+function nestedHermesTags(lines: string[]): string[] {
+  const metaAt = lines.findIndex((line) => /^metadata:\s*$/.test(line))
+  if (metaAt === -1) return []
+  let hermesAt = -1
+  for (let i = metaAt + 1; i < lines.length; i += 1) {
+    if (/^\S/.test(lines[i])) break
+    if (/^\s+hermes:\s*$/.test(lines[i])) { hermesAt = i; break }
+  }
+  if (hermesAt === -1) return []
+  const hermesIndent = (lines[hermesAt].match(/^(\s+)/)?.[1].length ?? 2)
+  for (let i = hermesAt + 1; i < lines.length; i += 1) {
+    const indent = lines[i].match(/^(\s*)/)?.[1].length ?? 0
+    if (lines[i].trim() && indent <= hermesIndent) break
+    const inline = /^\s+tags:\s*\[(.*)\]\s*$/.exec(lines[i])
+    if (inline) return parseTagValues(inline[1])
+    if (/^\s+tags:\s*$/.test(lines[i])) {
+      const out: string[] = []
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const item = /^\s+-\s*(.+)$/.exec(lines[j])
+        if (!item) break
+        out.push(item[1].trim().replace(/^["']|["']$/g, ''))
+      }
+      return out
+    }
+  }
+  return []
+}
+
 function tagList(text: string): string[] {
   const block = text.startsWith('---') ? text.slice(3, text.indexOf('\n---', 3)) : ''
-  const inline = /^tags:\s*\[(.*)\]\s*$/m.exec(block)
-  if (inline) {
-    return inline[1]
-      .split(',')
-      .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
-      .filter(Boolean)
-  }
   const lines = block.split(/\r?\n/)
+  // Canonical Hermes location first.
+  const nested = nestedHermesTags(lines)
+  if (nested.length) return nested
+  const inline = /^tags:\s*\[(.*)\]\s*$/m.exec(block)
+  if (inline) return parseTagValues(inline[1])
   const start = lines.findIndex((line) => /^tags:\s*$/.test(line))
   if (start === -1) return []
   const out: string[] = []
@@ -246,8 +292,13 @@ export function validateDraft(text: string, options: { folder?: string; dir?: st
     issues.push({ code: 'name-mismatch', detail: `frontmatter says ${name}, the draft folder is ${folder}` })
   }
   if (!description) issues.push({ code: 'no-description', detail: 'a skill needs a description: it is what a reader sees before loading it' })
-  if (description.length > 240) {
-    issues.push({ code: 'long-description', detail: `the description is ${description.length} characters, over 240` })
+  if (description.length > 1024) {
+    issues.push({ code: 'long-description', detail: `the description is ${description.length} characters; the hard limit is 1024` })
+  } else if (description.length > 60) {
+    issues.push({ code: 'long-description', detail: `the description is ${description.length} characters; keep it at or under 60 for the skill index` })
+  }
+  if (tags.length === 0) {
+    issues.push({ code: 'no-tags', detail: 'add metadata.hermes.tags so the skill is discoverable and passes Hermes curation' })
   }
   if (!trimmedBody) issues.push({ code: 'empty-body', detail: 'the body says nothing yet' })
 
@@ -260,15 +311,16 @@ export function validateDraft(text: string, options: { folder?: string; dir?: st
     }
   }
 
-  return { ok: issues.length === 0, name, description, tags, chars: text.length, issues }
+  const blocking = issues.filter((issue) => issue.code !== 'no-tags' && !(issue.code === 'long-description' && description.length <= 1024))
+  return { ok: blocking.length === 0, name, description, tags, chars: text.length, issues }
 }
 
 const GENERATE_SYSTEM = [
   'You write a skill file for an agent skill library. Output only the SKILL.md text, no prose around it.',
-  'Start with frontmatter: name, description, version, tags. The name is lowercase words joined by hyphens.',
-  'The description is one sentence under 200 characters that says what the skill does and when to use it.',
-  'Then a level-one heading, then sections of imperative rules. State rules a reader can act on.',
-  'Never invent a command, a path, a number or a version. No praise, no dates, no filler.'
+  'Frontmatter: name (lowercase-hyphenated), description, version: 0.1.0, and metadata.hermes.tags (2-5 short tags).',
+  'The description is one sentence at or under 60 characters that says what the skill does and when to use it. It is the index trigger, not a summary.',
+  'Body sections in order: # title, one short intro, ## When to Use, ## Prerequisites, ## How to Run, ## Quick Reference, ## Procedure, ## Pitfalls, ## Verification.',
+  'State rules a reader can act on. Include exact commands, paths, or tool names only when they are real. Never invent commands, flags, paths, numbers, or versions. No praise, no dates, no filler.'
 ].join(' ')
 
 export interface ModelOptions {
@@ -286,20 +338,16 @@ async function askModel(system: string, user: string, options: ModelOptions): Pr
   const answer = await chat(provider, {
     system,
     user,
-    model: options.model ?? provider.models[0] ?? '',
+    model: options.model?.trim() || provider.models[0] || '',
     temperature: 0.2,
     maxTokens: 2500,
     timeoutMs: 120_000
   })
   if ('kind' in answer) {
-    const detail =
-      answer.kind === 'http'
-        ? `HTTP ${answer.status}`
-        : answer.kind === 'network'
-          ? answer.message
-          : answer.kind === 'no-key'
-            ? `no key saved for ${answer.provider}`
-            : 'the provider did not answer'
+    let detail = 'the provider did not answer'
+    if (answer.kind === 'http') detail = `HTTP ${answer.status}`
+    else if (answer.kind === 'network') detail = answer.message
+    else if (answer.kind === 'no-key') detail = `no key saved for ${answer.provider}`
     return { error: 'provider-failed', detail }
   }
   return { text: answer.text }
@@ -307,7 +355,7 @@ async function askModel(system: string, user: string, options: ModelOptions): Pr
 
 function stripFence(text: string): string {
   const fenced = /^\s*```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/.exec(text)
-  return (fenced ? fenced[1] : text).trim() + '\n'
+  return `${(fenced ? fenced[1] : text).trim()}\n`
 }
 
 /** One sentence in, a draft out. The model writes the text; the draft is what the author edits. */
@@ -327,7 +375,7 @@ export async function generateDraft(
   const repairs: string[] = []
   // A model that omits the frontmatter still produced the body: fill the block rather than fail.
   if (!text.startsWith('---')) {
-    text = `---\nname: ${meta.name}\ndescription: ${meta.name.replace(/-/g, ' ')}\nversion: 1.0.0\ntags: []\n---\n\n${text}`
+    text = `---\nname: ${meta.name}\ndescription: ${meta.name.replace(/-/g, ' ')}\nversion: 0.1.0\nmetadata:\n  hermes:\n    tags: []\n---\n\n${text}`
     repairs.push('added the missing frontmatter block')
   }
   fs.writeFileSync(skillPath(id), text, 'utf8')
@@ -336,7 +384,9 @@ export async function generateDraft(
   meta.updated = new Date().toISOString()
   writeMeta(meta)
   addJournal('draft-generate', { id, intent: options.intent, repairs })
-  return { draft: readDraft(id)!, repairs }
+  const draft = readDraft(id)
+  if (!draft) return { error: 'not-found', detail: id }
+  return { draft, repairs }
 }
 
 const IMPROVE_SYSTEM = [
@@ -436,7 +486,8 @@ export function saveDraft(
   fs.mkdirSync(input.rootPath, { recursive: true })
   const placement = place(target, input.rootPath)
 
-  const meta = readMeta(id)!
+  const meta = readMeta(id)
+  if (!meta) return { error: 'not-found', detail: id }
   meta.savedTo = target
   meta.savedHash = hash
   meta.updated = new Date().toISOString()
@@ -525,24 +576,60 @@ export function writeDraftTags(id: string, tags: string[]): DraftView | { error:
 
 /** The frontmatter edit behind `writeDraftTags`, kept separate so it can be tested on text alone. */
 export function applyTags(text: string, tags: string[]): string {
-  const line = tags.length ? `tags: [${tags.join(', ')}]` : 'tags: []'
+  const tagValue = tags.length ? `[${tags.join(', ')}]` : '[]'
   if (!text.startsWith('---')) {
-    // A draft with no frontmatter gains one: tags have nowhere else to live.
-    return `---\n${line}\n---\n\n${text}`
+    return `---\nmetadata:\n  hermes:\n    tags: ${tagValue}\n---\n\n${text}`
   }
   const end = text.indexOf('\n---', 3)
-  if (end === -1) return `---\n${line}\n${text.slice(3)}`
+  if (end === -1) return `---\nmetadata:\n  hermes:\n    tags: ${tagValue}\n${text.slice(3)}`
   const block = text.slice(3, end)
   const lines = block.split(/\r?\n/)
-  const at = lines.findIndex((candidate) => /^tags\s*:/.test(candidate))
-  if (at >= 0) lines[at] = line
-  else {
-    // Keep `name` and `description` first: they are what every reader looks for.
-    const lastNamed = Math.max(
-      lines.findIndex((candidate) => /^name\s*:/.test(candidate)),
-      lines.findIndex((candidate) => /^description\s*:/.test(candidate))
-    )
-    lines.splice(lastNamed + 1 > 0 ? lastNamed + 1 : lines.length, 0, line)
+
+  // Prefer the canonical Hermes location: metadata.hermes.tags
+  const metaAt = lines.findIndex((line) => /^metadata:\s*$/.test(line))
+  if (metaAt !== -1) {
+    let hermesAt = -1
+    for (let i = metaAt + 1; i < lines.length; i += 1) {
+      if (/^\S/.test(lines[i])) break
+      if (/^\s+hermes:\s*$/.test(lines[i])) { hermesAt = i; break }
+    }
+    if (hermesAt !== -1) {
+      const hermesIndent = (lines[hermesAt].match(/^(\s+)/)?.[1].length ?? 2)
+      let tagsAt = -1
+      for (let i = hermesAt + 1; i < lines.length; i += 1) {
+        const indent = lines[i].match(/^(\s*)/)?.[1].length ?? 0
+        if (lines[i].trim() && indent <= hermesIndent) break
+        if (/^\s+tags:\s*/.test(lines[i])) { tagsAt = i; break }
+      }
+      const tagLine = `${' '.repeat(hermesIndent + 2)}tags: ${tagValue}`
+      if (tagsAt === -1) {
+        lines.splice(hermesAt + 1, 0, tagLine)
+      } else {
+        // Replace inline or block-form tags under hermes.
+        let removeEnd = tagsAt + 1
+        if (/^\s+tags:\s*$/.test(lines[tagsAt])) {
+          while (removeEnd < lines.length && /^\s+-\s+/.test(lines[removeEnd])) removeEnd += 1
+        }
+        lines.splice(tagsAt, removeEnd - tagsAt, tagLine)
+      }
+      return `---${lines.join('\n')}${text.slice(end)}`
+    }
+    // metadata exists but no hermes block - add hermes.tags
+    lines.splice(metaAt + 1, 0, '  hermes:', `    tags: ${tagValue}`)
+    return `---${lines.join('\n')}${text.slice(end)}`
   }
+
+  // Fall back to top-level tags for simple legacy drafts, but prefer adding metadata.hermes.
+  const at = lines.findIndex((candidate) => /^tags\s*:/.test(candidate))
+  if (at >= 0) {
+    lines[at] = `tags: ${tagValue}`
+    return `---${lines.join('\n')}${text.slice(end)}`
+  }
+  const lastNamed = Math.max(
+    lines.findIndex((candidate) => /^name\s*:/.test(candidate)),
+    lines.findIndex((candidate) => /^description\s*:/.test(candidate))
+  )
+  const insertAt = lastNamed + 1 > 0 ? lastNamed + 1 : lines.length
+  lines.splice(insertAt, 0, 'metadata:', '  hermes:', `    tags: ${tagValue}`)
   return `---${lines.join('\n')}${text.slice(end)}`
 }

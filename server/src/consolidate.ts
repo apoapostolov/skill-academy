@@ -43,6 +43,8 @@ export interface Body {
 }
 
 export interface ConsolidateMember {
+  /** The index row for this copy, so a panel can read its body without guessing by name. */
+  skillId: number | null
   name: string
   path: string
   version: string | null
@@ -50,6 +52,8 @@ export interface ConsolidateMember {
   hash: string
   uniqueHeadings: string[]
   missingHeadings: string[]
+  /** Rules only this copy carries. Headings can match while the rules underneath differ. */
+  uniqueRules: string[]
   supportFiles: number
 }
 
@@ -165,6 +169,9 @@ function difference(a: string[], b: string[]): string[] {
 }
 
 function member(body: Body, others: Body[]): ConsolidateMember {
+  const row = getDb().prepare('SELECT id FROM skills WHERE path = ? OR real_path = ?').get(body.dir, body.dir) as
+    | { id: number }
+    | undefined
   const otherHeadings = others.flatMap((entry) => entry.headings)
   const otherRules = others.flatMap((entry) => entry.rules)
   let supportFiles = 0
@@ -173,6 +180,7 @@ function member(body: Body, others: Body[]): ConsolidateMember {
     if (existsSync(full) && statSync(full).isDirectory()) supportFiles += readdirSync(full).length
   }
   return {
+    skillId: row?.id ?? null,
     name: body.name,
     path: body.dir,
     version: body.version,
@@ -180,6 +188,7 @@ function member(body: Body, others: Body[]): ConsolidateMember {
     hash: body.hash,
     uniqueHeadings: difference(body.headings, otherHeadings),
     missingHeadings: difference(otherHeadings, body.headings).slice(0, 12),
+    uniqueRules: difference(body.rules, otherRules).slice(0, 12),
     supportFiles
   }
 }
@@ -377,7 +386,12 @@ export function consolidateDryRun(): {
       // A router is architecture, not duplication: leave a family alone.
       const sameFamilyRouters =
         left.loads.includes(right.name.toLowerCase()) || right.loads.includes(left.name.toLowerCase())
+      // The same two skills are collected once per root they are installed in, so the pair is
+      // generated several times over. The key is the group's identity, and fold and apply look a
+      // group up by it, so a repeat must not become a second group.
       const key = `body:${left.name}~${right.name}`
+      if (seen.has(key)) continue
+      seen.add(key)
       const larger = left.chars >= right.chars ? left : right
       const smaller = larger === left ? right : left
       const unique = difference(smaller.headings, larger.headings)

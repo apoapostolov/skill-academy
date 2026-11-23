@@ -108,7 +108,7 @@ export async function planMergeIntoX(input: MergeIntoXInput): Promise<MergeIntoX
 
   const folded = input.suppliedBody
     ? { text: input.suppliedBody }
-    : await foldGroup(input.groupKey, input.provider ?? 'opencode-go', input.model ?? 'deepseek-v4.1-flash')
+    : await foldGroup(input.groupKey, input.provider?.trim() || 'opencode-go', input.model?.trim() || 'deepseek-v4.1-flash')
   if ('error' in folded) return { error: folded.error, detail: 'detail' in folded ? folded.detail : undefined }
   const merged = folded.text.trim()
   if (!merged) return { error: 'empty-body' }
@@ -116,8 +116,6 @@ export async function planMergeIntoX(input: MergeIntoXInput): Promise<MergeIntoX
   // The survivor's frontmatter is the skeleton; the name is the one the user chose.
   const survivorPath = group.members.find((member) => member.name === group.plan?.survivor)?.path ?? first.path
   const survivorRaw = readFileSync(path.join(survivorPath, 'SKILL.md'), 'utf8')
-  const close = survivorRaw.indexOf('\n---', 3)
-  const head = close === -1 ? '---\n---\n' : survivorRaw.slice(0, close + 4) + '\n'
   const tags = new Set<string>()
   for (const member of group.members) {
     const text = readFileSync(path.join(member.path, 'SKILL.md'), 'utf8').slice(0, 4000)
@@ -194,7 +192,7 @@ export async function planMergeIntoX(input: MergeIntoXInput): Promise<MergeIntoX
     blockers,
     carriedFiles,
     placements: placementPreview(group.members, group.members.map((member) => member.path)),
-    model: input.suppliedBody ? null : (input.model ?? 'deepseek-v4.1-flash'),
+    model: input.suppliedBody ? null : (input.model?.trim() || 'deepseek-v4.1-flash'),
     audit: 'audit' in folded && folded.audit ? (folded.audit as MergeIntoXPlan['audit']) : null,
     ms: Date.now() - started
   }

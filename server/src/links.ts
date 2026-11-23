@@ -537,20 +537,20 @@ export async function planIngest(input: PlanInput): Promise<IngestProposal | { e
     ? readdirSync(path.join(link.target_path, 'references', 'ingested')).filter((name) => name.endsWith('.md'))
     : []
 
-  const runId = startRun(link, kind, head.sha, input.provider ?? null, input.model ?? null)
+  const providerId = input.provider?.trim() || 'opencode-go'
+  const model = input.model?.trim() || 'deepseek-v4.1-flash'
+  const runId = startRun(link, kind, head.sha, providerId, model)
 
   if (link.mode === 'attach') {
     const proposal = attachProposal(link, delta, body, hashBefore, runId)
     return proposal
   }
 
-  const providerId = input.provider ?? 'opencode-go'
   const provider = providerById(providerId)
   if (!provider) {
     finishRun(runId, 'failed', { error: `unknown provider ${providerId}` })
     return { error: 'unknown-provider', detail: providerId }
   }
-  const model = input.model ?? 'deepseek-v4.1-flash'
 
   const system = link.mode === 'summarize' ? DIGEST_SYSTEM : SYSTEM
   const user = [

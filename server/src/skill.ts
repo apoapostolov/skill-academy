@@ -29,6 +29,8 @@ export interface SkillRecord {
   tags: string[]
   /** Declared `category:` in frontmatter, empty when absent. */
   category: string
+  /** Related skills declared in frontmatter (metadata.hermes.related_skills). */
+  relatedSkills: string[]
   /** Content-scan verdict, computed from the package's own files. */
   risk: Risk
   findings: Finding[]
@@ -226,6 +228,16 @@ function pickTags(data: Record<string, FrontmatterValue>): string[] {
   return merged
 }
 
+function pickRelatedSkills(data: Record<string, FrontmatterValue>): string[] {
+  const merged: string[] = []
+  for (const path of ['related_skills', 'metadata.hermes.related_skills', 'metadata.related_skills']) {
+    for (const skill of asList(readPath(data, path))) {
+      if (!merged.includes(skill)) merged.push(skill)
+    }
+  }
+  return merged
+}
+
 function splitFrontmatter(raw: string): Frontmatter {
   const text = raw.replace(/^\uFEFF/, '')
   if (!text.startsWith('---')) return { data: {}, body: text, present: false }
@@ -351,6 +363,7 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
   // them, so a skill can be `writing` by category and still carry its own tag set.
   const declaredCategory = pickText(data, ['category', 'metadata.hermes.category', 'metadata.category'])
   const category = declaredCategory
+  const relatedSkills = pickRelatedSkills(data)
 
   // The content scan runs on the package as written, so the badge reflects the files the
   // agent would actually read, not the frontmatter's claims about them.
@@ -413,6 +426,7 @@ export function parseSkill(dir: string, rootPath: string, scope: string): SkillR
     tokens: tokenCount(raw),
     tags,
     category,
+    relatedSkills,
     risk: safety.risk,
     findings: safety.findings,
     packageHash,

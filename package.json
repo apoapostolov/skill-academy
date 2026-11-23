@@ -23,6 +23,7 @@
     "bench:p1": "npx tsx scripts/bench-p1.ts",
     "fixtures": "bash scripts/fixture-check.sh",
     "contrast": "tsx scripts/contrast-check.ts",
+    "ui-smoke": "node scripts/ui-smoke.mjs",
     "ska": "tsx cli/ska.ts",
     "mcp": "tsx mcp/server.ts",
     "parity": "bash scripts/parity-check.sh",

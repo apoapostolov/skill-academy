@@ -7,6 +7,11 @@ import { NotificationList } from './Notifications'
 import { AppearanceDialog } from './Appearance'
 import { THEMES, applyTheme, themeById, type Theme } from './themes'
 import { GroupPlanDialog, ImproveDialog, MoveDialog, TrashView } from './Merge'
+import { ImproveView } from './ImproveView'
+import { ConsolidateView, type ConsolidateGroupView, type ConsolidateReport } from './ConsolidateView'
+import { ConsolidateDetail } from './ConsolidateDetail'
+import { CurationView } from './CurationView'
+import type { CurationReport } from './curationTypes'
 import { DraftEditor, DraftList, type DraftRow } from './Write'
 import {
   WorkspaceDetail,
@@ -119,47 +124,7 @@ interface OAuthRow {
   watch?: OAuthWatch | null
 }
 
-interface ImproveFinding {
-  rule: string
-  severity: 'error' | 'warn' | 'info'
-  skill: string
-  path: string
-  detail: string
-}
-
-interface ConsolidateMemberView {
-  name: string
-  path: string
-  version: string | null
-  chars: number
-  uniqueHeadings: string[]
-}
-
-interface FoldView {
-  key: string
-  survivor: string
-  model: string
-  ms: number
-  chars: number
-  keptRules: number
-  totalRules: number
-  droppedRules: string[]
-  inventedLines: string[]
-  status: 'clean' | 'lossy'
-  message?: string
-  text: string
-}
-
-interface ConsolidateGroupView {
-  key: string
-  liveRoot?: boolean
-  mergeType: string
-  evidence: string
-  survivor: string | null
-  members: ConsolidateMemberView[]
-  plan: null | { survivor: string; pointerize: Array<{ name: string }>; routerize: Array<{ name: string; outline: string[] }>; rewire: string[] }
-  blocked: string | null
-}
+// ConsolidateGroupView is imported from ConsolidateView.
 
 interface Facets {
   agents: { agent: string; path: string; origin: string; count: number; archived?: number; tokens: number }[]
@@ -172,6 +137,9 @@ interface Facets {
 type Scope =
   | { kind: 'all' }
   | { kind: 'health' }
+  | { kind: 'improve' }
+  | { kind: 'consolidate' }
+  | { kind: 'curation' }
   | { kind: 'trash' }
   | { kind: 'drafts' }
   | { kind: 'notifications' }
@@ -227,24 +195,27 @@ function BlockHead({
   label,
   meta,
   open,
-  onToggle
+  onToggle,
+  action
 }: {
   label: string
   meta?: React.ReactNode
   open: boolean
   onToggle: () => void
+  action?: React.ReactNode
 }) {
+  const title = open ? `Collapse ${label}` : `Expand ${label}`
   return (
-    <button
-      className={`block-head ${open ? 'open' : 'closed'}`}
-      onClick={onToggle}
-      aria-expanded={open}
-      title={open ? `Collapse ${label}` : `Expand ${label}`}
-    >
-      <ChevronGlyph open={open} />
-      <span className="bh-label">{label}</span>
+    <div className={`block-head ${open ? 'open' : 'closed'}`}>
+      <button className="bh-toggle" onClick={onToggle} aria-expanded={open} title={title}>
+        <ChevronGlyph open={open} />
+      </button>
+      <button className="bh-toggle bh-label-toggle" onClick={onToggle} aria-expanded={open} tabIndex={-1} aria-hidden="true">
+        <span className="bh-label">{label}</span>
+      </button>
+      {action ? <div className="bh-action">{action}</div> : null}
       <span className="bh-meta">{meta}</span>
-    </button>
+    </div>
   )
 }
 
@@ -275,13 +246,7 @@ function PencilGlyph() {
   )
 }
 
-function CheckGlyph() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2.5 8.5 6 12l7.5-8" />
-    </svg>
-  )
-}
+/* CheckGlyph reserved for future use */
 
 /**
  * Scroll container with a mobile-style thumb: it overlays the content instead of
@@ -328,22 +293,7 @@ function buildPackageTree(entries: PackageEntry[]): PkgNode[] {
   return root.children
 }
 
-function RestoreGlyph() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M3.5 8a4.5 4.5 0 1 0 1.5-3.4" strokeLinecap="round" />
-      <path d="M3 2.5V5h2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function TrashGlyph() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.6 8.2h4.8l.6-8.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
+/* RestoreGlyph, TrashGlyph reserved for future use */
 
 function PreviewGlyph() {
   return (
@@ -410,15 +360,45 @@ function ScrollPane({
 }) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const timer = useRef<number | null>(null)
+  const hovered = useRef(false)
+  const bottomHover = useRef(false)
+  const scrolling = useRef(false)
   const [thumb, setThumb] = useState({
     yTop: 0,
     ySize: 0,
     xLeft: 0,
     xSize: 0,
-    visible: false
+    yVisible: false,
+    xVisible: false
   })
 
-  function update(show: boolean) {
+  function reveal(vertical: boolean, horizontal: boolean) {
+    if (timer.current) window.clearTimeout(timer.current)
+    scrolling.current = true
+    setThumb((current) => ({
+      ...current,
+      yVisible: vertical || hovered.current,
+      xVisible: horizontal || bottomHover.current
+    }))
+    timer.current = window.setTimeout(() => {
+      scrolling.current = false
+      setThumb((current) => ({
+        ...current,
+        yVisible: hovered.current,
+        xVisible: bottomHover.current
+      }))
+    }, 700)
+  }
+
+  function syncVisibility() {
+    setThumb((current) => ({
+      ...current,
+      yVisible: hovered.current || scrolling.current,
+      xVisible: bottomHover.current || (scrolling.current && hovered.current)
+    }))
+  }
+
+  function update(fromScroll: boolean) {
     const element = bodyRef.current
     if (!element) return
 
@@ -437,38 +417,23 @@ function ScrollPane({
       overflowX === 'hidden' || overflowX === 'clip'
         ? { offset: 0, size: 0 }
         : measure(element.clientWidth, element.scrollWidth, element.scrollLeft)
-    const scrollable = vertical.size > 0 || horizontal.size > 0
-    if (!scrollable) {
-      setThumb((current) => (current.visible ? { ...current, visible: false } : current))
-      return
-    }
 
-    // Geometry updates on every render; only a real scroll makes the thumb appear,
-    // otherwise the hide timer would be undone by the next render. Returning the same
-    // object when nothing moved keeps React from re-rendering forever, which would also
-    // restart the opacity transition on every frame.
     setThumb((current) => {
       const unchanged =
         current.yTop === vertical.offset &&
         current.ySize === vertical.size &&
         current.xLeft === horizontal.offset &&
-        current.xSize === horizontal.size &&
-        (show ? current.visible : true)
-      if (unchanged) return current
+        current.xSize === horizontal.size
+      if (unchanged && !fromScroll) return current
       return {
+        ...current,
         yTop: vertical.offset,
         ySize: vertical.size,
         xLeft: horizontal.offset,
-        xSize: horizontal.size,
-        visible: show || current.visible
+        xSize: horizontal.size
       }
     })
-    if (show) {
-      if (timer.current) window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => {
-        setThumb((current) => ({ ...current, visible: false }))
-      }, 650)
-    }
+    if (fromScroll) reveal(vertical.size > 0, horizontal.size > 0)
   }
 
   useEffect(() => {
@@ -485,7 +450,30 @@ function ScrollPane({
   }, [])
 
   return (
-    <div className={`scrollpane ${className}`}>
+    <div
+      className={`scrollpane ${className}`}
+      onMouseEnter={() => {
+        hovered.current = true
+        syncVisibility()
+      }}
+      onMouseMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const inBottom = event.clientY >= rect.bottom - 28
+        if (inBottom !== bottomHover.current) {
+          bottomHover.current = inBottom
+          syncVisibility()
+        }
+      }}
+      onMouseLeave={() => {
+        hovered.current = false
+        bottomHover.current = false
+        if (!scrolling.current) {
+          setThumb((current) => ({ ...current, yVisible: false, xVisible: false }))
+        } else {
+          syncVisibility()
+        }
+      }}
+    >
       <div
         className="scrollbody"
         ref={(node) => {
@@ -501,14 +489,14 @@ function ScrollPane({
       </div>
       {(axis === 'y' || axis === 'both') && thumb.ySize > 0 && (
         <div
-          className={`scrollthumb ${thumb.visible ? 'on' : ''}`}
+          className={`scrollthumb ${thumb.yVisible ? 'on' : ''}`}
           style={{ top: thumb.yTop, height: thumb.ySize }}
           aria-hidden="true"
         />
       )}
       {(axis === 'x' || axis === 'both') && thumb.xSize > 0 && (
         <div
-          className={`scrollthumb horizontal ${thumb.visible ? 'on' : ''}`}
+          className={`scrollthumb horizontal ${thumb.xVisible ? 'on' : ''}`}
           style={{ left: thumb.xLeft, width: thumb.xSize }}
           aria-hidden="true"
         />
@@ -596,7 +584,7 @@ function FacetRow({ entry, active, onPick }: { entry: { tag: string; count: numb
   )
 }
 
-/** A tag written as `family:peer-review` reads better as the name plus a quiet pill. */
+/** A tag written as `family:peer-review` reads better as the axis plus the name. */
 // Facet axes that get a pill: env, tool, artifact, risk, locale, role. A family is a
 // workflow bundle and rev is a revision marker, both asked for earlier; they keep the
 // same treatment until told otherwise.
@@ -606,11 +594,12 @@ function TagLabel({ tag, withPill = true }: { tag: string; withPill?: boolean })
   const match = tag.match(TAG_PREFIX)
   if (!match) return <>#{tag}</>
   const prefix = match[1].toLowerCase()
-  // One inline unit, so a flex row cannot push the pill away from its own tag.
+  // One inline unit, so a flex row cannot push the pill away from its own tag. The axis
+  // leads, because it is the left segment of a two-segment pill.
   return (
     <span className="tag-text">
-      <span className="tag-name">#{match[2]}</span>
       {withPill && <span className={`tag-prefix ${prefix}`}>{prefix}</span>}
+      <span className="tag-name">#{match[2]}</span>
     </span>
   )
 }
@@ -628,8 +617,8 @@ function MarkdownBody({ text, className }: { text: string; className: string }) 
     if (!element) return
     const cleanups: Array<() => void> = []
 
-    for (const scroller of element.querySelectorAll<HTMLDivElement>('.md-table')) {
-      // A bar drawn by us rather than by the platform: it overlays the table instead of
+    for (const scroller of element.querySelectorAll<HTMLDivElement>('.md-table, .md-code pre')) {
+      // A bar drawn by us rather than by the platform: it overlays the scroller instead of
       // reserving a lane, follows the scroll position, and fades when the reader stops.
       const thumb = document.createElement('span')
       thumb.className = 'md-thumb'
@@ -721,7 +710,6 @@ export default function App() {
   const [oauthCode, setOauthCode] = useState('')
   const [oauthBusy, setOauthBusy] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState('')
-  const [reviewOpen, setReviewOpen] = useState<'improve' | 'consolidate' | null>(null)
   const [monitorOpen, setMonitorOpen] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
@@ -751,21 +739,18 @@ export default function App() {
   const [workspaceRow, setWorkspaceRow] = useState<CompareRow | null>(null)
   const [workspaceRefresh, setWorkspaceRefresh] = useState(0)
   const [trashWipeAsk, setTrashWipeAsk] = useState(false)
-  const [improveFindings, setImproveFindings] = useState<ImproveFinding[]>([])
-  const [improveRule, setImproveRule] = useState('')
-  const [consolidateGroups, setConsolidateGroups] = useState<ConsolidateGroupView[]>([])
-  const [consolidateSummary, setConsolidateSummary] = useState<Record<string, number>>({})
-  const [reviewBusy, setReviewBusy] = useState(false)
-  const [reviewOpenKey, setReviewOpenKey] = useState('')
-  const [fold, setFold] = useState<FoldView | null>(null)
-  const [foldBusy, setFoldBusy] = useState('')
-  const [foldRead, setFoldRead] = useState(false)
-  const [foldApplied, setFoldApplied] = useState('')
+  const [consolidateReport, setConsolidateReport] = useState<ConsolidateReport | null>(null)
+  const [consolidateBusy, setConsolidateBusy] = useState(false)
+  const [consolidateError, setConsolidateError] = useState('')
+  const [consolidateSelectedKey, setConsolidateSelectedKey] = useState<string | null>(null)
+  const [curationReport, setCurationReport] = useState<CurationReport | null>(null)
+  const [curationBusy, setCurationBusy] = useState(false)
+  const [curationError, setCurationError] = useState('')
   const [modelProvider, setModelProvider] = useState('')
   const [modelList, setModelList] = useState<string[]>([])
   const [modelChoice, setModelChoice] = useState('')
-  const [modelAt, setModelAt] = useState<string | null>(null)
-  const [modelCached, setModelCached] = useState(false)
+  const [_modelAt, setModelAt] = useState<string | null>(null)
+  const [_modelCached, setModelCached] = useState(false)
   const [githubToken, setGithubToken] = useState('')
   const [githubNote, setGithubNote] = useState('')
 
@@ -958,82 +943,54 @@ export default function App() {
     setModelChoice(models.includes(remembered) ? remembered : '')
   }
 
-  async function openImprove() {
-    setReviewOpen('improve')
-    setReviewBusy(true)
-    try {
-      const response = await fetch('/api/improve/dry-run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-      const payload = (await response.json()) as { findings: ImproveFinding[] }
-      setImproveFindings(payload.findings ?? [])
-    } finally {
-      setReviewBusy(false)
-    }
+  function openImprove() {
+    setScope({ kind: 'improve' })
   }
 
-  async function openConsolidate() {
-    setReviewOpen('consolidate')
-    setReviewBusy(true)
+  async function loadConsolidate() {
+    setConsolidateBusy(true)
+    setConsolidateError('')
     try {
       const response = await fetch('/api/consolidate/dry-run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-      const payload = (await response.json()) as { groups: ConsolidateGroupView[]; summary: Record<string, number> }
-      setConsolidateGroups(payload.groups ?? [])
-      setConsolidateSummary(payload.summary ?? {})
+      const payload = (await response.json()) as ConsolidateReport & { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setConsolidateReport(payload)
+    } catch (err) {
+      setConsolidateError(err instanceof Error ? err.message : String(err))
     } finally {
-      setReviewBusy(false)
+      setConsolidateBusy(false)
     }
   }
 
-  async function proposeFold(key: string) {
-    setFoldBusy(key)
-    setFold(null)
-    setFoldRead(false)
-    setFoldApplied('')
-    const response = await fetch('/api/consolidate/fold', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key })
-    })
-    const payload = (await response.json()) as FoldView & { error?: string; detail?: unknown }
-    setFoldBusy('')
-    if (payload.error) {
-      setFoldApplied(`${payload.error}: ${JSON.stringify(payload.detail)}`)
-      return
-    }
-    setFold(payload)
+  function openConsolidate() {
+    setScope({ kind: 'consolidate' })
+    if (!consolidateReport && !consolidateBusy) void loadConsolidate()
   }
 
-  async function writeFold() {
-    if (!fold) return
-    setFoldBusy(fold.key)
-    const response = await fetch('/api/consolidate/fold/apply', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        key: fold.key,
-        // The body on screen is the body that gets written and audited, not a fresh sample.
-        text: fold.text,
-        read: foldRead,
-        confirm: true,
-        dryRun: false
-      })
-    })
-    const payload = (await response.json()) as {
-    applied?: boolean
-    archive?: string
-    error?: string
-    detail?: { path?: string; hint?: string } | unknown
+  async function loadCuration() {
+    setCurationBusy(true)
+    setCurationError('')
+    try {
+      const response = await fetch('/api/curate/dry-run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const payload = (await response.json()) as CurationReport & { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setCurationReport(payload)
+    } catch (err) {
+      setCurationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCurationBusy(false)
+    }
   }
-    setFoldBusy('')
-    const detail = payload.detail as { path?: string; hint?: string } | undefined
-    setFoldApplied(
-      payload.error === 'protected-root'
-        ? `Nothing was written. ${detail?.path ?? 'This skill'} is in the live library. ${detail?.hint ?? ''}`
-        : payload.error
-          ? `${payload.error}: ${JSON.stringify(payload.detail)}`
-          : `written · archived at ${payload.archive ?? 'unknown'}`
-    )
-    if (payload.applied) await openConsolidate()
+
+  function openCuration() {
+    setScope({ kind: 'curation' })
+    if (!curationReport && !curationBusy) void loadCuration()
   }
+
+  useEffect(() => {
+    if (scope.kind === 'consolidate' && !consolidateReport && !consolidateBusy) void loadConsolidate()
+    if (scope.kind === 'curation' && !curationReport && !curationBusy) void loadCuration()
+  }, [scope.kind])
 
   async function saveProviderBase(id: string) {
     const base = (baseDrafts[id] ?? '').trim()
@@ -1529,7 +1486,6 @@ export default function App() {
         setMonitorOpen(false)
         setProvidersOpen(false)
         setSettingsOpen(false)
-        setReviewOpen(null)
         setCompareOpen(false)
         setInstallOpen(false)
         return
@@ -1620,15 +1576,18 @@ export default function App() {
           setError('Press a again to archive.')
           setTimeout(() => setError(null), 4000)
         }
-      } else if (key === '1' || key === '2' || key === '3' || key === '4' || key === '5' || key === '6') {
+      } else if (key >= '1' && key <= '9') {
         event.preventDefault()
         const scopes = [
           { kind: 'all' } as Scope,
-          { kind: 'health' } as Scope,
           { kind: 'notifications' } as Scope,
+          { kind: 'health' } as Scope,
+          { kind: 'improve' } as Scope,
+          { kind: 'consolidate' } as Scope,
+          { kind: 'curation' } as Scope,
+          { kind: 'trash' } as Scope,
           { kind: 'drafts' } as Scope,
-          { kind: 'workspace', id: -1 } as Scope,
-          { kind: 'trash' } as Scope
+          { kind: 'workspace', id: -1 } as Scope
         ]
         const wanted = scopes[Number(key) - 1]
         // A workspace scope needs a workspace, so the key takes the first one rather than guessing.
@@ -1638,6 +1597,8 @@ export default function App() {
         } else {
           setScope(wanted)
           if (wanted.kind === 'drafts') void loadDrafts()
+          if (wanted.kind === 'consolidate' && !consolidateReport && !consolidateBusy) void loadConsolidate()
+          if (wanted.kind === 'curation' && !curationReport && !curationBusy) void loadCuration()
         }
       } else if (key === 'S') {
         event.preventDefault()
@@ -1719,19 +1680,7 @@ export default function App() {
     await loadState()
   }
 
-  async function restoreFromTrash(id: number) {
-    await fetch(`/api/trash/${id}/restore`, { method: 'POST' })
-    await loadTrash()
-    await loadState()
-  }
-
-  async function purgeFromTrash(id: number) {
-    const entry = trashList.find((row) => row.id === id)
-    if (!entry) return
-    if (!window.confirm(`Send ${entry.name} to the Recycle Bin? This cannot be undone here.`)) return
-    await fetch(`/api/trash/${id}/purge`, { method: 'POST' })
-    await loadTrash()
-  }
+  // restoreFromTrash/purgeFromTrash removed: unused in current UI.
 
   async function loadState() {
     try {
@@ -1829,7 +1778,7 @@ export default function App() {
     if (pageRef.current) pageRef.current.scrollTop = 0
     fetchPage(0, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, scope, statusSeg])
+  }, [debounced, scope, statusSeg, hiddenAgents])
 
   function loadMore() {
     if (!hasMore || loadingRef.current) return
@@ -2035,6 +1984,9 @@ export default function App() {
     if (scope.kind === 'trash') return 'Deleted'
     if (scope.kind === 'drafts') return 'Drafts'
     if (scope.kind === 'notifications') return 'Notifications'
+    if (scope.kind === 'improve') return 'Improve'
+    if (scope.kind === 'consolidate') return 'Consolidate'
+    if (scope.kind === 'curation') return 'Curation'
     if (scope.kind === 'workspace') return workspaces.find((row) => row.id === scope.id)?.name ?? 'Workspace'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
@@ -2102,12 +2054,6 @@ export default function App() {
             <AcademyMark />
             <span className="brand-name">Skill Academy</span>
           </span>
-          <button className="mb-item" onClick={openImprove}>
-            Improve
-          </button>
-          <button className="mb-item" onClick={openConsolidate}>
-            Consolidate
-          </button>
           <button className="mb-item" onClick={openProviders}>
             Providers
           </button>
@@ -2223,164 +2169,7 @@ export default function App() {
       )}
 
 
-      {reviewOpen === 'improve' && (
-        <div className="installscrim" onClick={() => setReviewOpen(null)}>
-          <div className="installmodal reviewmodal" onClick={(event) => event.stopPropagation()}>
-            <div className="imhead">
-              <span>
-                Improve · {improveFindings.length} finding{improveFindings.length === 1 ? '' : 's'}
-              </span>
-              <button className="iconbtn crossbtn" aria-label="Close" onClick={() => setReviewOpen(null)}>
-                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
-                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-            <div className="imbody">
-              <div className="reviewchips">
-                <button className={`chip ${improveRule === '' ? 'on' : ''}`} onClick={() => setImproveRule('')}>
-                  all · {improveFindings.length}
-                </button>
-                {[...new Set(improveFindings.map((finding) => finding.rule))].map((rule) => (
-                  <button key={rule} className={`chip ${improveRule === rule ? 'on' : ''}`} onClick={() => setImproveRule(rule)}>
-                    {rule} · {improveFindings.filter((finding) => finding.rule === rule).length}
-                  </button>
-                ))}
-              </div>
-              <div className="reviewlist">
-                {reviewBusy && <div className="reviewnote">running the rule set…</div>}
-                {improveFindings
-                  .filter((finding) => !improveRule || finding.rule === improveRule)
-                  .slice(0, 400)
-                  .map((finding, index) => (
-                    <div className={`reviewrow ${finding.severity}`} key={`${finding.rule}:${finding.path}:${index}`}>
-                      <span className="reviewrule">{finding.rule}</span>
-                      <span className="reviewname">{finding.skill}</span>
-                      <span className="reviewdetail">{finding.detail}</span>
-                      <span className="reviewpath" title={finding.path}>
-                        {finding.path.split(/[\\/]/).slice(-2).join('/')}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {reviewOpen === 'consolidate' && (
-        <div className="installscrim" onClick={() => setReviewOpen(null)}>
-          <div className="installmodal reviewmodal" onClick={(event) => event.stopPropagation()}>
-            <div className="imhead">
-              <span>Consolidate · {consolidateGroups.length} group{consolidateGroups.length === 1 ? '' : 's'}</span>
-              <button className="iconbtn crossbtn" aria-label="Close" onClick={() => setReviewOpen(null)}>
-                <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
-                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-            <div className="imbody">
-              <div className="reviewchips">
-                {Object.entries(consolidateSummary).map(([kind, count]) => (
-                  <span className={`chip ${kind === 'intentional-family' ? 'quiet' : ''}`} key={kind}>
-                    {kind} · {count}
-                  </span>
-                ))}
-              </div>
-              <div className="reviewlist">
-                {reviewBusy && <div className="reviewnote">comparing bodies…</div>}
-                {consolidateGroups.map((group) => (
-                  <div className="cgroup" key={group.key}>
-                    <button className="cghead" onClick={() => setReviewOpenKey(reviewOpenKey === group.key ? '' : group.key)}>
-                      <span className={`cgtype ${group.mergeType}`}>{group.mergeType}</span>
-                      <span className="cgname">{group.plan?.survivor ?? group.key}</span>
-                      <span className="cgev">{group.evidence}</span>
-                      <span className="cgcount">{group.members.length} copies</span>
-                      {group.liveRoot && (
-                        <span className="cglock" title="This group lives in the live agent library, so a write is refused.">
-                          live library · write blocked
-                        </span>
-                      )}
-                    </button>
-                    {reviewOpenKey === group.key && (
-                      <div className="cgbody">
-                        {group.members.map((member) => (
-                          <div className="cgmember" key={member.path}>
-                            <span className="cgmname">{member.name}</span>
-                            <span className="cgmsize">{member.chars} chars</span>
-                            <span className="cgmver">{member.version ?? 'no version'}</span>
-                            <span className="cgmhead" title={member.path}>
-                              {member.uniqueHeadings.length ? `unique: ${member.uniqueHeadings.join(', ')}` : 'nothing unique'}
-                            </span>
-                          </div>
-                        ))}
-                        {group.blocked && <div className="reviewnote">{group.blocked}</div>}
-                        <div className="cgplan">
-                          <button className="ghost small planbtn" onClick={() => setPlanGroup(group)}>
-                            Plan promote or fold…
-                          </button>
-                        </div>
-                        {group.plan && (
-                          <div className="cgplan">
-                            survivor <b>{group.plan.survivor}</b> · pointer {group.plan.pointerize.length} · router{' '}
-                            {group.plan.routerize.length}
-                            <button
-                              className="ghost small foldbtn"
-                              onClick={() => void proposeFold(group.key)}
-                              disabled={foldBusy === group.key}
-                            >
-                              {foldBusy === group.key ? 'asking the model…' : 'Propose merge'}
-                            </button>
-                          </div>
-                        )}
-
-                        {fold?.key === group.key && (
-                          <div className="foldbox">
-                            <div className="foldaudit">
-                              <span className={`foldchip ${fold.status === 'clean' ? 'ok' : 'bad'}`}>{fold.status}</span>
-                              <span>
-                                kept {fold.keptRules}/{fold.totalRules} lines
-                              </span>
-                              <span>{fold.inventedLines.length} invented</span>
-                              <span>{fold.droppedRules.length} dropped</span>
-                              <span>
-                                {fold.model} · {(fold.ms / 1000).toFixed(1)} s · {fold.chars} chars
-                              </span>
-                            </div>
-                            <pre className="foldtext">{fold.text}</pre>
-                            {fold.droppedRules.length > 0 && (
-                              <div className="foldmissing">
-                                missing from the merge:
-                                {fold.droppedRules.slice(0, 5).map((line) => (
-                                  <code key={line}>{line.slice(0, 80)}</code>
-                                ))}
-                              </div>
-                            )}
-                            <div className="foldactions">
-                              <label className="foldread">
-                                <input type="checkbox" checked={foldRead} onChange={(event) => setFoldRead(event.target.checked)} />
-                                I read the merged body above
-                              </label>
-                              <button
-                                className="ghost small"
-                                disabled={!foldRead || fold.status !== 'clean' || foldBusy === fold.key}
-                                onClick={() => void writeFold()}
-                              >
-                                Write merged body
-                              </button>
-                            </div>
-                            {foldApplied && <div className="reviewnote">{foldApplied}</div>}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {providersOpen && (
         <div className="installscrim" onClick={() => setProvidersOpen(false)}>
@@ -2682,16 +2471,49 @@ export default function App() {
             All skills <span>{state ? fmt.format(state.library.skills) : ''}</span>
           </button>
           <button
+            className={`nav ${scope.kind === 'notifications' ? 'active' : ''}`}
+            onClick={() => setScope({ kind: 'notifications' })}
+          >
+            Notifications {unreadNotifications > 0 && <span className="navbadge">{unreadNotifications}</span>}
+          </button>
+          <button
             className={`nav ${scope.kind === 'health' ? 'active' : ''}`}
             onClick={() => setScope({ kind: 'health' })}
           >
             Needs attention <span>{state ? fmt.format(state.library.issues) : ''}</span>
           </button>
           <button
+            className={`nav ${scope.kind === 'improve' ? 'active' : ''}`}
+            onClick={() => openImprove()}
+          >
+            Improve
+          </button>
+          <button
+            className={`nav ${scope.kind === 'consolidate' ? 'active' : ''}`}
+            onClick={() => openConsolidate()}
+          >
+            Consolidate {consolidateReport ? <span>{fmt.format(consolidateReport.groups.length)}</span> : null}
+          </button>
+          <button
+            className={`nav ${scope.kind === 'curation' ? 'active' : ''}`}
+            onClick={() => openCuration()}
+          >
+            Curation {curationReport ? <span>{fmt.format(curationReport.stale.length)}</span> : null}
+          </button>
+          <button
             className={`nav ${scope.kind === 'trash' ? 'active' : ''}`}
             onClick={() => setScope({ kind: 'trash' })}
           >
             Deleted <span>{trashList.length}</span>
+          </button>
+          <button
+            className={`nav ${scope.kind === 'drafts' ? 'active' : ''}`}
+            onClick={() => {
+              setScope({ kind: 'drafts' })
+              void loadDrafts()
+            }}
+          >
+            Drafts <span>{drafts.length}</span>
           </button>
           <div className="wssection">
             <div className="wstitle">Workspaces</div>
@@ -2706,21 +2528,6 @@ export default function App() {
               onRemove={(id) => void removeWorkspace(id)}
             />
           </div>
-          <button
-            className={`nav ${scope.kind === 'notifications' ? 'active' : ''}`}
-            onClick={() => setScope({ kind: 'notifications' })}
-          >
-            Notifications {unreadNotifications > 0 && <span className="navbadge">{unreadNotifications}</span>}
-          </button>
-          <button
-            className={`nav ${scope.kind === 'drafts' ? 'active' : ''}`}
-            onClick={() => {
-              setScope({ kind: 'drafts' })
-              void loadDrafts()
-            }}
-          >
-            Drafts <span>{drafts.length}</span>
-          </button>
 
           <div className="group head">
             <span>Agents</span>
@@ -3052,6 +2859,37 @@ export default function App() {
               onOpenSource={() => setSourcesOpen(true)}
             />
           )}
+          {scope.kind === 'improve' && (
+            <ImproveView
+              onSelectSkill={(id) => {
+                setSelected(id)
+                setSelected(id)
+              }}
+              onImproveSkill={(id, name) => setImproveTarget({ id, name })}
+            />
+          )}
+          {scope.kind === 'consolidate' && (
+            <ConsolidateView
+              report={consolidateReport}
+              busy={consolidateBusy}
+              error={consolidateError}
+              selectedKey={consolidateSelectedKey}
+              onRefresh={() => void loadConsolidate()}
+              onSelect={(g) => setConsolidateSelectedKey(g.key)}
+            />
+          )}
+          {scope.kind === 'curation' && (
+            <CurationView
+              report={curationReport}
+              busy={curationBusy}
+              error={curationError}
+              onRefresh={() => void loadCuration()}
+              onOpenSkill={(id) => {
+                setScope({ kind: 'all' })
+                setSelected(id)
+              }}
+            />
+          )}
           {scope.kind === 'drafts' && (
             <DraftList
               drafts={drafts}
@@ -3069,6 +2907,9 @@ export default function App() {
             scope.kind !== 'drafts' &&
             scope.kind !== 'workspace' &&
             scope.kind !== 'notifications' &&
+            scope.kind !== 'improve' &&
+            scope.kind !== 'consolidate' &&
+            scope.kind !== 'curation' &&
             skills.map((skill) => (
             <button
               key={skill.id}
@@ -3436,10 +3277,24 @@ export default function App() {
               <div className="empty">Pick a draft, or describe a new one.</div>
             )
           ) : null}
-          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && !detail && (
+          {scope.kind === 'consolidate' ? (
+            (() => {
+              const g = consolidateReport?.groups.find((x) => x.key === consolidateSelectedKey) ?? null
+              return g ? (
+                <ConsolidateDetail
+                  group={g}
+                  onPlan={(group) => setPlanGroup(group)}
+                  onChanged={() => void loadConsolidate()}
+                />
+              ) : (
+                <div className="empty">Select a group to inspect it.</div>
+              )
+            })()
+          ) : null}
+          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && scope.kind !== 'consolidate' && !detail && (
             <div className="empty">Select a skill to read it.</div>
           )}
-          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && detail && (
+          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && scope.kind !== 'consolidate' && detail && (
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>
@@ -3466,7 +3321,7 @@ export default function App() {
                 {detail.version ? <span className="chip version">v{detail.version.replace(/^v/i, '')}</span> : null}
                 {detail.category ? <span className="chip category">{detail.category}</span> : null}
                 {detail.tags.map((tag) => (
-                  <span className="chip" key={tag}>
+                  <span className={`chip${TAG_PREFIX.test(tag) ? ' seg' : ''}`} key={tag}>
                     <TagLabel tag={tag} />
                   </span>
                 ))}
@@ -3527,6 +3382,18 @@ export default function App() {
                     meta={`${placements.filter((row) => row.state !== 'off').length} of ${placements.length}`}
                     open={!collapsedBlocks.agents}
                     onToggle={() => toggleBlock('agents')}
+                    action={
+                      !collapsedBlocks.agents && placements.some((row) => row.state === 'off') ? (
+                        <button
+                          className="ghost tiny bh-show-toggle"
+                          onClick={() => setShowAllAgents((value) => !value)}
+                        >
+                          {showAllAgents
+                            ? 'Fewer agents'
+                            : `Show ${placements.filter((row) => row.state === 'off').length} available`}
+                        </button>
+                      ) : undefined
+                    }
                   />
                   {!collapsedBlocks.agents && (
                     <>
@@ -3569,13 +3436,6 @@ export default function App() {
                         )}
                       </div>
                     ))}
-                  {placements.some((row) => row.state === 'off') && (
-                    <button className="ghost tiny pl-more" onClick={() => setShowAllAgents((value) => !value)}>
-                      {showAllAgents
-                        ? 'Fewer agents'
-                        : `Show ${placements.filter((row) => row.state === 'off').length} available`}
-                    </button>
-                  )}
                     </>
                   )}
                 </div>

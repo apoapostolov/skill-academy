@@ -38,10 +38,10 @@ export function readSettings(): Settings {
   }[]
   const found = new Map(rows.map((row) => [row.key, row.value]))
   return {
-    archiveDir: found.get('archive_dir') ?? path.join(DATA_DIR, 'archive'),
+    archiveDir: found.get('archive_dir') || path.join(DATA_DIR, 'archive'),
     trashDays: Number(found.get('trash_days') ?? DEFAULT_TRASH_DAYS),
-    mergeProvider: found.get('merge_provider') ?? 'opencode-go',
-    mergeModel: found.get('merge_model') ?? 'deepseek-v4.1-flash'
+    mergeProvider: found.get('merge_provider') || 'opencode-go',
+    mergeModel: found.get('merge_model') || 'deepseek-v4.1-flash'
   }
 }
 

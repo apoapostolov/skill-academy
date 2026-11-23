@@ -10,7 +10,7 @@ const ROWS: Array<[string, string]> = [
   ['a then a', 'archive, twice within four seconds'],
   ['e / x', 'selection mode / toggle a row'],
   ['Shift+A', 'archive the selection'],
-  ['1 - 6', 'all / needs attention / notifications / drafts / workspace / trash'],
+  ['1 - 8', 'all / notifications / needs attention / improve / consolidate / deleted / drafts / workspaces'],
   ['S / Y / P', 'sources / sync / appearance'],
   ['/', 'focus search'],
   ['v / w', 'preview or raw / wrap'],
@@ -27,14 +27,32 @@ const ROWS: Array<[string, string]> = [
 export function KeysMap({ onClose }: { onClose: () => void }) {
   const panel = useDialogFocus<HTMLDivElement>()
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Keyboard map" aria-modal="true" onClick={onClose}>
-      <div className="keysdlg" ref={panel} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-label="Keyboard map"
+      aria-modal="true"
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          onClose()
+        }
+      }}
+    >
+      <div
+        className="keysdlg"
+        ref={panel}
+        tabIndex={-1}
+        role="presentation"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
         <div className="sdhead">
           <div>
             <div className="mergetitle">Keyboard</div>
             <div className="mergesub">The list is the spine. Nothing here moves the page under you.</div>
           </div>
-          <button className="ghost small" onClick={onClose}>
+          <button type="button" className="ghost small" onClick={onClose}>
             Close
           </button>
         </div>

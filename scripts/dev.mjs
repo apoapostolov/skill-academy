@@ -8,8 +8,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const APP_PORT = process.env.SKILL_ACADEMY_APP_PORT ?? '10009'
-const API_PORT = process.env.SKILL_ACADEMY_API_PORT ?? '10008'
+const APP_PORT = process.env.SKILL_ACADEMY_APP_PORT ?? '10008'
+const API_PORT = process.env.SKILL_ACADEMY_API_PORT ?? '10009'
 
 const STATE_DIR = path.join(os.homedir(), '.skill-academy')
 const LOG_FILE = path.join(STATE_DIR, 'logs', 'dev.log')
@@ -91,8 +91,7 @@ run('web', '35', 'npm run dev:web')
 
 console.log('')
 out('  Skill Academy dev loop\n')
-out(`  app   http://127.0.0.1:${APP_PORT}\n`)
+out(`  app   http://127.0.0.1:${APP_PORT}  (Vite HMR)\n`)
 out(`  api   http://127.0.0.1:${API_PORT}/api/state\n`)
-out(`  dev   http://127.0.0.1:${APP_PORT}/dev\n`)
 out(`  log   ${LOG_FILE}\n`)
 out('')

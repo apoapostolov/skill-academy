@@ -7,7 +7,9 @@ interface State {
   dataDir: string
   dbPath: string
   requests: number
-  scan: { lastScanAt: string | null; rootsScanned: number; skills: number }
+  lastScanAt: string | null
+  library: { skills: number }
+  registry: { detected: number }
 }
 
 interface RequestLine {
@@ -72,8 +74,8 @@ export default function DevPanel() {
           </div>
           <div className="card">
             <div className="label">Last scan</div>
-            <div className="value">{state?.scan.lastScanAt ? new Date(state.scan.lastScanAt).toLocaleTimeString() : 'never'}</div>
-            <div className="meta">{state ? `${state.scan.skills} skills · ${state.scan.rootsScanned} roots` : ''}</div>
+            <div className="value">{state?.lastScanAt ? new Date(state.lastScanAt).toLocaleTimeString() : 'never'}</div>
+            <div className="meta">{state ? `${state.library.skills} skills · ${state.registry.detected} roots` : ''}</div>
           </div>
           <div className="card">
             <div className="label">Requests</div>

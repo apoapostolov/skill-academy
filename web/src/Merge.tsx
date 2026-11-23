@@ -200,75 +200,75 @@ export function MoveDialog({ skill, onClose }: { skill: { id: number; name: stri
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="mergedialog" onClick={(event) => event.stopPropagation()}>
+      <div className="mergedialog movedialog" onClick={(event) => event.stopPropagation()}>
         <div className="mergehead">
           <div>
             <div className="mergetitle">Move {skill.name}</div>
             <div className="mergesub">Choose where the real package lives, and where the others point at it.</div>
           </div>
-          <button className="ghost" onClick={onClose}>
+          <button type="button" className="ghost" onClick={onClose}>
             Close
           </button>
         </div>
 
-        <div className="mergelist">
-          {roots.map((root) => (
-            <div
-              className={`mergeroot ${checked.has(root.path) ? 'on' : ''} ${core === root.path ? 'iscore' : ''}`}
-              key={root.path}
-            >
-              <div className="mergeroothead">
-                <div className="mergerootmeta">
-                  <div className="mergerootname">{label(root)}</div>
-                  <div className="mergerootpath" title={root.path}>
-                    {root.path}
+        <div className="mergelist moveroots">
+          {roots.map((root) => {
+            const isOn = checked.has(root.path)
+            const isCore = core === root.path
+            return (
+              <div className={`moveroot ${isOn ? 'on' : ''} ${isCore ? 'iscore' : ''}`} key={root.path}>
+                <div className="moveroot-top">
+                  <div className="moveroot-meta">
+                    <div className="moveroot-name" title={label(root)}>{label(root)}</div>
+                    <div className="moveroot-path" title={root.path}>{root.path}</div>
                   </div>
+                  <span
+                    className={`switch moveroot-switch ${isOn ? 'on' : ''}`}
+                    role="switch"
+                    aria-checked={isOn}
+                    aria-label={`${label(root)} ${isOn ? 'enabled' : 'disabled'}`}
+                    tabIndex={0}
+                    title={isOn ? 'This root takes the skill' : 'This root is left alone'}
+                    onClick={() => toggle(root.path)}
+                    onKeyDown={(event) => {
+                      if (event.key === ' ' || event.key === 'Enter') {
+                        event.preventDefault()
+                        toggle(root.path)
+                      }
+                    }}
+                  >
+                    <span className="knob" />
+                  </span>
                 </div>
-                <span
-                  className={`switch ${checked.has(root.path) ? 'on' : ''}`}
-                  role="switch"
-                  aria-checked={checked.has(root.path)}
-                  tabIndex={0}
-                  title={checked.has(root.path) ? 'This root takes the skill' : 'This root is left alone'}
-                  onClick={() => toggle(root.path)}
-                  onKeyDown={(event) => {
-                    if (event.key === ' ' || event.key === 'Enter') {
-                      event.preventDefault()
-                      toggle(root.path)
-                    }
-                  }}
-                >
-                  <span className="knob" />
-                </span>
+                <label className={`moveroot-core ${isCore ? 'on' : ''}`} title="The real package lives here">
+                  <input
+                    type="radio"
+                    name="core-root"
+                    checked={isCore}
+                    disabled={!isOn}
+                    onChange={() => setCore(root.path)}
+                  />
+                  <span>Core</span>
+                </label>
               </div>
-              <label className={`mergecoreradio ${core === root.path ? 'on' : ''}`} title="The real package lives here">
-                <input
-                  type="radio"
-                  name="core-root"
-                  checked={core === root.path}
-                  disabled={!checked.has(root.path)}
-                  onChange={() => setCore(root.path)}
-                />
-                core
-              </label>
-            </div>
-          ))}
+            )
+          })}
           {!roots.length && <div className="mergenote">No agent root was detected on this machine.</div>}
         </div>
 
         <div className="mergefoot">
           <div className="mergeswitch" role="group" aria-label="How the other roots receive the skill">
-            <button className={mode === 'link' ? 'on' : ''} onClick={() => setMode('link')}>
+            <button type="button" className={mode === 'link' ? 'on' : ''} onClick={() => setMode('link')}>
               Link
             </button>
-            <button className={mode === 'move' ? 'on' : ''} onClick={() => setMode('move')}>
+            <button type="button" className={mode === 'move' ? 'on' : ''} onClick={() => setMode('move')}>
               Move
             </button>
           </div>
           <div className="mergesub">
             {mode === 'link' ? 'the other roots get a link to the core package' : 'the other roots get their own copy of the package'}
           </div>
-          <button className="mergeapply" disabled={busy || !core || checked.size === 0} onClick={() => void apply()}>
+          <button type="button" className="mergeapply" disabled={busy || !core || checked.size === 0} onClick={() => void apply()}>
             {busy ? 'Working…' : `Apply to ${checked.size} root${checked.size === 1 ? '' : 's'}`}
           </button>
         </div>
@@ -517,7 +517,7 @@ interface TrashRow {
 export function TrashView({
   onChanged,
   selecting,
-  onSelectingChange,
+  onSelectingChange: _onSelectingChange,
   wipeAsk,
   onWipeHandled
 }: {

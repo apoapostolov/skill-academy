@@ -429,9 +429,28 @@ check('the target is back to its original bytes', package_hash(absorb) == absorb
 check('the sources are back after undo', (root / 'zz-absorb-a' / 'SKILL.md').exists() and (root / 'zz-absorb-b' / 'SKILL.md').exists())
 
 # ---------------------------------------------------------------- 5. improve as a job
+# The supplied answer is the test seam: the job still validates, diffs and applies it, but the run
+# needs no provider quota, so this check cannot go red because a free model has rate limited us.
+improved_body = """---
+name: zz-improve
+description: A placeholder skill used to prove that an improve job proposes per-file edits first.
+version: 1.0.1
+---
+
+# zz-improve
+
+## Rules
+
+- Read the file before editing it.
+- Name the absolute path in every failure message.
+"""
+supplied_job = json.dumps({'files': [{'path': 'SKILL.md', 'content': improved_body,
+                                     'why': 'makes the rule list concrete'}],
+                           'notes': ['supplied answer, no model call']})
 status, started = call('POST', '/api/improve/job', {
     'path': str(root / 'zz-improve'),
-    'instruction': 'Make the rule list concrete enough to act on, and keep it short.'
+    'instruction': 'Make the rule list concrete enough to act on, and keep it short.',
+    'supplied': supplied_job
 }, timeout=600)
 job = started.get('job') or {}
 check('an improve job starts', status == 200 and job.get('jobId'), str(started)[:180])

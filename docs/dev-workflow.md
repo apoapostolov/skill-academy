@@ -13,10 +13,10 @@ That starts one supervisor (`scripts/dev.mjs`) with two children:
 
 | Process | Port | Behaviour |
 |---|---|---|
-| API service (`tsx watch`) | 10008 | Restarts in under a second when a server file changes |
-| Web client (Vite) | 10009 | Hot module replacement; the page updates without a reload |
+| Web client (Vite HMR) | 10008 | Hot module replacement; the page updates without a reload |
+| API service (`tsx watch`) | 10009 | Restarts in under a second when a server file changes |
 
-Open <http://127.0.0.1:10008>. The service serves the built interface itself, so product and API share one port.
+Open <http://127.0.0.1:10008>. Vite serves the interface with hot reload and proxies `/api` to the API service on 10009. In production (`npm run app`), the API service serves the built interface on 10008 directly.
 
 The service is persistent: it stays up while you work, and a file save restarts only the server process. State lives in SQLite and on disk, so a restart is a re-read, not a rebuild. The browser reconnects over SSE and keeps its scroll position and selection.
 
@@ -58,7 +58,7 @@ Logs also go to `~/.skill-academy/logs/dev.log`, so a crash that kills the page 
 - **State survives.** SQLite and files are the state; a restart must never lose a scan or a toggle.
 - **Errors are visible.** A crash shows a banner with the last error and the dev panel keeps the trace. No silent dead page.
 - **No hidden consoles.** Background jobs run without a visible window; the only terminal is the one you started `npm run dev` in.
-- **Ports are fixed.** 10008 for the product, 10009 for the dev-only Vite client, checked at startup with a clear message if taken.
+- **Ports are fixed.** 10008 is always the front door (Vite HMR in dev, built app in production). 10009 is the API service in dev, checked at startup with a clear message if taken.
 
 ## When the app is not running
 

@@ -16,6 +16,7 @@ export interface ImproveFinding {
   severity: 'error' | 'warn' | 'info'
   skill: string
   path: string
+  skillId?: number
   /** The evidence a reader needs to agree or disagree, never a summary of it. */
   detail: string
 }
@@ -34,6 +35,12 @@ export type RuleId =
   | 'dormant-tags'
   | 'shadow-category'
   | 'ambiguous-name'
+  | 'marketing-description'
+  | 'name-format'
+  | 'oversized-body'
+  | 'dangling-reference'
+  | 'forbidden-file'
+  | 'timelessness'
 
 export const RULES: Array<{ id: RuleId; severity: 'error' | 'warn' | 'info'; source: string; why: string }> = [
   { id: 'category-mismatch', severity: 'error', source: 'family-audit.py:1', why: 'category must equal the top-level folder; the field never follows a move on its own' },
@@ -50,7 +57,13 @@ export const RULES: Array<{ id: RuleId; severity: 'error' | 'warn' | 'info'; sou
   { id: 'name-drift', severity: 'error', source: 'skill-curation: taxonomy', why: 'name is the leaf directory name; a mismatch breaks lookup' },
   { id: 'dormant-tags', severity: 'warn', source: 'skill-curation: tags', why: 'tags live in metadata.hermes.tags; a top-level tags: key is a dormant fallback' },
   { id: 'shadow-category', severity: 'warn', source: 'skill-curation: taxonomy', why: 'a category nested under metadata.hermes makes naive parsers disagree with the tree' },
-  { id: 'ambiguous-name', severity: 'warn', source: 'skill-curation: dated backups', why: 'a dated backup copying a live name makes the bare name unresolvable' }
+  { id: 'ambiguous-name', severity: 'warn', source: 'skill-curation: dated backups', why: 'a dated backup copying a live name makes the bare name unresolvable' },
+  { id: 'marketing-description', severity: 'warn', source: 'skill_linter.py:description-marketing', why: 'description should state capability, not adjectives' },
+  { id: 'name-format', severity: 'error', source: 'skill_linter.py:name-format', why: 'skill names must be lowercase letters, digits, hyphens, or underscores' },
+  { id: 'oversized-body', severity: 'warn', source: 'skill_linter.py:oversized-body', why: 'SKILL.md loads whole into context; keep always-on rules lean and move depth to references/' },
+  { id: 'dangling-reference', severity: 'warn', source: 'skill_linter.py:dangling-reference', why: 'a referenced support file that does not exist breaks the skill at load time' },
+  { id: 'forbidden-file', severity: 'warn', source: 'skill_linter.py:forbidden-file', why: 'scaffolding files add noise and are not skill content' },
+  { id: 'timelessness', severity: 'info', source: 'skill-testing: timelessness', why: 'dated claims go stale; state the durable rule instead' }
 ]
 
 /** Deliberately unfiled, as the Hermes audit declares them. */
@@ -62,6 +75,10 @@ const KNOWN_UNFILED = new Set([
 const SKIP_DIRS = new Set(['__pycache__', 'node_modules', 'scripts', 'references', 'templates', 'assets'])
 
 const ROW = /^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)\s*\|/
+const MARKETING_WORDS = ['powerful', 'comprehensive', 'seamless', 'advanced', 'cutting-edge', 'state-of-the-art', 'revolutionary', 'robust']
+const FORBIDDEN_FILES = ['README.md', 'CHANGELOG.md', 'install.sh', '.env', '.env.example', '.gitignore']
+const OVERSIZED_BODY_CHARS = 24_000
+const DATE_RE = /\b(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2}\b/i
 
 interface Parsed {
   dir: string
@@ -196,6 +213,11 @@ export function improveDryRun(): {
     .prepare(`SELECT DISTINCT root_path FROM skills ORDER BY root_path`)
     .all() as Array<{ root_path: string }>).map((row) => row.root_path)
 
+  const idByPath = new Map<string, number>()
+  for (const row of getDb().prepare('SELECT id, path, real_path FROM skills').all() as Array<{ id: number; path: string; real_path: string }>) {
+    idByPath.set(row.path, row.id)
+    if (row.real_path) idByPath.set(row.real_path, row.id)
+  }
   const findings: ImproveFinding[] = []
   const rootReport: Array<{ root: string; skills: number; registry: boolean }> = []
 
@@ -208,7 +230,7 @@ export function improveDryRun(): {
     for (const skill of parsed) {
       const push = (rule: RuleId, detail: string) => {
         const meta = RULES.find((entry) => entry.id === rule)
-        findings.push({ rule, severity: meta?.severity ?? 'warn', skill: skill.name, path: skill.dir, detail })
+        findings.push({ rule, severity: meta?.severity ?? 'warn', skill: skill.name, path: skill.dir, skillId: idByPath.get(skill.dir), detail })
       }
 
       // Family, category and registry rules belong to the library that owns CATEGORIES.md.
@@ -242,6 +264,33 @@ export function improveDryRun(): {
       }
       if (/-bak-\d{4}/.test(skill.name)) {
         push('ambiguous-name', 'a dated backup directory that copies a live skill name')
+      }
+      if (!/^[a-z0-9][a-z0-9_-]*$/.test(skill.name)) {
+        push('name-format', `name ${JSON.stringify(skill.name)} must be lowercase letters, digits, hyphens, or underscores`)
+      }
+      const descLower = skill.description.toLowerCase()
+      const marketing = MARKETING_WORDS.filter((word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(descLower))
+      if (marketing.length) {
+        push('marketing-description', `description contains marketing words: ${marketing.join(', ')}`)
+      }
+      if (skill.bodyChars > OVERSIZED_BODY_CHARS) {
+        push('oversized-body', `SKILL.md body is ${skill.bodyChars} chars; keep always-on rules lean and move depth to references/`)
+      }
+      // On-disk checks: dangling refs, forbidden files, timelessness.
+      try {
+        const skillMd = readFileSync(path.join(skill.dir, 'SKILL.md'), 'utf8')
+        const prose = skillMd.replace(/```[\s\S]*?```/g, '')
+        for (const match of prose.matchAll(/`((?:references|scripts|assets|templates)\/[^`\s)]+)`/g)) {
+          const rel = match[1].replace(/^\.\//, '')
+          if (!existsSync(path.join(skill.dir, rel))) push('dangling-reference', `body references ${rel} but the file does not exist`)
+        }
+        for (const fname of FORBIDDEN_FILES) {
+          if (existsSync(path.join(skill.dir, fname))) push('forbidden-file', `skill ships ${fname}; remove scaffolding files`)
+        }
+        const dated = prose.match(DATE_RE)
+        if (dated) push('timelessness', `contains dated text ${JSON.stringify(dated[0])}; state the durable rule instead`)
+      } catch {
+        // A file we can't read is not an improve finding.
       }
     }
 

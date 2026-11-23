@@ -27,6 +27,7 @@ export interface SkillRow {
   tokens: number
   tags: string
   category: string
+  related_skills: string
   risk: string
   findings: string
   package_hash: string
@@ -38,11 +39,12 @@ export interface SkillRow {
 
 export interface SkillQuery {
   q?: string
-  status?: 'active' | 'archived' | 'all' 
+  status?: 'active' | 'archived' | 'all'
   root?: string
   tag?: string
   category?: string
   health?: boolean
+  excludeRoots?: string[]
   limit?: number
   offset?: number
 }
@@ -53,7 +55,7 @@ export interface SaveResult {
   removed: number
 }
 
-const SCHEMA_VERSION = 15
+const SCHEMA_VERSION = 16
 
 /** Bumped whenever the health checker changes, so old verdicts cannot survive it. */
 const HEALTH_VERSION = 3
@@ -95,6 +97,7 @@ function migrate(db: DatabaseSync): void {
       tokens INTEGER NOT NULL DEFAULT 0,
       tags TEXT NOT NULL DEFAULT '[]',
       category TEXT NOT NULL DEFAULT '',
+      related_skills TEXT NOT NULL DEFAULT '[]',
       risk TEXT NOT NULL DEFAULT 'clean',
       findings TEXT NOT NULL DEFAULT '[]',
       package_hash TEXT NOT NULL DEFAULT '',
@@ -206,7 +209,7 @@ function rebuildFts(db: DatabaseSync): void {
  * Writes only what changed. A rescan of an unchanged root touches nothing, which is
  * what makes a five-minute safety sweep affordable and what the P1 exit asks for.
  */
-export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResult {
+export function saveRoot(entry: RootEntry, _text?: Map<string, string>): SaveResult {
   const db = getDb()
   const at = new Date().toISOString()
   const result: SaveResult = { added: 0, changed: 0, removed: 0 }
@@ -245,18 +248,18 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
   const existing = db.prepare('SELECT id, package_hash FROM skills WHERE real_path = ? OR path = ?')
   const insert = db.prepare(`
     INSERT INTO skills (path, real_path, name, description, root_path, scope, body_chars, tokens, tags,
-                        category, risk, findings, package_hash, mtime, files, bytes, health, seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        category, related_skills, risk, findings, package_hash, mtime, files, bytes, health, seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET real_path = excluded.real_path, name = excluded.name,
       description = excluded.description, root_path = excluded.root_path, scope = excluded.scope,
       body_chars = excluded.body_chars, tokens = excluded.tokens, tags = excluded.tags,
-      category = excluded.category, risk = excluded.risk, findings = excluded.findings,
+      category = excluded.category, related_skills = excluded.related_skills, risk = excluded.risk, findings = excluded.findings,
       package_hash = excluded.package_hash, mtime = excluded.mtime, files = excluded.files,
       bytes = excluded.bytes, health = excluded.health, seen_at = excluded.seen_at
   `)
   const update = db.prepare(`
     UPDATE skills SET name = ?, description = ?, root_path = ?, scope = ?, body_chars = ?, tokens = ?,
-      tags = ?, category = ?, risk = ?, findings = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?,
+      tags = ?, category = ?, related_skills = ?, risk = ?, findings = ?, package_hash = ?, mtime = ?, files = ?, bytes = ?, health = ?,
       seen_at = ?
     WHERE id = ?
   `)
@@ -284,6 +287,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
         skill.tokens,
         JSON.stringify(skill.tags),
         skill.category,
+        JSON.stringify(skill.relatedSkills ?? []),
         skill.risk,
         JSON.stringify(skill.findings),
         skill.packageHash,
@@ -317,7 +321,7 @@ export function saveRoot(entry: RootEntry, text?: Map<string, string>): SaveResu
     // the identity, so the duplicate goes before anything else touches the table.
     dropDuplicate.run(skill.path, row.id)
     if (row.package_hash === skill.packageHash) continue
-    const updateResult = update.run(
+    update.run(
       skill.name,
       skill.description,
       skill.rootPath,
@@ -589,6 +593,11 @@ export function querySkills(query: SkillQuery): { total: number; rows: SkillRow[
     filters.push('(s.root_path = ? OR s.id IN (SELECT skill_id FROM placements WHERE root_path = ?))')
     params.push(query.root, query.root)
   }
+  if (query.excludeRoots && query.excludeRoots.length > 0) {
+    const marks = query.excludeRoots.map(() => '?').join(', ')
+    filters.push(`s.root_path NOT IN (${marks})`)
+    params.push(...query.excludeRoots)
+  }
   if (query.tag) {
     filters.push('s.tags LIKE ?')
     params.push(`%"${query.tag}"%`)
@@ -780,13 +789,16 @@ export function readMeta(key: string): string | null {
   return row?.value ?? null
 }
 
-export function totals(): { skills: number; tokens: number; issues: number; roots: number } {
-  const row = getDb()
-    .prepare(`SELECT COUNT(*) AS skills, COALESCE(SUM(tokens),0) AS tokens,
-                     SUM(CASE WHEN health <> '[]' THEN 1 ELSE 0 END) AS issues,
-                     COUNT(DISTINCT root_path) AS roots
-              FROM skills`)
-    .get() as { skills: number; tokens: number; issues: number; roots: number }
+export function totals(excludeRoots?: string[]): { skills: number; tokens: number; issues: number; roots: number } {
+  const params = excludeRoots ?? []
+  const marks = params.map(() => '?').join(', ')
+  const where = params.length > 0 ? 'WHERE root_path NOT IN (' + marks + ')' : ''
+  const sql =
+    'SELECT COUNT(*) AS skills, COALESCE(SUM(tokens),0) AS tokens, ' +
+    "SUM(CASE WHEN health <> '[]' THEN 1 ELSE 0 END) AS issues, " +
+    'COUNT(DISTINCT root_path) AS roots FROM skills ' +
+    where
+  const row = getDb().prepare(sql).get(...params) as { skills: number; tokens: number; issues: number; roots: number }
   return { skills: row.skills, tokens: row.tokens, issues: row.issues ?? 0, roots: row.roots }
 }
 
@@ -1049,6 +1061,10 @@ function ensureSources(): void {
   const columns = getDb().prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>
   if (!columns.some((column) => column.name === 'kind')) {
     getDb().prepare("ALTER TABLE sources ADD COLUMN kind TEXT NOT NULL DEFAULT 'github'").run()
+  }
+  const skillCols = getDb().prepare('PRAGMA table_info(skills)').all() as Array<{ name: string }>
+  if (!skillCols.some((column) => column.name === 'related_skills')) {
+    getDb().exec("ALTER TABLE skills ADD COLUMN related_skills TEXT NOT NULL DEFAULT '[]'")
   }
 }
 

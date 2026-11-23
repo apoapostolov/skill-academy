@@ -141,17 +141,20 @@ check('the refused run wrote nothing', after_hash == package_hash(target))
 status, plan_b = call('POST', f'/api/links/{link_b}/plan', {}, timeout=600)
 proposal_b = plan_b.get('proposal') or {}
 check('distill answers with a proposal', status == 200 and proposal_b.get('runId'), str(plan_b)[:200])
-check('distill was a bootstrap', proposal_b.get('kind') == 'bootstrap', str(proposal_b.get('kind')))
-rules = (proposal_b.get('added') or []) + (proposal_b.get('changed') or [])
-check('distill found rules to add', bool(rules), f'{len(rules)} rule(s), model {proposal_b.get("model")}')
-status, applied_b = call('POST', '/api/ingest/apply', {'runId': proposal_b.get('runId'), 'confirm': True})
-check('distill applies', status == 200 and applied_b['result']['applied'], str(applied_b)[:140])
-body = (target / 'SKILL.md').read_text(encoding='utf-8')
-check('the distilled section is labelled with its repository and commit',
-      '## From receiving-code-review (obra/superpowers@' in body)
-reference = target / 'references' / 'ingested' / 'obra-superpowers.md'
-check('the reference file carries the commit', reference.exists() and proposal_b['toSha'] in reference.read_text(encoding='utf-8'))
-check('the section names what came from where', len(reference.read_text(encoding='utf-8').splitlines()) > 4)
+if not proposal_b.get('runId'):
+    print('SKIP distill-dependent checks: no proposal (provider quota or model failure)')
+else:
+    check('distill was a bootstrap', proposal_b.get('kind') == 'bootstrap', str(proposal_b.get('kind')))
+    rules = (proposal_b.get('added') or []) + (proposal_b.get('changed') or [])
+    check('distill found rules to add', bool(rules), f'{len(rules)} rule(s), model {proposal_b.get("model")}')
+    status, applied_b = call('POST', '/api/ingest/apply', {'runId': proposal_b.get('runId'), 'confirm': True})
+    check('distill applies', status == 200 and applied_b.get('result', {}).get('applied'), str(applied_b)[:140])
+    body = (target / 'SKILL.md').read_text(encoding='utf-8')
+    check('the distilled section is labelled with its repository and commit',
+          '## From receiving-code-review (obra/superpowers@' in body)
+    reference = target / 'references' / 'ingested' / 'obra-superpowers.md'
+    check('the reference file carries the commit', reference.exists() and proposal_b['toSha'] in reference.read_text(encoding='utf-8'))
+    check('the section names what came from where', reference.exists() and len(reference.read_text(encoding='utf-8').splitlines()) > 4)
 
 # 6. A contradicting rule keeps the local text and is listed.
 status, c = call('POST', f'/api/skills/{skill_id}/links',
