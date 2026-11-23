@@ -6,7 +6,7 @@ which stays the source of truth, so neither can drift from the rules the UI foll
 ## The MCP server
 
 `mcp/server.ts` speaks MCP over stdio (newline-delimited JSON-RPC 2.0, protocol `2024-11-05`) and
-exposes six tools:
+exposes ten tools:
 
 | Tool | Arguments | Does |
 | --- | --- | --- |
@@ -16,6 +16,10 @@ exposes six tools:
 | `disable` | `name`, `agent?` | switch it off into `.archive`, deleting nothing |
 | `scan` | `force?` | rescan the roots |
 | `lock` | `check?` | write the lock, or compare it with the library |
+| `skill` | `name` | one skill with its version, tags, related skills, health, risk, copies and drift. Read-only |
+| `improve` | `severity?`, `skill?`, `limit?` | the library audit the Improve view shows. Read-only |
+| `consolidate` | `mergeType?`, `limit?` | the copy groups and their verdicts. Read-only |
+| `curate` | `staleDays?`, `limit?` | ageing skills and overlap clusters. Read-only |
 
 Register it with any MCP client, pointing at the running service:
 
@@ -48,6 +52,10 @@ ska disable <name> [--agent a]
 ska scan [--force]
 ska lock [--check] [--file <lock>]
 ska status
+ska skill <name>
+ska improve [--severity s] [--limit n]
+ska consolidate
+ska curate [--days n]
 ```
 
 Exit codes are the contract, so CI does not have to parse prose: **0** success, **1** a negative
@@ -78,7 +86,7 @@ ska lock --check --file skill-academy.lock.json   # exit 1 the moment the librar
 
 `bash scripts/parity-check.sh` — **26 checks** against a throwaway service with a fixture root:
 
-- a real MCP client handshake, then `tools/list` showing exactly the six tools, each with a schema;
+- a real MCP client handshake, then `tools/list` showing exactly the ten tools, each with a schema;
 - `list` and `search` answering without a browser;
 - `enable` moving a parked package out of `.archive` and `disable` putting it back;
 - a bad name returning a tool error while the session stays alive;
@@ -93,5 +101,6 @@ ska lock --check --file skill-academy.lock.json   # exit 1 the moment the librar
   not expose it on a network interface.
 - It is a client of the service, not a standalone index: nothing works if the service is not running,
   and that failure is reported plainly rather than by pretending.
-- Tools cover the six P9 named. Curation, sources and sync are not exposed to agents yet, and an agent
-  that could spend tokens on a merge is a decision, not an oversight.
+- Ten tools cover the original P9 set plus read-only skill, improve, consolidate and curate. Sources
+  and sync are not exposed to agents yet, and an agent that could spend tokens on a merge is a
+  decision, not an oversight.

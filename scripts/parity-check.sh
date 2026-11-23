@@ -111,7 +111,7 @@ mcp.notify('notifications/initialized')
 
 tools = mcp.request('tools/list').get('result', {}).get('tools', [])
 names = sorted(tool['name'] for tool in tools)
-check('it offers the six tools P9 named', names == ['disable', 'enable', 'list', 'lock', 'scan', 'search'], names)
+check('it offers the ten agent tools', names == ['consolidate', 'curate', 'disable', 'enable', 'improve', 'list', 'lock', 'scan', 'search', 'skill'], names)
 check('every tool carries a schema', all(tool.get('inputSchema', {}).get('type') == 'object' for tool in tools))
 
 listed = mcp.request('tools/call', {'name': 'list', 'arguments': {}})

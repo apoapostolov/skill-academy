@@ -252,7 +252,7 @@ An MCP server exposing `list`, `search`, `enable`, `disable`, `scan`, `lock` fir
 
 Exit: an MCP client can list and enable skills without the browser; enabling from the CLI produces the same journal entry as the UI; `lock --check` exits non-zero on drift and is usable in CI.
 
-Built: `mcp/server.ts` (stdio MCP, six tools, tool errors that do not drop the session), `cli/api.ts` and `cli/ska.ts` (one HTTP client, exact-name resolution, exit codes 0/1/2), `scripts/parity-check.sh` with **26 checks**. Detail and limits: `docs/parity.md`.
+Built: `mcp/server.ts` (stdio MCP, ten read and switch tools, tool errors that do not drop the session), `cli/api.ts` and `cli/ska.ts` (one HTTP client, exact-name resolution, exit codes 0/1/2), `scripts/parity-check.sh` with **26 checks**. Detail and limits: `docs/parity.md`.
 
 Two defects came out of it. `POST /api/skills/:id/switch` moved the package but never re-indexed, so a second switch in a row acted on a stale path; the route now rescans that root after both moves. And `lock --check` against the live lock can only ever agree, because the service keeps its own lock current after every scan, so CI needs `--file` with a published baseline.
 
