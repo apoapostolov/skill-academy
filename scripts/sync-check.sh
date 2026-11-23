@@ -100,7 +100,7 @@ check('and it arrives byte for byte',
 status, quiet = call(port_b, 'POST', '/api/sync/pull', {})
 check('a second pull finds nothing to do', quiet.get('restored') == 0, str(quiet)[:140])
 
-# 3. the same file changed on both sides: one conflict, nothing lost.
+# 3. both machines edit the same file in different places: the two edits merge, nothing is replaced.
 blocked = lib_a / 'alpha-skill' / 'SKILL.md'
 blocked.write_text(blocked.read_text(encoding='utf-8') + '\n- A rule added on machine A.\n', encoding='utf-8')
 status, pushed_a = call(port_a, 'POST', '/api/sync/push', {})
@@ -108,13 +108,51 @@ check('machine A publishes its edit', pushed_a.get('pushed') is True, str(pushed
 
 local_b = lib_b / 'alpha-skill' / 'SKILL.md'
 local_b.write_text(local_b.read_text(encoding='utf-8') + '\n- A rule added on machine B.\n', encoding='utf-8')
+status, merged = call(port_b, 'POST', '/api/sync/pull', {})
+merged_conflicts = merged.get('conflicts') or []
+merged_text = local_b.read_text(encoding='utf-8')
+check('two additions merge instead of clashing', not merged_conflicts, str(merged_conflicts)[:160])
+check('the pull names the file it merged', 'library/alpha-skill/SKILL.md' in (merged.get('merged') or []), str(merged.get('merged'))[:120])
+check('rules from both machines survive', 'machine A' in merged_text and 'machine B' in merged_text, merged_text[-140:])
+check('no conflict markers are written for a clean merge', '<<<<<<<' not in merged_text)
+
+# 3b. a line both machines rewrote differently is a real conflict: markers in the file, and the
+# untouched local copy beside it so neither side is lost.
+status, _ = call(port_a, 'POST', '/api/sync/push', {})
+clash_a = lib_a / 'alpha-skill' / 'SKILL.md'
+clash_a.write_text(clash_a.read_text(encoding='utf-8').replace('- A rule added on machine A.', '- A rule A rewrote.'), encoding='utf-8')
+status, pushed_clash = call(port_a, 'POST', '/api/sync/push', {})
+check('machine A rewrites the same line and publishes', pushed_clash.get('pushed') is True, str(pushed_clash)[:140])
+clash_b = lib_b / 'alpha-skill' / 'SKILL.md'
+clash_b.write_text(clash_b.read_text(encoding='utf-8').replace('- A rule added on machine A.', '- A rule B rewrote.'), encoding='utf-8')
 status, conflicted = call(port_b, 'POST', '/api/sync/pull', {})
 conflicts = conflicted.get('conflicts') or []
-check('the clash is reported as one conflict', len(conflicts) == 1, str(conflicts)[:160])
+check('a rewrite on both sides is one conflict', len(conflicts) == 1, str(conflicts)[:160])
 kept = conflicts[0].get('keptLocalPath') if conflicts else ''
 check('the local copy is kept beside it', bool(kept) and (pathlib.Path(kept).exists()), str(kept))
-check('the shared version is what the file holds now', 'machine A' in local_b.read_text(encoding='utf-8'))
-check('and the local rule is still readable', bool(kept) and 'machine B' in pathlib.Path(kept).read_text(encoding='utf-8'))
+check('and the local rewrite is still readable', bool(kept) and 'B rewrote' in pathlib.Path(kept).read_text(encoding='utf-8'))
+clash_text = clash_b.read_text(encoding='utf-8')
+check('the file carries both sides with markers',
+      '<<<<<<< this machine' in clash_text and '=======' in clash_text and '>>>>>>> the shared copy' in clash_text,
+      clash_text[-200:])
+check('and both rewrites are inside it', 'A rewrote' in clash_text and 'B rewrote' in clash_text)
+
+# 3c. a package the shared copy dropped leaves this machine too, into the trash, not nowhere.
+import shutil
+second = lib_a / 'beta-skill'
+second.mkdir(parents=True, exist_ok=True)
+(second / 'SKILL.md').write_text('---\nname: beta-skill\ndescription: A second package, deleted upstream.\n---\n\n# beta-skill\n', encoding='utf-8')
+status, _ = call(port_a, 'POST', '/api/sync/push', {})
+status, _ = call(port_b, 'POST', '/api/sync/pull', {})
+check('a second package reaches the other machine', (lib_b / 'beta-skill' / 'SKILL.md').exists(), str(lib_b))
+shutil.rmtree(second)
+status, pushed_gone = call(port_a, 'POST', '/api/sync/push', {})
+check('machine A publishes the deletion', pushed_gone.get('pushed') is True, str(pushed_gone)[:140])
+status, pulled_gone = call(port_b, 'POST', '/api/sync/pull', {})
+deletions = pulled_gone.get('deletions') or []
+check('the deleted package leaves the other library', not (lib_b / 'beta-skill').exists(), str(lib_b))
+check('the pull reports where it went',
+      bool(deletions) and pathlib.Path(deletions[0].get('movedTo', '')).exists(), str(deletions)[:180])
 
 # 4. a key-shaped string stops the push before the commit exists.
 leak = lib_a / 'alpha-skill' / 'notes.md'

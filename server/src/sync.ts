@@ -5,6 +5,7 @@ import { DATA_DIR, LIBRARY_DIR } from './config'
 import { getDb } from './db'
 import { restoreFromLock } from './lockrestore'
 import { defaultLockPath, writeLock } from './lockdoc'
+import { mergeText } from './merge3'
 
 export interface SyncConfig {
   repo: string
@@ -23,6 +24,15 @@ export interface SyncConflict {
   keptLocalAs: string
   /** The same file as an absolute path, for a caller that wants to open it. */
   keptLocalPath: string
+  /** True when both sides were merged into the file and only some regions still disagree. */
+  merged?: boolean
+}
+
+export interface SyncDeletion {
+  /** The package the shared copy no longer has. */
+  path: string
+  /** Where it went, so a wrong deletion can still be undone. */
+  movedTo: string
 }
 
 const SYNC_DIR = path.join(DATA_DIR, 'sync')
@@ -230,6 +240,8 @@ export function pullSync(config: SyncConfig): {
   error?: string
   restored?: number
   conflicts?: SyncConflict[]
+  deletions?: SyncDeletion[]
+  merged?: string[]
   commit?: string
 } {
   const prepared = prepareSyncTree(config)
@@ -253,22 +265,33 @@ export function pullSync(config: SyncConfig): {
   // What this machine owns is staged first, so a change made here is a change git can see.
   stageTree()
 
-  const base = `origin/${config.branch || 'main'}`
+  const branch = config.branch || 'main'
+  const base = `origin/${branch}`
   const incoming = git(['diff', '--name-only', `HEAD..${base}`]).out.split(/\r?\n/).filter(Boolean)
+  const deleted = git(['diff', '--name-only', '--diff-filter=D', `HEAD..${base}`])
+    .out.split(/\r?\n/)
+    .filter(Boolean)
 
-  // A file that arrives and was also changed here is a conflict. The local copy is put beside the
-  // file before the shared version lands, so neither side loses anything and a person can choose.
+  // Three inputs, not two: the last commit is what both machines started from, so a file changed on
+  // both sides is merged line by line instead of one side replacing the other. Only regions both
+  // sides rewrote differently end up as a conflict.
   const conflicts: SyncConflict[] = []
+  const mergedFiles = new Map<string, string>()
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   for (const file of incoming) {
     const full = path.join(SYNC_DIR, file)
     if (!fs.existsSync(full)) continue
     const head = git(['show', `HEAD:${file}`])
-    const local = fs.readFileSync(full, 'utf8')
-    if (!head.ok) {
-      // The file is new here: it is this machine's, and the shared one is new as well.
+    const shared = git(['show', `${base}:${file}`])
+    if (!shared.ok) continue
+    const localBytes = fs.readFileSync(full)
+    const localText = localBytes.toString('utf8')
+    if (head.ok && (head.out === localText.trimEnd() || head.out === localText)) continue
+
+    // A binary file has no lines to merge, and a guess would corrupt it.
+    if (localBytes.includes(0)) {
       const kept = `${full}.local-${stamp}`
-      fs.writeFileSync(kept, local, 'utf8')
+      fs.writeFileSync(kept, localBytes)
       conflicts.push({
         file,
         keptLocalAs: path.relative(SYNC_DIR, kept).split(path.sep).join('/'),
@@ -276,13 +299,19 @@ export function pullSync(config: SyncConfig): {
       })
       continue
     }
-    if (head.out === local.trimEnd() || head.out === local) continue
+
+    const merged = mergeText(head.ok ? head.out : '', localText, shared.out)
+    // A conflicted merge is still worth keeping: the file carries both sides with markers, and the
+    // untouched local copy sits beside it for anyone who would rather start again.
+    mergedFiles.set(file, merged.text)
+    if (merged.clean) continue
     const kept = `${full}.local-${stamp}`
-    fs.writeFileSync(kept, local, 'utf8')
+    fs.writeFileSync(kept, localBytes)
     conflicts.push({
       file,
       keptLocalAs: path.relative(SYNC_DIR, kept).split(path.sep).join('/'),
-      keptLocalPath: kept
+      keptLocalPath: kept,
+      merged: true
     })
   }
 
@@ -290,8 +319,60 @@ export function pullSync(config: SyncConfig): {
   const reset = git(['reset', '--hard', '-q', base])
   if (!reset.ok) return { ok: false, error: `could not take the shared branch: ${reset.err}`, conflicts }
 
+  // The merge is written over the checked-out file, so the library receives the merged text rather
+  // than the shared side alone. It stays uncommitted until the next push, which is honest: the
+  // checkout shows that a merge happened on this machine.
+  for (const [file, text] of mergedFiles) {
+    const full = path.join(SYNC_DIR, file)
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, text, 'utf8')
+  }
+
   const restored = applyTree()
-  return { ok: true, restored, conflicts, commit: git(['rev-parse', '--short', 'HEAD']).out }
+  const deletions = applyDeletions(deleted)
+  return {
+    ok: true,
+    restored,
+    conflicts,
+    deletions,
+    merged: [...mergedFiles.keys()],
+    commit: git(['rev-parse', '--short', 'HEAD']).out
+  }
+}
+
+/**
+ * A pull that never removes anything leaves every deleted package on every machine for ever. A file
+ * the shared copy dropped is removed here, and it goes to the app's trash rather than being
+ * unlinked, so the deletion is still reversible.
+ */
+function applyDeletions(files: string[]): SyncDeletion[] {
+  const moved: SyncDeletion[] = []
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  for (const file of files) {
+    if (!file.startsWith('library/')) continue
+    const parts = file.split('/')
+    if (parts.length < 3) continue
+    const skillName = parts[1]
+    const source = path.join(LIBRARY_DIR, skillName)
+    if (!fs.existsSync(source)) continue
+    const target = path.join(DATA_DIR, 'trash', 'sync', `${skillName}-${stamp}`)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.renameSync(source, target)
+    try {
+      const now = new Date()
+      const expires = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      getDb()
+        .prepare(
+          `INSERT INTO trash (skill_path, name, root_path, scope, moved_to, at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(source, skillName, LIBRARY_DIR, 'library', target, now.toISOString(), expires.toISOString())
+    } catch {
+      // The copy is already out of the library; a missing trash row must not lose that fact.
+    }
+    moved.push({ path: source, movedTo: target })
+  }
+  return moved
 }
 
 /** Copies the sync tree back over the library and drafts, and re-indexes what changed. */
