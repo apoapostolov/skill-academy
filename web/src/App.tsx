@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import Versioning from './Monitor'
+import { VersioningView } from './VersioningView'
+import { VersioningDetail } from './VersioningDetail'
+import type { CheckJob, InstallationView, MonitorEvent, Overview, Unrecorded } from './versioningTypes'
 import { SourcesDialog } from './Sources'
 import { SyncDialog } from './Sync'
 import { KeysMap } from './KeysMap'
@@ -22,7 +24,7 @@ import {
   type WorkspaceRow
 } from './Workspaces'
 import { highlight } from './highlight'
-import { renderMarkdown } from './markdown'
+import { MarkdownBody } from './MarkdownView'
 
 interface State {
   version: string
@@ -140,6 +142,7 @@ type Scope =
   | { kind: 'improve' }
   | { kind: 'consolidate' }
   | { kind: 'curation' }
+  | { kind: 'versioning' }
   | { kind: 'trash' }
   | { kind: 'drafts' }
   | { kind: 'notifications' }
@@ -160,6 +163,19 @@ function AcademyMark() {
       </svg>
     </span>
   )
+}
+
+/**
+ * A URL that arrived over the wire is data until it is parsed. Only an https address is a page this
+ * app will open, which rules out a script scheme and a plain-http downgrade in one test.
+ */
+function httpsUrl(value: string): URL | null {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' ? parsed : null
+  } catch {
+    return null
+  }
 }
 
 function GearGlyph() {
@@ -620,77 +636,6 @@ function TagLabel({ tag, withPill = true }: { tag: string; withPill?: boolean })
  * bar that stays hidden until the reader reaches the bottom edge or starts scrolling, then
  * fades once the scrolling settles.
  */
-function MarkdownBody({ text, className }: { text: string; className: string }) {
-  const host = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const element = host.current
-    if (!element) return
-    const cleanups: Array<() => void> = []
-
-    for (const scroller of element.querySelectorAll<HTMLDivElement>('.md-table, .md-code pre')) {
-      // A bar drawn by us rather than by the platform: it overlays the scroller instead of
-      // reserving a lane, follows the scroll position, and fades when the reader stops.
-      const thumb = document.createElement('span')
-      thumb.className = 'md-thumb'
-      thumb.setAttribute('aria-hidden', 'true')
-      scroller.appendChild(thumb)
-
-      let timer: number | undefined
-      const paint = () => {
-        const track = scroller.clientWidth
-        const total = scroller.scrollWidth
-        if (total <= track + 1) {
-          thumb.style.width = '0px'
-          return
-        }
-        const width = Math.max(28, (track / total) * track)
-        const maxLeft = track - width
-        const ratio = total - track > 0 ? scroller.scrollLeft / (total - track) : 0
-        thumb.style.width = `${Math.round(width)}px`
-        thumb.style.transform = `translateX(${Math.round(maxLeft * ratio)}px)`
-      }
-      const reveal = () => {
-        scroller.classList.add('is-active')
-        thumb.classList.add('is-visible')
-        window.clearTimeout(timer)
-        paint()
-      }
-      const settle = (delay: number) => {
-        window.clearTimeout(timer)
-        timer = window.setTimeout(() => {
-          scroller.classList.remove('is-active')
-          thumb.classList.remove('is-visible')
-        }, delay)
-      }
-      const onPointerMove = (event: PointerEvent) => {
-        const box = scroller.getBoundingClientRect()
-        if (event.clientY >= box.bottom - 16) reveal()
-      }
-      const onScroll = () => {
-        reveal()
-        settle(700)
-      }
-      const onLeave = () => settle(260)
-
-      paint()
-      scroller.addEventListener('pointermove', onPointerMove)
-      scroller.addEventListener('scroll', onScroll, { passive: true })
-      scroller.addEventListener('pointerleave', onLeave)
-      cleanups.push(() => {
-        window.clearTimeout(timer)
-        scroller.removeEventListener('pointermove', onPointerMove)
-        scroller.removeEventListener('scroll', onScroll)
-        scroller.removeEventListener('pointerleave', onLeave)
-        thumb.remove()
-      })
-    }
-
-    return () => cleanups.forEach((run) => run())
-  }, [text])
-
-  return <div ref={host} className={className} dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
-}
 
 export default function App() {
   const [state, setState] = useState<State | null>(null)
@@ -721,7 +666,12 @@ export default function App() {
   const [oauthCode, setOauthCode] = useState('')
   const [oauthBusy, setOauthBusy] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState('')
-  const [monitorOpen, setMonitorOpen] = useState(false)
+  const [versioningOverview, setVersioningOverview] = useState<Overview | null>(null)
+  const [versioningUnrecorded, setVersioningUnrecorded] = useState<Unrecorded[]>([])
+  const [versioningBusy, setVersioningBusy] = useState('')
+  const [versioningNote, setVersioningNote] = useState('')
+  const [versioningJob, setVersioningJob] = useState<CheckJob | null>(null)
+  const [versioningSelected, setVersioningSelected] = useState<number | null>(null)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   const [keysOpen, setKeysOpen] = useState(false)
@@ -857,7 +807,16 @@ export default function App() {
     }
     if (payload.url) {
       setOauthFlows((flows) => ({ ...flows, [id]: { flowId: payload.flowId ?? '', url: payload.url, status: 'paste' } }))
-      window.open(payload.url, '_blank', 'noopener')
+      // The URL arrives in a response body, so it is parsed rather than trusted: a sign-in page is
+      // always https, and anything else would be a redirect this app should not perform.
+      const signIn = httpsUrl(payload.url)
+      if (signIn) {
+        const link = document.createElement('a')
+        link.href = signIn.toString()
+        link.target = '_blank'
+        link.rel = 'noopener noreferrer'
+        link.click()
+      }
       return
     }
     setOauthFlows((flows) => ({
@@ -998,9 +957,78 @@ export default function App() {
     if (!curationReport && !curationBusy) void loadCuration()
   }
 
+  async function loadVersioning() {
+    try {
+      const response = await fetch('/api/monitor')
+      const data = (await response.json()) as Overview
+      setVersioningOverview(data)
+      const unrecordedResponse = await fetch('/api/monitor/unrecorded')
+      const unrecordedData = (await unrecordedResponse.json()) as { rows?: Unrecorded[] }
+      setVersioningUnrecorded(unrecordedData.rows ?? [])
+      setVersioningNote('')
+    } catch (error) {
+      setVersioningNote(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  function openVersioning() {
+    setScope({ kind: 'versioning' })
+    void loadVersioning()
+  }
+
+  /**
+   * A check is a queued job, because a repository with many installations outlives any sensible
+   * request. The progress is polled here so the row count moves while it runs.
+   */
+  async function checkVersioning(scopeInput: { repo?: string } | { all: true }) {
+    setVersioningBusy('check')
+    setVersioningNote('')
+    try {
+      const response = await fetch('/api/monitor/check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(scopeInput)
+      })
+      const data = (await response.json()) as { job?: CheckJob; error?: string; detail?: string }
+      if (!data.job) {
+        setVersioningNote(data.detail ?? data.error ?? 'the check could not start')
+        return
+      }
+      let current = data.job
+      setVersioningJob(current)
+      for (let attempt = 0; attempt < 120 && current.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000))
+        const polled = await fetch(`/api/monitor/job/${current.id}`)
+        const polledData = (await polled.json()) as { job?: CheckJob }
+        if (polledData.job) current = polledData.job
+        setVersioningJob(current)
+      }
+      await loadVersioning()
+    } finally {
+      setVersioningBusy('')
+    }
+  }
+
+  async function adoptUnrecorded(row: Unrecorded) {
+    setVersioningBusy('adopt')
+    try {
+      const response = await fetch('/api/monitor/adopt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: row.path, repo: row.repo, remotePath: row.remotePath, ref: row.ref ?? undefined })
+      })
+      const data = (await response.json()) as { error?: string; detail?: unknown }
+      if (data.error) setVersioningNote(`${data.error}: ${JSON.stringify(data.detail ?? '')}`)
+      await loadVersioning()
+    } finally {
+      setVersioningBusy('')
+    }
+  }
+
   useEffect(() => {
     if (scope.kind === 'consolidate' && !consolidateReport && !consolidateBusy) void loadConsolidate()
     if (scope.kind === 'curation' && !curationReport && !curationBusy) void loadCuration()
+    if (scope.kind === 'versioning' && !versioningOverview) void loadVersioning()
   }, [scope.kind])
 
   async function saveProviderBase(id: string) {
@@ -1494,7 +1522,6 @@ export default function App() {
         setAppearanceOpen(false)
         setSyncOpen(false)
         setSourcesOpen(false)
-        setMonitorOpen(false)
         setProvidersOpen(false)
         setSettingsOpen(false)
         setCompareOpen(false)
@@ -1596,9 +1623,9 @@ export default function App() {
           { kind: 'improve' } as Scope,
           { kind: 'consolidate' } as Scope,
           { kind: 'curation' } as Scope,
+          { kind: 'versioning' } as Scope,
           { kind: 'trash' } as Scope,
-          { kind: 'drafts' } as Scope,
-          { kind: 'workspace', id: -1 } as Scope
+          { kind: 'drafts' } as Scope
         ]
         const wanted = scopes[Number(key) - 1]
         // A workspace scope needs a workspace, so the key takes the first one rather than guessing.
@@ -1610,6 +1637,7 @@ export default function App() {
           if (wanted.kind === 'drafts') void loadDrafts()
           if (wanted.kind === 'consolidate' && !consolidateReport && !consolidateBusy) void loadConsolidate()
           if (wanted.kind === 'curation' && !curationReport && !curationBusy) void loadCuration()
+          if (wanted.kind === 'versioning' && !versioningOverview) void loadVersioning()
         }
       } else if (key === 'S') {
         event.preventDefault()
@@ -1998,6 +2026,7 @@ export default function App() {
     if (scope.kind === 'improve') return 'Improve'
     if (scope.kind === 'consolidate') return 'Consolidate'
     if (scope.kind === 'curation') return 'Curation'
+    if (scope.kind === 'versioning') return 'Versioning'
     if (scope.kind === 'workspace') return workspaces.find((row) => row.id === scope.id)?.name ?? 'Workspace'
     if (scope.kind === 'tag') return `#${scope.tag}`
     if (scope.kind === 'category') return scope.category
@@ -2067,9 +2096,6 @@ export default function App() {
           </span>
           <button className="mb-item" onClick={openProviders}>
             Providers
-          </button>
-          <button className="mb-item" onClick={() => setMonitorOpen(true)}>
-            Versioning
           </button>
           <button className="mb-item" onClick={() => setSourcesOpen(true)}>
             Sources
@@ -2155,7 +2181,6 @@ export default function App() {
         </div>
       </div>
 
-      {monitorOpen && <Versioning onClose={() => setMonitorOpen(false)} />}
       {sourcesOpen && <SourcesDialog onClose={() => setSourcesOpen(false)} />}
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
       {appearanceOpen && (
@@ -2515,6 +2540,24 @@ export default function App() {
             onClick={() => openCuration()}
           >
             Curation {curationReport ? <span>{fmt.format(curationReport.stale.length)}</span> : null}
+          </button>
+          <button
+            className={`nav ${scope.kind === 'versioning' ? 'active' : ''}`}
+            onClick={() => openVersioning()}
+          >
+            Versioning
+            {versioningOverview &&
+              (() => {
+                const pending = versioningOverview.repos.reduce(
+                  (sum, repo) =>
+                    sum +
+                    repo.installations.filter(
+                      (row) => row.last_state === 'behind' || row.last_state === 'conflict' || row.last_state === 'gone'
+                    ).length,
+                  0
+                )
+                return pending > 0 ? <span className="navbadge">{pending}</span> : null
+              })()}
           </button>
           <button
             className={`nav ${scope.kind === 'trash' ? 'active' : ''}`}
@@ -2906,6 +2949,20 @@ export default function App() {
               }}
             />
           )}
+          {scope.kind === 'versioning' && (
+            <VersioningView
+              overview={versioningOverview}
+              unrecorded={versioningUnrecorded}
+              busy={versioningBusy}
+              note={versioningNote}
+              job={versioningJob}
+              selectedId={versioningSelected}
+              onSelect={(row) => setVersioningSelected(row.id)}
+              onCheck={(target) => void checkVersioning(target)}
+              onAdopt={(row) => void adoptUnrecorded(row)}
+              onOpenSources={() => setSourcesOpen(true)}
+            />
+          )}
           {scope.kind === 'drafts' && (
             <DraftList
               drafts={drafts}
@@ -2926,6 +2983,7 @@ export default function App() {
             scope.kind !== 'improve' &&
             scope.kind !== 'consolidate' &&
             scope.kind !== 'curation' &&
+            scope.kind !== 'versioning' &&
             skills.map((skill) => (
             <button
               key={skill.id}
@@ -3293,6 +3351,21 @@ export default function App() {
               <div className="empty">Pick a draft, or describe a new one.</div>
             )
           ) : null}
+          {scope.kind === 'versioning' ? (
+            (() => {
+              const rows = versioningOverview?.repos.flatMap((repo) => repo.installations) ?? []
+              const row = rows.find((entry) => entry.id === versioningSelected) ?? null
+              return row ? (
+                <VersioningDetail
+                  installation={row}
+                  events={versioningOverview?.events ?? []}
+                  onChanged={() => void loadVersioning()}
+                />
+              ) : (
+                <div className="empty">Select an installation to see what upstream has.</div>
+              )
+            })()
+          ) : null}
           {scope.kind === 'consolidate' ? (
             (() => {
               const g = consolidateReport?.groups.find((x) => x.key === consolidateSelectedKey) ?? null
@@ -3307,10 +3380,18 @@ export default function App() {
               )
             })()
           ) : null}
-          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && scope.kind !== 'consolidate' && !detail && (
+          {scope.kind !== 'drafts' &&
+            scope.kind !== 'workspace' &&
+            scope.kind !== 'consolidate' &&
+            scope.kind !== 'versioning' &&
+            !detail && (
             <div className="empty">Select a skill to read it.</div>
           )}
-          {scope.kind !== 'drafts' && scope.kind !== 'workspace' && scope.kind !== 'consolidate' && detail && (
+          {scope.kind !== 'drafts' &&
+            scope.kind !== 'workspace' &&
+            scope.kind !== 'consolidate' &&
+            scope.kind !== 'versioning' &&
+            detail && (
             <div className="detail-inner">
               <div className="detailhead">
                 <h1>{detail.name}</h1>

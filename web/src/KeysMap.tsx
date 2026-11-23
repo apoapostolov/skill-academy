@@ -10,7 +10,7 @@ const ROWS: Array<[string, string]> = [
   ['a then a', 'archive, twice within four seconds'],
   ['e / x', 'selection mode / toggle a row'],
   ['Shift+A', 'archive the selection'],
-  ['1 - 8', 'all / notifications / needs attention / improve / consolidate / deleted / drafts / workspaces'],
+  ['1 - 9', 'all / notifications / needs attention / improve / consolidate / curation / versioning / deleted / drafts'],
   ['S / Y / P', 'sources / sync / appearance'],
   ['/', 'focus search'],
   ['v / w', 'preview or raw / wrap'],

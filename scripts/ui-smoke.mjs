@@ -57,6 +57,7 @@ const chrome = await evaluate(`(() => {
   return { left, right }
 })()`)
 check('the header has no Improve or Consolidate label', !chrome.left.includes('Improve') && !chrome.left.includes('Consolidate'), JSON.stringify(chrome.left))
+check('Versioning left the header menu for the sidebar', !chrome.left.includes('Versioning'), JSON.stringify(chrome.left))
 check('Appearance is the glyph just before Settings', chrome.right.indexOf('Appearance') === chrome.right.length - 2 && chrome.right.at(-1) === 'Settings', JSON.stringify(chrome.right))
 
 // Consolidate: click the sidebar entry and read the middle column.
@@ -174,6 +175,63 @@ const curation = await evaluate(`(() => {
 check('the curation view renders', curation.hasView, JSON.stringify(curation))
 check('curation lists ageing skills', curation.rows > 0, JSON.stringify(curation))
 check('curation states that usage is unknown', /cannot see who loaded/.test(curation.note), curation.note)
+
+// Versioning: the sidebar scope, not a modal. It must render even with nothing installed.
+await evaluate(`(() => {
+  const nav = [...document.querySelectorAll('.nav')].find((n) => n.textContent.trim().startsWith('Versioning'))
+  nav?.click()
+  return !!nav
+})()`)
+await new Promise((r) => setTimeout(r, 2500))
+const versioning = await evaluate(`(() => {
+  const view = document.querySelector('.versioningview')
+  const head = view?.querySelector('.listcount')?.textContent ?? ''
+  const rows = view?.querySelectorAll('.vrow').length ?? 0
+  const modal = document.querySelector('.monitormodal')
+  const detail = document.querySelector('.vdetail')
+  const empty = view?.querySelector('.empty')?.textContent ?? ''
+  return { hasView: !!view, head, rows, hasModal: !!modal, hasDetail: !!detail, empty: empty.slice(0, 60) }
+})()`)
+check('versioning is a scope, not a modal', versioning.hasView && !versioning.hasModal, JSON.stringify(versioning))
+check('versioning states its own emptiness honestly', versioning.rows > 0 || /Nothing is recorded/.test(versioning.empty), JSON.stringify(versioning))
+
+if (versioning.rows > 0) {
+  await evaluate(`document.querySelector('.versioningview .vrow').click()`)
+  await new Promise((r) => setTimeout(r, 1200))
+  const pane = await evaluate(`(() => {
+    const d = document.querySelector('.vdetail')
+    return {
+      has: !!d,
+      tabs: [...(d?.querySelectorAll('.vtab') ?? [])].map((n) => n.textContent.replace(/\s+/g, ' ').trim()),
+      rows: d?.querySelectorAll('.vrowline').length ?? 0
+    }
+  })()`)
+  check('selecting an installation fills the detail pane', pane.has && pane.rows > 0, JSON.stringify(pane))
+  check('the detail pane offers the five jobs', ['Overview', 'Changes', 'Update', 'History', 'Policy'].every((name) => pane.tabs.some((tab) => tab.startsWith(name))), JSON.stringify(pane.tabs))
+}
+
+// A skill body renders through the markdown path, which now builds nodes instead of assigning HTML.
+await evaluate(`(() => {
+  const nav = [...document.querySelectorAll('.nav')].find((n) => n.textContent.trim().startsWith('All skills'))
+  nav?.click()
+  return !!nav
+})()`)
+await new Promise((r) => setTimeout(r, 2000))
+const markdown = await evaluate(`(async () => {
+  const row = document.querySelector('.row')
+  row?.click()
+  await new Promise((r) => setTimeout(r, 1500))
+  const pane = document.querySelector('.detail')
+  const body = pane?.querySelector('.md, .body, pre') ?? null
+  return {
+    rows: document.querySelectorAll('.row').length,
+    chars: body ? body.textContent.length : 0,
+    nodes: pane ? pane.querySelectorAll('h1, h2, h3, p, li').length : 0,
+    scriptTags: pane ? pane.querySelectorAll('script').length : 0
+  }
+})()`)
+check('a skill body renders as markup', markdown.rows > 0 && markdown.nodes > 0, JSON.stringify(markdown))
+check('no script tag survives the markdown path', markdown.scriptTags === 0, JSON.stringify(markdown))
 
 const errs2 = await evaluate(`window.__errs ?? []`)
 check('no console errors while rendering improve', errs2.length === 0, JSON.stringify(errs2.slice(0, 3)))

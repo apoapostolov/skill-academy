@@ -135,22 +135,72 @@ Auto-apply is off by default. `apply-minor` allows an update when the version in
 
 ## 6. The screen
 
-The top menu gains **View > Versioning**, and the dialog is the same width family as the install dialog. Three columns, matching the rest of the app.
+Versioning is a scope in the sidebar, not a dialog. The app has one rule about lists: a list is a
+view of the middle column, and a dialog over the three-column screen is not a list. The old modal
+broke that rule and hid the thing the user came for, so it was replaced.
 
-Left, the repository list: one row per repository, with installations nested underneath. Each row carries the state that matters in six pixels of colour, not a sentence: up to date, behind, local drift, conflict, gone. A count on the right, `3 of 5 changed`. Grouping switch: by repository, by agent, by state, by pinned.
+### 6.1 The need
 
-Middle, the installations in the selected repository: name, installed version, remote version when it differs, last check, pin state. Row switches mirror the main list so the muscle memory carries over.
+One question, asked per installed skill: is my copy still what upstream has, and if not, what exactly
+changed before I accept it. Everything on the screen either answers that question or is the action
+that follows from the answer.
 
-Right, the detail pane with four tabs:
+### 6.2 How it is used
 
-- **Overview**: refs, dates, hashes, placements per agent, provenance, policy.
-- **Changes**: the file tree of the diff with status glyphs, and the text diff beside it. Side by side by default, unified on a switch. Per-line additions and removals in the existing signal colours, with a wrap toggle that remembers.
-- **History**: releases and commits between the installed ref and now, newest first, each expandable to its own compare.
-- **Policy**: channel, auto-apply, pin with a reason, and a "check now" button.
+The day-to-day shape of the work, in the order it actually happens:
 
-A ref picker in the header of Changes allows any two refs, not just installed against latest, because "diff its versions/commits" means arbitrary pairs.
+1. **Glance.** The sidebar entry carries a count of installations that are behind, in conflict, or
+   unusable. Zero clicks answers "is anything waiting for me".
+2. **Scan.** The middle column lists installations grouped by repository. Each row carries state in a
+   dot and a version pair, never a sentence. A filter row narrows to one state; the honest default is
+   everything, because "up to date" is information too.
+3. **Pick.** Selecting a row fills the detail pane. Nothing is fetched until the pane needs it, so
+   scanning a hundred installations costs nothing.
+4. **Read before acting.** *Changes* lists every file that differs, upstream and local, then the line
+   diff for the chosen file. This is the step the gate exists for: the user reads the change, not a
+   summary of the change.
+5. **Decide.** *Update* shows the plan: files, additions, deletions, the version pair, and the named
+   reasons the gate appeared. Applying is a second, deliberate click on a plan the user has seen.
+6. **Recover.** The replaced copy is already in the trash, so the same row offers the previous
+   version back for thirty days.
 
-Footer: check all, update selected, and the rate-limit position, since a power user will hit it.
+Fringe cases the screen must answer without a shrug:
+
+| Case | What the row or pane says |
+| --- | --- |
+| No baseline (installed before recording) | Listed under *Without a baseline* with a Record action and the reason |
+| Upstream unreachable, archived or deleted | State `gone` or `unreachable` with the message the API returned |
+| Local edits, upstream unchanged | `local-drift`, and the update is still offered with a warning |
+| Local and upstream both changed | `conflict`, with a named choice: keep local or take upstream |
+| Same version, different bytes | `silent-change` event; the version pair alone is not evidence of sameness |
+| Upstream version went backwards | `version-regression` event, called out on the plan |
+| Pinned copy with upstream movement | Movement reported, update refused, reason visible |
+| Binary or oversized file | Listed with size and hash, never diffed as text |
+| Line-ending-only change | Diff says so, rather than showing every line as changed |
+| Rate limit exhausted | The response's position and reset time, in the footer where the check lives |
+
+### 6.3 Layout
+
+Middle column:
+
+- Header: installation count, how many need attention, and the two actions, **Check** and **Export**.
+- State chips: all, behind, conflict, local drift, up to date, gone.
+- Repository group rows, each with `n of m changed`, then its installations: state dot, name,
+  `installed version → remote version`, pin marker.
+- A final group for skills with no baseline, each with **Record**.
+
+Detail pane, five tabs, one job each:
+
+- **Overview** — repository, remote path, installed ref and tag, installed and remote version, last
+  check, package hash, placements per agent, pin state, current state with its message.
+- **Changes** — the file list with status glyphs and counts, then the chosen file's unified diff.
+  A switch chooses the upstream comparison or the local one. Truncated trees and binary files say so.
+- **Update** — the plan and the gate: files, additions, deletions, version pair, named gate reasons,
+  refusals, and the local-edit choice when one is required. Apply sits under a read checkbox.
+- **History** — this installation's events, newest first, with severity.
+- **Policy** — channel, auto-apply, and a pin with a reason.
+
+No panel reserves space for a scrollbar, and no list is a dialog.
 
 ## 7. Endpoints
 

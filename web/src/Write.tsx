@@ -2,7 +2,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, drawSelection, highlightActiveLine, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
-import { renderMarkdown } from './markdown'
+import { MarkdownBody } from './MarkdownView'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 /**
@@ -503,7 +503,7 @@ export function DraftEditor({
 
           {preview ? (
             // Same renderer as the detail pane: raw HTML in the file is dropped, not executed.
-            <div className="draftpreview" dangerouslySetInnerHTML={{ __html: renderMarkdown(draft.text) }} />
+            <MarkdownBody text={draft.text || '_Empty draft._'} className="md draftpreview" />
           ) : (
             <div className="draftcode" ref={host} />
           )}
